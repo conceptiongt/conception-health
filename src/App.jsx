@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { C, SERIF, SHADOW } from './lib/theme'
 import { LIMITE_PRUEBA } from './lib/constantes'
@@ -15,6 +15,7 @@ import { BaseDatos } from './pages/BaseDatos'
 import { ToastContainer } from './components/ui/Toast'
 import { Cargando, Logo } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
+import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 
 const NAV = [
@@ -48,6 +49,23 @@ function Aplicacion({ sesion }) {
   const [vista, setVista] = useState('inicio')
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(null)
+
+  // Conception Studio link: refresh its status and send this clinic's monthly totals when data changes
+  const syncTimer = useRef(null)
+  useEffect(() => {
+    if (!datos || !clinica?.studio_clave || !['pendiente', 'aprobado'].includes(clinica.studio_estado)) return
+    clearTimeout(syncTimer.current)
+    syncTimer.current = setTimeout(async () => {
+      const e = await estadoVinculo(clinica.studio_clave)
+      if (!e) return
+      if (e.estado !== clinica.studio_estado) {
+        await supabase.from('clinicas').update({ studio_estado: e.estado }).eq('id', clinica.id)
+        recargarSesion()
+      }
+      if (e.estado === 'aprobado') await sincronizar(clinica, datos)
+    }, 2000)
+    return () => clearTimeout(syncTimer.current)
+  }, [datos, clinica, recargarSesion])
 
   const ir = (v, extra) => {
     setVista(v); setMenu(false)

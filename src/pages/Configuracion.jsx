@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Grid } from '../components/ui/Campos'
 import { Icon } from '../components/ui/Icon'
 import { toast } from '../components/ui/Toast'
+import { VinculoStudio } from '../components/VinculoStudio'
 
 export function Configuracion() {
   const { clinica, servicios, perfil, recargar, recargarSesion } = useDatos()
@@ -41,6 +42,8 @@ export function Configuracion() {
       </Card>
 
       <Tarifas servicios={servicios} clinicaId={perfil.clinica_id} onCambio={recargar} />
+
+      <VinculoStudio />
     </>
   )
 }

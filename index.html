@@ -670,7 +670,29 @@ const PAYMENT_URL='https://app.recurrente.com/s/conception/patienttrack';
 const MONTHS=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 const {createClient}=supabase;
-const sb=createClient(SUPABASE_URL,SUPABASE_KEY);
+// VISTA PREVIA: sin inicio de sesión y sin base de datos (datos de ejemplo en memoria)
+const DEMO_USER={id:'demo',email:'demo@conception-gt.com',created_at:'2026-04-17'};
+const _t=new Date(),_d=n=>{const x=new Date(_t);x.setDate(x.getDate()+n);return x.toISOString().slice(0,10);};
+const DB={profiles:[{id:'demo',full_name:'Dr. Alejandro Reyna'}],patients:[
+ {id:1,user_id:'demo',created_at:'2026-09-01',nombre:'María López',tel:'5555-1234',fecha:_d(-20),hora:'09:00',tipo:'Primera consulta',origen:'redes',red:'Instagram',referido:'',estado:'Asistió',notas:''},
+ {id:2,user_id:'demo',created_at:'2026-09-05',nombre:'Carlos Pérez',tel:'5555-2345',fecha:_d(-8),hora:'11:30',tipo:'Seguimiento',origen:'referido',red:'',referido:'María López',estado:'Asistió',notas:''},
+ {id:3,user_id:'demo',created_at:'2026-09-10',nombre:'Ana García',tel:'5555-3456',fecha:_d(-3),hora:'15:00',tipo:'Primera consulta',origen:'redes',red:'Facebook',referido:'',estado:'No asistió',notas:''},
+ {id:4,user_id:'demo',created_at:'2026-09-20',nombre:'Luis Martínez',tel:'5555-4567',fecha:_d(2),hora:'10:00',tipo:'Primera consulta',origen:'redes',red:'TikTok',referido:'',estado:'Agendado',notas:''},
+ {id:5,user_id:'demo',created_at:'2026-09-25',nombre:'Sofía Ramírez',tel:'5555-5678',fecha:_d(5),hora:'16:30',tipo:'Seguimiento',origen:'otro',red:'',referido:'',estado:'Agendado',notas:''}
+]};
+function _q(table){let rows=DB[table]||(DB[table]=[]),filt=[],single=false,op='select',payload=null;
+ const api={select(){return api},order(){return api},single(){single=true;return api},eq(k,v){filt.push([k,v]);return api},
+  insert(o){op='insert';payload=o;return api},update(o){op='update';payload=o;return api},delete(){op='delete';return api},upsert(o){op='insert';payload=o;return api},
+  then(res,rej){const m=r=>filt.every(([k,v])=>r[k]==v);let data=null;
+   if(op==='select'){data=rows.filter(m);if(single)data=data[0]||null;}
+   else if(op==='insert'){[].concat(payload).forEach(o=>rows.unshift({id:Date.now(),created_at:new Date().toISOString(),...o}));}
+   else if(op==='update'){rows.filter(m).forEach(r=>Object.assign(r,payload));}
+   else if(op==='delete'){DB[table]=rows.filter(r=>!m(r));}
+   return Promise.resolve({data,error:null}).then(res,rej);}};return api;}
+const sb={from:_q,auth:{
+ onAuthStateChange(cb){setTimeout(()=>cb('SIGNED_IN',{user:DEMO_USER}),50);return{data:{subscription:{unsubscribe(){}}}};},
+ signOut:async()=>({}),signInWithPassword:async()=>({}),signUp:async()=>({}),signInWithOAuth:async()=>({}),getSession:async()=>({data:{session:{user:DEMO_USER}}})},
+ storage:{from:()=>({upload:async()=>({error:null}),getPublicUrl:()=>({data:{publicUrl:''}})})}};
 
 let currentUser=null;
 let currentProfile=null;

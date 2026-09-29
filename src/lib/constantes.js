@@ -42,15 +42,15 @@ export const PLANES = [
   {
     value: 'basico',
     nombre: 'Básico',
-    precio: 'Q250 / mes',
-    link: 'https://app.recurrente.com/s/conception/patienttrack',
+    precio: 'Q275 / mes',
+    link: 'https://app.recurrente.com/s/conception/healt',
     incluye: ['Pacientes ilimitados', 'Citas y seguimiento', 'Expedientes con fotos', 'Cobros y saldos', 'Reportes en Excel y PDF'],
   },
   {
     value: 'max',
     nombre: 'Max',
-    precio: 'Precio por definir',
-    link: null, // TODO: link de Recurrente del plan Max
+    precio: 'Q375 / mes',
+    link: 'https://app.recurrente.com/s/conception/conception-healt-max',
     incluye: ['Todo lo del plan Básico', 'Inventario por sede', 'Entradas, salidas y traslados', 'Alertas de producto bajo'],
   },
 ]

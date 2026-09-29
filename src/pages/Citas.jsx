@@ -10,6 +10,8 @@ import { Button } from '../components/ui/Button'
 import { Exportar } from '../components/Documento'
 import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
+import { Icon } from '../components/ui/Icon'
+import { filtroStyle } from '../components/ui/Campos'
 
 const hoy = new Date()
 
@@ -62,18 +64,18 @@ export function Citas() {
     } }) }] },
   })
 
-  const sel = { padding: '9px 10px', borderRadius: 9, border: `1.5px solid ${C.g200}`, fontSize: 13.5, background: '#fff' }
-  const btnMini = { padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: C.g700 }
+  const sel = filtroStyle
+  const btnMini = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 9, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: C.g700 }
 
   return (
     <>
       <Encabezado titulo="Citas" subtitulo={`${visibles.length} ${visibles.length === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
-        <Button onClick={() => ir('registrar')}>➕ Registrar paciente</Button>
+        <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="🔍 Buscar paciente o teléfono…" style={{ ...sel, flex: '1 1 220px' }} />
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente o teléfono…" style={{ ...sel, flex: '1 1 220px' }} />
         <select value={mes} onChange={e => setMes(e.target.value)} style={sel}>
           <option value="todos">Todos los meses</option>
           {meses.map(m => <option key={`${m.year}-${m.mes}`} value={`${m.year}-${m.mes}`}>{MESES[m.mes]} {m.year}</option>)}
@@ -94,15 +96,15 @@ export function Citas() {
           return { key: c.id, celdas: [
             fmtFechaCorta(c.fecha), fmtHora(c.hora),
             <button onClick={() => ir('expedientes', p.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, color: C.black, fontSize: 13.5 }}>{p.nombre}</button>,
-            c.tipo || '—',
+            [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—',
             <select value={c.estado} onChange={ev => cambiarEstado(c, ev.target.value)} style={{ padding: '5px 8px', borderRadius: 20, border: 'none', fontWeight: 700, fontSize: 12.5, color: e.color, background: e.bg, cursor: 'pointer' }}>
               {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
             </select>,
             p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen),
             <div style={{ display: 'flex', gap: 6 }}>
-              <button style={btnMini} onClick={() => setEditando(c)}>✎ Editar</button>
-              {wa && <button style={btnMini} onClick={() => window.open(wa, '_blank', 'noopener')}>💬 WhatsApp</button>}
-              {cal && <button style={btnMini} onClick={() => window.open(cal, '_blank', 'noopener')}>📅 Calendar</button>}
+              <button style={btnMini} onClick={() => setEditando(c)}><Icon name="editar" size={14} />Editar</button>
+              {wa && <button style={btnMini} onClick={() => window.open(wa, '_blank', 'noopener')}><Icon name="mensaje" size={14} />WhatsApp</button>}
+              {cal && <button style={btnMini} onClick={() => window.open(cal, '_blank', 'noopener')}><Icon name="calendarioMas" size={14} />Calendar</button>}
             </div>,
           ] }
         })}

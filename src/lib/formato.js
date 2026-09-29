@@ -23,7 +23,9 @@ export const hoyISO = () => {
 // { mes: 0-11, year } of an ISO date
 export const mesDe = (iso) => ({ mes: Number(iso.slice(5, 7)) - 1, year: Number(iso.slice(0, 4)) })
 export const enMes = (iso, m) => !!iso && Number(iso.slice(0, 4)) === m.year && Number(iso.slice(5, 7)) - 1 === m.mes
-export const saldo = (c) => Math.max(0, (Number(c.precio) || 0) - (Number(c.pagado) || 0))
+// Charge total after discount, and what is still owed
+export const totalCobro = (c) => Math.max(0, (Number(c.precio) || 0) - (Number(c.descuento) || 0))
+export const saldo = (c) => Math.max(0, totalCobro(c) - (Number(c.pagado) || 0))
 
 // Google Calendar "add event" link for a consultation (1 hour long)
 export function linkCalendar(paciente, cita) {

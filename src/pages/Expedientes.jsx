@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo } from '../lib/formato'
+import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
-import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando } from '../components/ui/Varios'
+import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
+import { Icon } from '../components/ui/Icon'
 import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
-import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
+import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
@@ -53,20 +54,20 @@ export function Expedientes({ abrirId }) {
     } }) }] },
   })
 
-  const sel = { padding: '9px 10px', borderRadius: 9, border: `1.5px solid ${C.g200}`, fontSize: 13.5, background: '#fff' }
+  const sel = filtroStyle
   return (
     <>
       <Encabezado titulo="Expedientes" subtitulo={`${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}`}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
-        <Button onClick={() => ir('registrar')}>➕ Registrar paciente</Button>
+        <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="🔍 Buscar por nombre o teléfono…" style={{ ...sel, flex: '1 1 240px' }} />
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por nombre o teléfono…" style={{ ...sel, flex: '1 1 240px' }} />
         <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
       </div>
       {pacientes.length === 0 ? (
-        <Vacio icono="🗂️" titulo="Aún no hay pacientes" texto="Registre su primer paciente para crear su expediente.">
-          <Button onClick={() => ir('registrar')}>➕ Registrar paciente</Button>
+        <Vacio icono="expedientes" titulo="Aún no hay pacientes" texto="Registre su primer paciente para crear su expediente.">
+          <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
         </Vacio>
       ) : (
         <Tabla
@@ -84,7 +85,12 @@ export function Expedientes({ abrirId }) {
   )
 }
 
-const TABS = [['datos', '🩺 Datos médicos'], ['consultas', '📅 Consultas'], ['fotos', '📸 Fotos'], ['cobros', '💵 Cobros']]
+const TABS = [
+  { value: 'datos', label: 'Datos médicos', icono: 'estetoscopio' },
+  { value: 'consultas', label: 'Consultas', icono: 'citas' },
+  { value: 'fotos', label: 'Fotos', icono: 'camara' },
+  { value: 'cobros', label: 'Cobros', icono: 'cartera' },
+]
 
 function Expediente({ paciente, onVolver }) {
   const { citas, cobros, clinica, perfil, recargar } = useDatos()
@@ -118,7 +124,7 @@ function Expediente({ paciente, onVolver }) {
     onVolver()
   }
 
-  const totalPrecio = misCobros.reduce((n, c) => n + (Number(c.precio) || 0), 0)
+  const totalPrecio = misCobros.reduce((n, c) => n + totalCobro(c), 0)
   const totalPagado = misCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
 
   const preparar = async () => {
@@ -135,10 +141,10 @@ function Expediente({ paciente, onVolver }) {
         { titulo: 'Antecedentes', pares: [['Alergias', paciente.alergias], ['Enfermedades crónicas', paciente.enfermedades], ['Medicamentos actuales', paciente.medicamentos]] },
         paciente.notas_medicas && { titulo: 'Notas médicas generales', texto: paciente.notas_medicas },
         { titulo: 'Consultas', tabla: { headers: ['Fecha', 'Hora', 'Tipo', 'Estado', 'Peso', 'Talla', 'Procedimiento', 'Notas'],
-          filas: misCitas.map(c => [fmtFechaCorta(c.fecha), fmtHora(c.hora), c.tipo || '—', c.estado, c.peso ? `${c.peso} kg` : '—', c.talla ? `${c.talla} cm` : '—', c.procedimiento || '—', c.notas || '—']) } },
-        { titulo: 'Cobros', tabla: { headers: ['Fecha', 'Concepto', 'Precio', 'Pagado', 'Saldo', 'Método', 'Vence'],
-          filas: [...misCobros.map(c => [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio), fmtQ(c.pagado), fmtQ(saldo(c)), c.metodo || '—', c.vence ? fmtFechaCorta(c.vence) : '—']),
-            ...(misCobros.length ? [{ _total: true, celdas: ['', 'Total', fmtQ(totalPrecio), fmtQ(totalPagado), fmtQ(totalPrecio - totalPagado), '', ''] }] : [])] } },
+          filas: misCitas.map(c => [fmtFechaCorta(c.fecha), fmtHora(c.hora), [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, c.peso ? `${c.peso} kg` : '—', c.talla ? `${c.talla} cm` : '—', c.procedimiento || '—', c.notas || '—']) } },
+        { titulo: 'Cobros', tabla: { headers: ['Fecha', 'Concepto', 'Precio', 'Descuento', 'Total', 'Pagado', 'Saldo', 'Método', 'Vence'],
+          filas: [...misCobros.map(c => [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio), Number(c.descuento) ? fmtQ(c.descuento) : '—', fmtQ(totalCobro(c)), fmtQ(c.pagado), fmtQ(saldo(c)), c.metodo || '—', c.vence ? fmtFechaCorta(c.vence) : '—']),
+            ...(misCobros.length ? [{ _total: true, celdas: ['', 'Total', '', '', fmtQ(totalPrecio), fmtQ(totalPagado), fmtQ(totalPrecio - totalPagado), '', ''] }] : [])] } },
         fotos.length > 0 && { titulo: 'Fotos', imagenes: fotos.map(a => ({ src: a.url, pie: `${ETAPAS_FOTO.find(e => e.value === a.etapa)?.label} · ${fmtFechaCorta(a.fecha)}${a.notas ? ' · ' + a.notas : ''}` })) },
       ],
       excel: { archivo: `expediente_${slug(paciente.nombre)}`, hojas: [
@@ -151,37 +157,30 @@ function Expediente({ paciente, onVolver }) {
           { header: 'Peso (kg)', key: 'p', width: 10 }, { header: 'Talla (cm)', key: 'ta', width: 10 }, { header: 'Procedimiento', key: 'pr', width: 28 }, { header: 'Notas', key: 'n', width: 50 }],
           filas: misCitas.map(c => ({ f: c.fecha, h: fmtHora(c.hora), t: c.tipo, e: c.estado, p: c.peso, ta: c.talla, pr: c.procedimiento, n: c.notas })) },
         { nombre: 'Cobros', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Concepto', key: 'c', width: 30 }, { header: 'Precio', key: 'p', width: 12, moneda: true },
-          { header: 'Pagado', key: 'pa', width: 12, moneda: true }, { header: 'Saldo', key: 's', width: 12, moneda: true }, { header: 'Método', key: 'm', width: 14 },
+          { header: 'Descuento', key: 'd', width: 12, moneda: true }, { header: 'Total', key: 't', width: 12, moneda: true }, { header: 'Pagado', key: 'pa', width: 12, moneda: true }, { header: 'Saldo', key: 's', width: 12, moneda: true }, { header: 'Método', key: 'm', width: 14 },
           { header: 'Vence', key: 'v', width: 12 }, { header: 'Observaciones', key: 'o', width: 40 }],
-          filas: misCobros.map(c => ({ f: c.fecha, c: c.concepto, p: Number(c.precio), pa: Number(c.pagado), s: saldo(c), m: c.metodo, v: c.vence, o: c.observaciones })) },
+          filas: misCobros.map(c => ({ f: c.fecha, c: c.concepto, p: Number(c.precio), d: Number(c.descuento) || 0, t: totalCobro(c), pa: Number(c.pagado), s: saldo(c), m: c.metodo, v: c.vence, o: c.observaciones })) },
       ] },
     }
   }
 
   return (
     <>
-      <button onClick={onVolver} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 10, fontSize: 14 }}>← Volver a expedientes</button>
+      <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5 }}><Icon name="atras" size={16} />Expedientes</button>
       <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
-        <Button variant="ghost" size="sm" onClick={() => setEditando(true)}>✎ Editar datos</Button>
-        <Button variant="danger" size="sm" onClick={eliminar}>🗑 Eliminar paciente</Button>
+        <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar datos</Button>
+        <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar paciente</Button>
       </Encabezado>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
-        <Stat icono="📅" label="Consultas" valor={misCitas.length} color={C.blue} bg={C.blueLight} />
-        <Stat icono="💵" label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} bg={C.greenLight} />
-        <Stat icono="⏳" label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={C.orange} bg={C.orangeLight} />
-        <Stat icono="📸" label="Fotos" valor={archivos ? archivos.length : '…'} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
+        <Stat icono="citas" label="Consultas" valor={misCitas.length} color={C.blue} bg={C.blueLight} />
+        <Stat icono="cartera" label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} bg={C.greenLight} />
+        <Stat icono="reloj" label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={C.orange} bg={C.orangeLight} />
+        <Stat icono="camara" label="Fotos" valor={archivos ? archivos.length : '…'} />
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-        {TABS.map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)} style={{
-            padding: '9px 16px', borderRadius: 20, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            border: `1.5px solid ${tab === v ? C.purple : C.g200}`, background: tab === v ? C.purple : '#fff', color: tab === v ? '#fff' : C.g600,
-          }}>{l}</button>
-        ))}
-      </div>
+      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS} valor={tab} onChange={setTab} /></div>
 
       {tab === 'datos' && <DatosMedicos paciente={paciente} onEditar={() => setEditando(true)} />}
       {tab === 'consultas' && <Consultas paciente={paciente} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={recargar} />}
@@ -201,7 +200,7 @@ function DatosMedicos({ paciente, onEditar }) {
     </div>
   )
   return (
-    <Card title="Datos médicos" right={<Button variant="ghost" size="sm" onClick={onEditar}>✎ Editar</Button>}>
+    <Card title="Datos médicos" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '0 24px' }}>
         {par('Tipo de sangre', paciente.tipo_sangre)}
         {par('Alergias', paciente.alergias)}
@@ -262,7 +261,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
 function Consultas({ paciente, citas, clinicaId, onCambio }) {
   const [editando, setEditando] = useState(undefined) // undefined closed, null new, object edit
   return (
-    <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => setEditando(null)}>➕ Nueva cita</Button>}>
+    <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => setEditando(null)} icon="mas">Nueva cita</Button>}>
       {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : citas.map(c => {
         const e = estadoCita(c.estado)
         return (
@@ -273,14 +272,14 @@ function Consultas({ paciente, citas, clinicaId, onCambio }) {
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <strong>{c.tipo || 'Consulta'}</strong><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                <strong>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</strong><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
               </div>
               <div style={{ fontSize: 13, color: C.g600, marginTop: 4 }}>
                 {[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, c.procedimiento].filter(Boolean).join(' · ')}
               </div>
               {c.notas && <div style={{ fontSize: 13, color: C.g700, marginTop: 4, whiteSpace: 'pre-wrap' }}>{c.notas}</div>}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setEditando(c)}>✎ Editar</Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditando(c)} icon="editar">Editar</Button>
           </div>
         )
       })}
@@ -344,7 +343,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
         </Grid>
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 16, borderRadius: 10, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600 }}>
           <input type="file" accept="image/*,application/pdf" multiple onChange={subir} disabled={!!subiendo} style={{ display: 'none' }} />
-          {subiendo ? `Subiendo ${subiendo} archivo(s)…` : '⬆ Elegir fotos o tomar foto'}
+          {subiendo ? `Subiendo ${subiendo} archivo(s)…` : 'Elegir fotos o tomar foto'}
         </label>
         <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>Las fotos se guardan en la nube de forma privada: solo su consultorio puede verlas, desde cualquier dispositivo.</div>
       </Card>
@@ -359,7 +358,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
                 <button key={a.id} onClick={() => setVer(a)} style={{ padding: 0, border: `1px solid ${C.g200}`, borderRadius: 10, overflow: 'hidden', background: C.g50, cursor: 'pointer', textAlign: 'left' }}>
                   {(a.mime || '').startsWith('image/')
                     ? <img src={a.url} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
-                    : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}>📄</div>}
+                    : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}><Icon name="archivo" size={30} /></div>}
                   <div style={{ padding: '6px 8px', fontSize: 12, color: C.g600 }}>{fmtFechaCorta(a.fecha)}{a.notas ? ` · ${a.notas}` : ''}</div>
                 </button>
               ))}
@@ -367,7 +366,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
           </Card>
         )
       })}
-      {archivos && archivos.length === 0 && <Vacio icono="📸" titulo="Sin fotos todavía" texto="Agregue fotos de antes, proceso y resultado." />}
+      {archivos && archivos.length === 0 && <Vacio icono="camara" titulo="Sin fotos todavía" texto="Agregue fotos de antes, proceso y resultado." />}
 
       {ver && (
         <Modal title={ETAPAS_FOTO.find(e => e.value === ver.etapa)?.label} subtitle={`${fmtFecha(ver.fecha)}${ver.notas ? ' · ' + ver.notas : ''}`} onClose={() => setVer(null)} maxWidth={820}>
@@ -375,8 +374,8 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
             ? <img src={ver.url} alt="" style={{ width: '100%', borderRadius: 10 }} />
             : <a href={ver.url} target="_blank" rel="noopener noreferrer">Abrir archivo</a>}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')}>⬇ Descargar</Button>
-            <Button variant="danger" onClick={() => borrar(ver)}>🗑 Eliminar</Button>
+            <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')} icon="descargar">Descargar</Button>
+            <Button variant="danger" onClick={() => borrar(ver)} icon="eliminar">Eliminar</Button>
           </div>
         </Modal>
       )}
@@ -386,21 +385,22 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
 
 function Cobros({ paciente, cobros, clinicaId, onCambio }) {
   const [editando, setEditando] = useState(undefined)
-  const total = cobros.reduce((n, c) => n + (Number(c.precio) || 0), 0)
+  const total = cobros.reduce((n, c) => n + totalCobro(c), 0)
   const pagado = cobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
   const hoy = hoyISO()
   return (
-    <Card title={`Cobros (${cobros.length})`} right={<Button size="sm" onClick={() => setEditando(null)}>➕ Nuevo cobro</Button>}>
+    <Card title={`Cobros (${cobros.length})`} right={<Button size="sm" onClick={() => setEditando(null)} icon="mas">Nuevo cobro</Button>}>
       {cobros.length === 0 ? <div style={{ color: C.g400 }}>Sin cobros registrados</div> : (
         <Tabla
-          columnas={['Fecha', 'Concepto', 'Precio', 'Pagado', 'Saldo', 'Método', 'Vence', '']}
+          columnas={['Fecha', 'Concepto', 'Precio', 'Descuento', 'Total', 'Pagado', 'Saldo', 'Vence', '']}
           filas={[...cobros.map(c => {
             const s = saldo(c), vencido = c.vence && c.vence < hoy && s > 0
-            return { key: c.id, celdas: [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio), fmtQ(c.pagado),
-              <strong style={{ color: s > 0 ? C.red : C.green }}>{s > 0 ? fmtQ(s) : 'Pagado ✓'}</strong>, c.metodo || '—',
+            return { key: c.id, celdas: [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio),
+              Number(c.descuento) ? <span style={{ color: C.green }}>− {fmtQ(c.descuento)}</span> : '—', <strong>{fmtQ(totalCobro(c))}</strong>, fmtQ(c.pagado),
+              <strong style={{ color: s > 0 ? C.red : C.green }}>{s > 0 ? fmtQ(s) : 'Pagado'}</strong>,
               c.vence ? <span style={{ color: vencido ? C.red : C.g600, fontWeight: vencido ? 700 : 400 }}>{fmtFechaCorta(c.vence)}{vencido ? ' · vencido' : ''}</span> : '—',
-              <Button variant="ghost" size="sm" onClick={() => setEditando(c)}>✎ Editar</Button>] }
-          }), { key: 'total', celdas: [<strong>Total</strong>, '', <strong>{fmtQ(total)}</strong>, <strong>{fmtQ(pagado)}</strong>, <strong>{fmtQ(total - pagado)}</strong>, '', '', ''] }]}
+              <Button variant="ghost" size="sm" onClick={() => setEditando(c)} icon="editar">Editar</Button>] }
+          }), { key: 'total', celdas: [<strong>Total</strong>, '', '', '', <strong>{fmtQ(total)}</strong>, <strong>{fmtQ(pagado)}</strong>, <strong>{fmtQ(total - pagado)}</strong>, '', ''] }]}
         />
       )}
       {editando !== undefined && <CobroModal cobro={editando} paciente={paciente} clinicaId={clinicaId} onClose={() => setEditando(undefined)} onGuardado={() => { setEditando(undefined); onCambio() }} />}
@@ -409,18 +409,30 @@ function Cobros({ paciente, cobros, clinicaId, onCambio }) {
 }
 
 function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
+  const { servicios } = useDatos()
   const [f, setF] = useState({
-    concepto: cobro?.concepto || '', precio: cobro?.precio ?? '', pagado: cobro?.pagado ?? '', metodo: cobro?.metodo || '',
-    fecha: cobro?.fecha || hoyISO(), vence: cobro?.vence || '', observaciones: cobro?.observaciones || '',
+    servicioId: cobro?.servicio_id || '', concepto: cobro?.concepto || '', precio: cobro?.precio ?? '', descuento: cobro?.descuento ? String(cobro.descuento) : '',
+    pagado: cobro?.pagado ?? '', metodo: cobro?.metodo || '', fecha: cobro?.fecha || hoyISO(), vence: cobro?.vence || '', observaciones: cobro?.observaciones || '',
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
-  const precio = Number(f.precio) || 0, pagado = Number(f.pagado) || 0
+  const precio = Number(f.precio) || 0, descuento = Number(f.descuento) || 0, pagado = Number(f.pagado) || 0
+  const total = Math.max(0, precio - descuento)
+  const activos = servicios.filter(x => x.activo).sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nombre.localeCompare(b.nombre, 'es'))
+
+  const elegirServicio = (id) => {
+    const sv = servicios.find(x => x.id === id)
+    setF(p => sv ? { ...p, servicioId: id, concepto: sv.nombre, precio: String(sv.precio) } : { ...p, servicioId: '' })
+  }
 
   const guardar = async () => {
     if (!f.concepto.trim()) { toast.error('Escriba el concepto o procedimiento'); return }
-    if (pagado > precio) { toast.error('Lo pagado no puede ser mayor que el precio'); return }
-    const fila = { concepto: f.concepto.trim(), precio, pagado, metodo: f.metodo || null, fecha: f.fecha, vence: f.vence || null, observaciones: f.observaciones.trim() || null }
+    if (descuento > precio) { toast.error('El descuento no puede ser mayor que el precio'); return }
+    if (pagado > total) { toast.error('Lo pagado no puede ser mayor que el total'); return }
+    const fila = {
+      concepto: f.concepto.trim(), servicio_id: f.servicioId || null, precio, descuento, pagado, metodo: f.metodo || null,
+      fecha: f.fecha, vence: f.vence || null, observaciones: f.observaciones.trim() || null,
+    }
     setBusy(true)
     const { error } = cobro
       ? await supabase.from('cobros').update(fila).eq('id', cobro.id)
@@ -438,20 +450,41 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
     onGuardado()
   }
 
+  const resumen = (label, valor, color = C.black, grande) => (
+    <div style={{ flex: 1, minWidth: 110 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontSize: grande ? 20 : 16, fontWeight: 800, color, marginTop: 2 }}>{valor}</div>
+    </div>
+  )
+
   return (
     <Modal title={cobro ? 'Editar cobro' : 'Nuevo cobro'} subtitle={paciente.nombre} onClose={onClose}>
       <Grid min={180}>
-        <Campo label="Concepto / procedimiento *" full><Input value={f.concepto} onChange={set('concepto')} placeholder="Ej. Consulta, Bótox frontal…" /></Campo>
+        {activos.length > 0 && (
+          <Campo label="Servicio de sus tarifas" full>
+            <Select value={f.servicioId} onChange={elegirServicio}>
+              <option value="">— Escribir concepto manualmente —</option>
+              {activos.map(x => <option key={x.id} value={x.id}>{x.categoria} · {x.nombre} — {fmtQ(x.precio)}</option>)}
+            </Select>
+          </Campo>
+        )}
+        <Campo label="Concepto / procedimiento *" full><Input value={f.concepto} onChange={set('concepto')} placeholder="Ej. Consulta, Rinoplastía…" /></Campo>
         <Campo label="Precio (Q)"><Input type="number" min="0" step="0.01" value={f.precio} onChange={set('precio')} /></Campo>
+        <Campo label="Descuento (Q)" ayuda="Ej. tarifa Q17,000 dejada en Q15,000 → Q2,000"><Input type="number" min="0" step="0.01" value={f.descuento} onChange={set('descuento')} placeholder="0.00" /></Campo>
         <Campo label="Pagado (Q)" ayuda="Anticipo o total abonado"><Input type="number" min="0" step="0.01" value={f.pagado} onChange={set('pagado')} /></Campo>
-        <Campo label="Saldo"><div style={{ padding: '10px 0', fontWeight: 800, color: precio - pagado > 0 ? C.red : C.green }}>{fmtQ(Math.max(0, precio - pagado))}</div></Campo>
         <Campo label="Método de pago"><Select value={f.metodo} onChange={set('metodo')}><option value="">—</option>{METODOS_PAGO.map(m => <option key={m}>{m}</option>)}</Select></Campo>
         <Campo label="Fecha"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>
         <Campo label="Fecha límite de pago" ayuda="Opcional: avisa si vence"><Input type="date" value={f.vence} onChange={set('vence')} /></Campo>
         <Campo label="Observaciones" full><Textarea value={f.observaciones} onChange={set('observaciones')} rows={2} /></Campo>
       </Grid>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 18, padding: '14px 16px', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+        {resumen('PRECIO', fmtQ(precio))}
+        {resumen('DESCUENTO', descuento ? `− ${fmtQ(descuento)}` : '—', C.green)}
+        {resumen('TOTAL', fmtQ(total), C.black, true)}
+        {resumen('SALDO', fmtQ(Math.max(0, total - pagado)), total - pagado > 0 ? C.red : C.green, true)}
+      </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
-        {cobro && <Button variant="danger" onClick={eliminar}>🗑 Eliminar</Button>}
+        {cobro && <Button variant="danger" icon="eliminar" onClick={eliminar}>Eliminar</Button>}
         <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>

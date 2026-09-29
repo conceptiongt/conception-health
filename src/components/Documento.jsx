@@ -105,8 +105,8 @@ export function Exportar({ clinica, preparar, size = 'sm' }) {
 
   return (
     <>
-      <Button variant="ghost" size={size} onClick={excel} disabled={busy}>⬇ Excel</Button>
-      <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} title="Se abre la ventana de impresión; elija 'Guardar como PDF' para descargarlo">🖨 PDF / Imprimir</Button>
+      <Button variant="ghost" size={size} onClick={excel} disabled={busy} icon="excel">Excel</Button>
+      <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} title="Se abre la ventana de impresión; elija 'Guardar como PDF' para descargarlo" icon="imprimir">PDF / Imprimir</Button>
       {doc && <Documento clinica={clinica} titulo={doc.titulo} subtitulo={doc.subtitulo} secciones={doc.secciones} onReady={onReady} />}
     </>
   )

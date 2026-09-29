@@ -1,9 +1,25 @@
+// Conception Health design tokens — calm, premium, medical
 export const C = {
-  purple: '#7C3AED', purpleDark: '#5B21B6', purpleLight: '#EDE9FE', purpleMid: '#F5F3FF',
-  sidebar: '#0D1B2E', sidebarActive: 'rgba(124,58,237,0.22)', sidebarHover: 'rgba(255,255,255,0.07)',
-  black: '#1A2332', g50: '#F7F9FC', g100: '#EEF2F7', g200: '#D5DCE8', g300: '#B0BBC9', g400: '#8896A8',
-  g500: '#63718A', g600: '#4A5568', g700: '#2D3748',
-  green: '#2E7D32', greenLight: '#E8F5E9', amber: '#B45309', amberLight: '#FFF8E1',
-  red: '#D84040', redLight: '#FEEEEE', blue: '#1565C0', blueLight: '#E3F2FD',
-  orange: '#E65100', orangeLight: '#FFF3E0',
+  // brand (from the logo: violet → cyan)
+  purple: '#6D3FE0', purpleDark: '#4C1D95', purpleLight: '#EFEAFD', purpleMid: '#F7F4FE',
+  cyan: '#0FB8E6',
+  grad: 'linear-gradient(135deg, #8B5CF6 0%, #0FB8E6 100%)',
+
+  // navy sidebar
+  sidebar: '#0B1120', sidebar2: '#111A2E',
+  sidebarActive: 'rgba(255,255,255,0.07)', sidebarHover: 'rgba(255,255,255,0.04)',
+
+  // ink & neutrals (slightly warm)
+  black: '#0F172A', bgApp: '#F6F6F9', line: '#E8E6EF',
+  g50: '#FAFAFC', g100: '#F1F0F5', g200: '#E4E2EB', g300: '#C9C6D4', g400: '#8E8A9E',
+  g500: '#6B6780', g600: '#4E4A61', g700: '#2F2B40',
+
+  // status (muted, not neon)
+  green: '#1F7A4D', greenLight: '#E9F6EF', amber: '#9A6200', amberLight: '#FDF5E4',
+  red: '#C23B3B', redLight: '#FCEDED', blue: '#2458B8', blueLight: '#EAF1FC',
+  orange: '#B45309', orangeLight: '#FDF1E6',
 }
+
+export const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif"
+export const SANS = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+export const SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)'

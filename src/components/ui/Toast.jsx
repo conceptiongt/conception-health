@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { C } from '../../lib/theme'
+import { Icon } from './Icon'
 
 let push = () => {}
 export const toast = {
@@ -17,12 +18,14 @@ export function ToastContainer() {
     }
   }, [])
   return (
-    <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', width: 'min(92vw, 420px)' }}>
+    <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', width: 'min(92vw, 440px)' }}>
       {items.map(t => (
         <div key={t.id} role="status" style={{
-          padding: '11px 16px', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#fff', width: '100%', textAlign: 'center',
-          background: t.tipo === 'error' ? C.red : C.black, boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-        }}>{t.m}</div>
+          display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 12, fontSize: 14, fontWeight: 600,
+          color: '#fff', width: '100%', background: t.tipo === 'error' ? C.red : C.black, boxShadow: '0 12px 32px rgba(11,17,32,0.25)', animation: 'aparecer 0.2s ease',
+        }}>
+          <Icon name={t.tipo === 'error' ? 'alerta' : 'check'} size={17} />{t.m}
+        </div>
       ))}
     </div>
   )

@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import { C } from '../lib/theme'
+import { C, SERIF, SHADOW } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
-import { fmtQ, fmtNum, fmtFecha, fmtHora, enMes, saldo, hoyISO } from '../lib/formato'
+import { fmtQ, fmtNum, fmtFecha, fmtHora, enMes, saldo, totalCobro, hoyISO } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
 import { Stat, Card, Encabezado, Badge } from '../components/ui/Varios'
 import { Exportar } from '../components/Documento'
+import { filtroStyle } from '../components/ui/Campos'
 
 const hoy = new Date()
 
-function Barras({ items, color = C.purple }) {
+function Barras({ items, color = C.grad }) {
   const max = Math.max(0, ...items.map(i => i.valor))
   if (!max) return <div style={{ fontSize: 13, color: C.g400 }}>Sin datos este mes</div>
   return (
@@ -18,7 +19,7 @@ function Barras({ items, color = C.purple }) {
         <div key={i.label} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: C.g600 }}>{i.label}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ height: 14, width: `${(i.valor / max) * 100}%`, minWidth: 4, background: color, borderRadius: '0 4px 4px 0' }} />
+            <div style={{ height: 10, width: `${(i.valor / max) * 100}%`, minWidth: 4, background: color, borderRadius: 6 }} />
             <strong style={{ fontSize: 13 }}>{fmtNum(i.valor)}</strong>
           </div>
         </div>
@@ -36,7 +37,7 @@ export function Inicio() {
   const citasMes = citas.filter(c => enMes(c.fecha, mes))
   const cobrosMes = cobros.filter(c => enMes(c.fecha, mes))
   const cobrado = cobrosMes.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
-  const facturado = cobrosMes.reduce((n, c) => n + (Number(c.precio) || 0), 0)
+  const facturado = cobrosMes.reduce((n, c) => n + totalCobro(c), 0)
   const pendienteTotal = cobros.reduce((n, c) => n + saldo(c), 0)
   const vencidos = cobros.filter(c => c.vence && c.vence < hoyISO() && saldo(c) > 0)
   const porOrigen = ORIGENES.map(o => ({ label: o.label, valor: nuevos.filter(p => p.origen === o.value).length }))
@@ -85,7 +86,7 @@ export function Inicio() {
     },
   })
 
-  const selectStyle = { padding: '9px 12px', borderRadius: 9, border: `1.5px solid ${C.g200}`, fontSize: 14, background: '#fff' }
+  const selectStyle = filtroStyle
   const years = [hoy.getFullYear() - 1, hoy.getFullYear(), hoy.getFullYear() + 1]
 
   return (
@@ -100,31 +101,31 @@ export function Inicio() {
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </Encabezado>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 12 }}>
-        <Stat icono="🧑‍⚕️" label="Pacientes nuevos" valor={fmtNum(nuevos.length)} />
-        <Stat icono="📅" label="Citas del mes" valor={fmtNum(citasMes.length)} sub={`${cirugias} cirugías · ${procedimientos} procedimientos`} color={C.blue} bg={C.blueLight} />
-        <Stat icono="💵" label="Cobrado en el mes" valor={fmtQ(cobrado)} sub={`de ${fmtQ(facturado)} facturado`} color={C.green} bg={C.greenLight} />
-        <Stat icono="⏳" label="Saldo pendiente" valor={fmtQ(pendienteTotal)} sub={vencidos.length ? `${vencidos.length} cobro(s) vencido(s)` : 'Sin cobros vencidos'} color={C.orange} bg={C.orangeLight} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
+        <Stat icono="usuarios" label="Pacientes nuevos" valor={fmtNum(nuevos.length)} />
+        <Stat icono="citas" label="Citas del mes" valor={fmtNum(citasMes.length)} sub={`${cirugias} cirugías · ${procedimientos} procedimientos`} color={C.blue} bg={C.blueLight} />
+        <Stat icono="cartera" label="Cobrado en el mes" valor={fmtQ(cobrado)} sub={`de ${fmtQ(facturado)} facturado`} color={C.green} bg={C.greenLight} />
+        <Stat icono="reloj" label="Saldo pendiente" valor={fmtQ(pendienteTotal)} sub={vencidos.length ? `${vencidos.length} cobro(s) vencido(s)` : 'Sin cobros vencidos'} color={C.orange} bg={C.orangeLight} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10, marginTop: 12 }}>
         {porEstado.map(e => (
-          <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.g200}`, borderRadius: 12, padding: '12px 14px' }}>
+          <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 16px', boxShadow: SHADOW }}>
             <Badge color={e.color} bg={e.bg}>{e.value}</Badge>
-            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{e.n}</div>
+            <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 600, marginTop: 8 }}>{e.n}</div>
           </div>
         ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, marginTop: 12 }}>
         <Card title="¿Cómo nos encontraron?"><Barras items={porOrigen} /></Card>
-        <Card title="Pacientes por red social"><Barras items={porRed} color={C.blue} /></Card>
+        <Card title="Pacientes por red social"><Barras items={porRed} /></Card>
         <Card title="Pacientes nuevos · últimos 6 meses">
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 140, borderBottom: `1px solid ${C.g200}` }}>
             {seis.map(s => (
               <div key={`${s.year}-${s.mes}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
                 <strong style={{ fontSize: 12, marginBottom: 3 }}>{s.n}</strong>
-                <div style={{ width: '60%', maxWidth: 36, height: `${(s.n / max6) * 100}px`, background: C.purple, borderRadius: '4px 4px 0 0' }} />
+                <div style={{ width: '56%', maxWidth: 34, height: `${(s.n / max6) * 100}px`, background: C.grad, borderRadius: '8px 8px 2px 2px' }} />
               </div>
             ))}
           </div>
@@ -135,7 +136,7 @@ export function Inicio() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, marginTop: 12 }}>
-        <Card title="Próximas citas" right={<button onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 700, cursor: 'pointer' }}>Ver todas →</button>}>
+        <Card title="Próximas citas" right={<button onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 700, cursor: 'pointer', fontSize: 13.5 }}>Ver todas</button>}>
           {proximas.length === 0 ? <div style={{ fontSize: 13, color: C.g400 }}>No hay citas próximas</div> : proximas.map(c => (
             <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
               <div style={{ width: 92, fontSize: 12.5, color: C.g500 }}>{fmtFecha(c.fecha).replace(/ de \d{4}$/, '')}<br />{fmtHora(c.hora)}</div>
@@ -147,7 +148,7 @@ export function Inicio() {
           ))}
         </Card>
         <Card title="Cobros vencidos">
-          {vencidos.length === 0 ? <div style={{ fontSize: 13, color: C.g400 }}>Todo al día 🎉</div> : vencidos.slice(0, 8).map(c => (
+          {vencidos.length === 0 ? <div style={{ fontSize: 13, color: C.g400 }}>Todo al día</div> : vencidos.slice(0, 8).map(c => (
             <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>{porId[c.paciente_id]?.nombre || '—'}</div>

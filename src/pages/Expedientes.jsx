@@ -134,7 +134,7 @@ function Expediente({ paciente, onVolver }) {
       titulo: 'Expediente clínico', subtitulo: paciente.nombre,
       secciones: [
         { titulo: 'Datos del paciente', pares: [
-          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Origen', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : origenLabel(paciente.origen)],
+          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Correo', paciente.email], ['Origen', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : origenLabel(paciente.origen)],
           ['Referido por', paciente.referido_por], ['Tipo de sangre', paciente.tipo_sangre], ['Registrado', fmtFecha(paciente.created_at)],
           ['Contacto de emergencia', paciente.contacto_emergencia], ['Teléfono de emergencia', paciente.telefono_emergencia],
         ] },
@@ -149,7 +149,7 @@ function Expediente({ paciente, onVolver }) {
       ],
       excel: { archivo: `expediente_${slug(paciente.nombre)}`, hojas: [
         { nombre: 'Datos', columnas: [{ header: 'Campo', key: 'k', width: 26 }, { header: 'Valor', key: 'v', width: 50 }], filas: [
-          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Origen', origenLabel(paciente.origen)], ['Red social', paciente.red], ['Referido por', paciente.referido_por],
+          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Correo', paciente.email], ['Origen', origenLabel(paciente.origen)], ['Red social', paciente.red], ['Referido por', paciente.referido_por],
           ['Tipo de sangre', paciente.tipo_sangre], ['Alergias', paciente.alergias], ['Enfermedades crónicas', paciente.enfermedades], ['Medicamentos', paciente.medicamentos],
           ['Contacto de emergencia', paciente.contacto_emergencia], ['Teléfono de emergencia', paciente.telefono_emergencia], ['Notas médicas', paciente.notas_medicas],
         ].map(([k, v]) => ({ k, v })) },
@@ -167,7 +167,7 @@ function Expediente({ paciente, onVolver }) {
   return (
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5 }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+      <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.email, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar datos</Button>
         <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar paciente</Button>
@@ -223,7 +223,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
     setBusy(true)
     const limpio = (v) => (typeof v === 'string' ? v.trim() : v) || null
     const { error } = await supabase.from('pacientes').update({
-      nombre: f.nombre.trim(), telefono: limpio(f.telefono), origen: f.origen || null,
+      nombre: f.nombre.trim(), telefono: limpio(f.telefono), email: limpio(f.email), origen: f.origen || null,
       red: f.origen === 'redes' ? f.red || null : null, referido_por: f.origen === 'referido' ? limpio(f.referido_por) : null,
       tipo_sangre: limpio(f.tipo_sangre), alergias: limpio(f.alergias), enfermedades: limpio(f.enfermedades),
       medicamentos: limpio(f.medicamentos), contacto_emergencia: limpio(f.contacto_emergencia),
@@ -239,6 +239,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
       <Grid min={200}>
         <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} /></Campo>
         <Campo label="Teléfono"><Input value={f.telefono} onChange={set('telefono')} /></Campo>
+        <Campo label="Correo electrónico"><Input type="email" value={f.email} onChange={set('email')} /></Campo>
         <Campo label="Origen"><Select value={f.origen} onChange={set('origen')}><option value="">—</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></Campo>
         {f.origen === 'redes' && <Campo label="Red social"><Select value={f.red} onChange={set('red')}><option value="">—</option>{REDES.map(r => <option key={r}>{r}</option>)}</Select></Campo>}
         {f.origen === 'referido' && <Campo label="Referido por"><Input value={f.referido_por} onChange={set('referido_por')} /></Campo>}

@@ -36,7 +36,7 @@ export function Vacio({ icono = 'archivo', titulo, texto, children }) {
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
         <Icon name={icono} size={26} />
       </div>
-      <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: C.black, marginBottom: 6 }}>{titulo}</div>
+      <div style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 700, color: C.black, marginBottom: 6 }}>{titulo}</div>
       {texto && <div style={{ fontSize: 14, marginBottom: 18 }}>{texto}</div>}
       {children}
     </div>
@@ -52,7 +52,7 @@ export function Stat({ icono, label, valor, sub, color = C.purple, bg = C.purple
         </div>
         <div style={{ fontSize: 13, color: C.g500, fontWeight: 600 }}>{label}</div>
       </div>
-      <div style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 600, color: C.black, lineHeight: 1.05, letterSpacing: '-0.02em' }}>{valor}</div>
+      <div style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 700, color: C.black, lineHeight: 1.05, letterSpacing: '-0.02em' }}>{valor}</div>
       {sub && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 6 }}>{sub}</div>}
     </div>
   )
@@ -62,7 +62,7 @@ export function Encabezado({ titulo, subtitulo, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
       <div style={{ flex: 1, minWidth: 220 }}>
-        <h1 style={{ fontFamily: SERIF, fontSize: 32, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{titulo}</h1>
+        <h1 style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 800, color: C.black, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{titulo}</h1>
         {subtitulo && <div style={{ fontSize: 14, color: C.g500, marginTop: 6 }}>{subtitulo}</div>}
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{children}</div>

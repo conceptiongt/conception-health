@@ -11,7 +11,7 @@ import { Icon } from '../components/ui/Icon'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../components/ServicioCampos'
 import { toast } from '../components/ui/Toast'
 
-const vacio = { nombre: '', telefono: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '' }
+const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '' }
 
 export function Registrar() {
   const { citas, pacientes, servicios, perfil, clinica, recargar, ir } = useDatos()
@@ -33,7 +33,7 @@ export function Registrar() {
     const s = servicioParaGuardar(serv)
     setBusy(true)
     const { data: paciente, error } = await supabase.from('pacientes').insert({
-      clinica_id: perfil.clinica_id, nombre: f.nombre.trim(), telefono: f.telefono.trim() || null,
+      clinica_id: perfil.clinica_id, nombre: f.nombre.trim(), telefono: f.telefono.trim() || null, email: f.email.trim() || null,
       origen: f.origen, red: f.origen === 'redes' ? f.red || null : null,
       referido_por: f.origen === 'referido' ? f.referido_por.trim() || null : null, created_by: perfil.user_id,
     }).select().single()
@@ -100,6 +100,7 @@ export function Registrar() {
           <Grid>
             <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} required /></Campo>
             <Campo label="Teléfono"><Input type="tel" value={f.telefono} onChange={set('telefono')} placeholder="5555-1234" /></Campo>
+            <Campo label="Correo electrónico"><Input type="email" value={f.email} onChange={set('email')} placeholder="Opcional" /></Campo>
           </Grid>
         </Card>
         <Card title="Cita">

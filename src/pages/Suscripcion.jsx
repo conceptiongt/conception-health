@@ -18,7 +18,7 @@ export function Suscripcion() {
       <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '20px 22px', boxShadow: SHADOW, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.14em' }}>PLAN ACTUAL</div>
-          <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 600, color: C.black, marginTop: 2 }}>
+          <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 700, color: C.black, marginTop: 2 }}>
             {planActivo && planActual ? `Plan ${planActual.nombre}` : 'Versión de prueba'}
           </div>
           <div style={{ fontSize: 13.5, color: C.g500, marginTop: 2 }}>
@@ -42,7 +42,7 @@ export function Suscripcion() {
                   {actual ? <Badge color={C.purple} bg={C.purpleLight}>Su plan</Badge> : destacado && <Badge color={C.purple} bg={C.purpleLight}>Más completo</Badge>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
-                  <span style={{ fontFamily: SERIF, fontSize: 40, fontWeight: 600, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span>
+                  <span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 800, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span>
                   <span style={{ fontSize: 14, color: C.g500 }}>/ mes</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>

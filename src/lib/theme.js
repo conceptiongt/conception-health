@@ -20,6 +20,7 @@ export const C = {
   orange: '#B45309', orangeLight: '#FDF1E6',
 }
 
-export const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif"
-export const SANS = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+// System font (San Francisco on Apple devices), like the original PatientTrack
+export const SANS = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif"
+export const SERIF = SANS // headings use the same family, heavier weight
 export const SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)'

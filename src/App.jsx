@@ -11,6 +11,7 @@ import { Citas } from './pages/Citas'
 import { Expedientes } from './pages/Expedientes'
 import { Suscripcion } from './pages/Suscripcion'
 import { Configuracion } from './pages/Configuracion'
+import { BaseDatos } from './pages/BaseDatos'
 import { ToastContainer } from './components/ui/Toast'
 import { Cargando, Logo } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
@@ -21,6 +22,7 @@ const NAV = [
   { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
+  { id: 'basedatos', label: 'Base de datos', icono: 'basedatos' },
 ]
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion' },
@@ -80,7 +82,7 @@ function Aplicacion({ sesion }) {
 
           <div style={{ margin: '0 16px 18px', padding: 14, borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, padding: 1.5, background: C.grad, flexShrink: 0 }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: 10.5, background: '#111A2E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SERIF, fontSize: 15, fontWeight: 600 }}>
+              <div style={{ width: '100%', height: '100%', borderRadius: 10.5, background: '#111A2E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SERIF, fontSize: 15, fontWeight: 700 }}>
                 {iniciales(clinica?.nombre || perfil.nombre)}
               </div>
             </div>
@@ -141,6 +143,7 @@ function Aplicacion({ sesion }) {
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
+            : vista === 'basedatos' ? <BaseDatos />
             : vista === 'configuracion' ? <Configuracion />
             : <Suscripcion />}
         </main>

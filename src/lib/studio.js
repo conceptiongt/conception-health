@@ -37,21 +37,24 @@ export async function desvincular(clinica) {
 
 const CANAL = { Instagram: 'instagram', Facebook: 'facebook', TikTok: 'tiktok', WhatsApp: 'whatsapp', LinkedIn: 'linkedin' }
 
-// Monthly totals only — never names, phones or medical records
+const TIPO_KEY = { 'Primera consulta': 'consultas', 'Seguimiento': 'consultas', 'Evaluación': 'consultas', 'Procedimiento': 'procedimientos', 'Cirugía': 'cirugias' }
+
+// Monthly totals only — never names, phones or medical records.
+// "Why they came" = the first appointment of each patient registered that month (whatever its date),
+// with the exact service, e.g. "Cirugía · Rinoplastía".
 export function totalesDelMes({ pacientes, citas, cobros }, m, conIngresos) {
   const nuevos = pacientes.filter(p => enMes(p.created_at, m))
-  const canales = {}
+  const canales = {}, tipos = { consultas: 0, cirugias: 0, procedimientos: 0, otros: 0 }, servicios = {}
   nuevos.forEach(p => {
     const k = p.origen === 'redes' ? CANAL[p.red] || 'otro' : p.origen === 'referido' ? 'referido' : p.origen === 'google' ? 'google' : 'otro'
     canales[k] = (canales[k] || 0) + 1
+    const primera = citas.filter(c => c.paciente_id === p.id).sort((a, b) => (a.created_at || a.fecha).localeCompare(b.created_at || b.fecha))[0]
+    if (!primera) return
+    tipos[TIPO_KEY[primera.tipo] || 'otros'] += 1
+    const detalle = [primera.tipo || 'Consulta', primera.servicio && primera.servicio !== primera.tipo ? primera.servicio : null].filter(Boolean).join(' · ')
+    servicios[detalle] = (servicios[detalle] || 0) + 1
   })
-  const realizadas = citas.filter(c => enMes(c.fecha, m) && !['No asistió', 'Reagendada'].includes(c.estado))
-  const tipos = {
-    consultas: realizadas.filter(c => ['Primera consulta', 'Seguimiento', 'Evaluación'].includes(c.tipo)).length,
-    cirugias: realizadas.filter(c => c.tipo === 'Cirugía').length,
-    procedimientos: realizadas.filter(c => c.tipo === 'Procedimiento').length,
-  }
-  const datos = { cerrados: nuevos.length, canales, tipos }
+  const datos = { cerrados: nuevos.length, canales, tipos, servicios }
   if (conIngresos) datos.ingreso_aprox = cobros.filter(c => enMes(c.fecha, m)).reduce((n, c) => n + (Number(c.pagado) || 0), 0)
   return datos
 }

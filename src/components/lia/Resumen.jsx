@@ -43,9 +43,9 @@ export function Resumen({ irA }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '16px 18px', borderRadius: 16, background: '#fff', border: `1px solid ${C.line}`, boxShadow: SHADOW, marginBottom: 18 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, background: C.amberLight, color: C.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="mensaje" size={19} /></div>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ fontWeight: 700, fontSize: 14.5 }}>{wa === 'solicitado' ? 'Estamos conectando su WhatsApp' : 'Falta conectar su WhatsApp'}</div>
+            <div style={{ fontWeight: 700, fontSize: 14.5 }}>{wa === 'solicitado' ? 'Su WhatsApp todavía no está conectado' : 'Falta conectar su WhatsApp'}</div>
             <div style={{ fontSize: 13.5, color: C.g500 }}>
-              {wa === 'solicitado' ? `Conception le contactará para terminar la conexión. Mientras tanto puede configurar y probar a ${nombreLia}.` : `Cuando lo conecte, ${nombreLia} empieza a contestar a sus pacientes. Mientras tanto puede configurarla y probarla.`}
+              {wa === 'solicitado' ? `Recibimos su solicitud y Conception le contactará para hacer la conexión. Mientras tanto puede configurar y probar a ${nombreLia}.` : `Cuando lo conecte, ${nombreLia} empieza a contestar a sus pacientes. Mientras tanto puede configurarla y probarla.`}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

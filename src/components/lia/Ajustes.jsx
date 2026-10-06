@@ -40,8 +40,13 @@ export function Ajustes({ seccion }) {
   const solicitarWhatsApp = async () => {
     if (numero.replace(/\D/g, '').length < 8) { toast.error('Escriba el número de WhatsApp del consultorio'); return }
     const ok = await guardar({ ...cfg, whatsapp: { estado: 'solicitado', numero: numero.trim(), solicitado_at: new Date().toISOString() } })
-    if (ok) toast.success('Solicitud enviada. Le contactaremos para conectarlo.')
+    if (ok) toast.success('Solicitud enviada. Todavía no está conectado: le contactaremos.')
     else toast.error('No se pudo enviar la solicitud')
+  }
+  const cancelarWhatsApp = async () => {
+    const ok = await guardar({ ...cfg, whatsapp: { estado: 'sin_conectar', numero: '' } })
+    if (ok) { setNumero(''); toast.success('Solicitud cancelada') }
+    else toast.error('No se pudo cancelar la solicitud')
   }
   const wa = cfg.whatsapp?.estado || 'sin_conectar'
   const conHealth = planActivo && ['basico', 'max'].includes(clinica?.plan)
@@ -168,12 +173,17 @@ export function Ajustes({ seccion }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
         <Card>
           <Conexion icono="mensaje" titulo="WhatsApp" estado={wa === 'conectado' ? ['Conectado', C.green, C.greenLight] : wa === 'solicitado' ? ['En proceso', C.amber, C.amberLight] : ['Sin conectar', C.g500, C.g100]} />
-          <p style={{ fontSize: 13.5, color: C.g600, margin: '10px 0', lineHeight: 1.55 }}>Usted sigue usando su WhatsApp Business como siempre. {nombreLia} contesta desde el mismo número y usted ve todo en su teléfono.</p>
+          <p style={{ fontSize: 13.5, color: C.g600, margin: '10px 0', lineHeight: 1.55 }}>Cuando esté conectado, {nombreLia} contesta los mensajes que llegan a su WhatsApp y usted ve cada conversación aquí.</p>
           {wa === 'sin_conectar' && <>
-            <Campo label="Número de WhatsApp del consultorio"><Input value={numero} onChange={setNumero} placeholder="+502 5555 0000" /></Campo>
+            <Campo label="Número de WhatsApp del consultorio" ayuda="Esto solo envía la solicitud. Conception le contacta para hacer la conexión con usted; mientras tanto Lía no contesta en WhatsApp.">
+              <Input value={numero} onChange={setNumero} placeholder="+502 5555 0000" />
+            </Campo>
             <Button variant="brand" style={{ marginTop: 10 }} onClick={solicitarWhatsApp}>Solicitar conexión</Button>
           </>}
-          {wa === 'solicitado' && <div style={{ fontSize: 13, color: C.g500 }}>Número {cfg.whatsapp.numero}. Conception le contactará para terminar la conexión.</div>}
+          {wa === 'solicitado' && <>
+            <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud enviada para el número <b>{cfg.whatsapp.numero}</b>. <b>Todavía no está conectado</b>: Conception le contactará para terminar la conexión.</div>
+            <button style={{ ...botonMini, marginTop: 10 }} onClick={cancelarWhatsApp}>Cancelar solicitud</button>
+          </>}
         </Card>
         <Card>
           <Conexion icono="citas" titulo="Google Calendar" estado={['Próximamente', C.g500, C.g100]} />

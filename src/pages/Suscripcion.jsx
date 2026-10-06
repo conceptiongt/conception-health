@@ -68,9 +68,11 @@ export function Suscripcion() {
                   <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em' }}>PLAN {p.nombre.toUpperCase()}</div>
                   {actual ? <Badge color={C.purple} bg={C.purpleLight}>Su plan</Badge> : destacado && <Badge color={C.purple} bg={C.purpleLight}>Más completo</Badge>}
                 </div>
+                <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Lía', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
-                  <span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 800, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span>
-                  <span style={{ fontSize: 14, color: C.g500 }}>/ mes</span>
+                  {p.precio
+                    ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 800, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
+                    : <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 800, color: C.g400, lineHeight: '46px' }}>Precio por anunciar</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
                   {p.incluye.map(i => (

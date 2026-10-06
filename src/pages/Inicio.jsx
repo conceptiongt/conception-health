@@ -12,8 +12,8 @@ import { filtroStyle } from '../components/ui/Campos'
 
 const hoy = new Date()
 const COLOR_RED = { Instagram: '#7D0080', Facebook: '#534AB7', TikTok: '#1D9E75', WhatsApp: '#3B6D11', LinkedIn: '#0A66C2' }
-const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C' }
-const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas' }
+const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780' }
+const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
 
 function Metrica({ label, valor, sub }) {
   return (

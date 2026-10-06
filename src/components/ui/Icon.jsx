@@ -33,6 +33,15 @@ const P = {
   basedatos: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>,
   cerrar: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
   flecha: <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+  enviar: <><path d="M4.5 12 20 4.5 14.5 20l-2.8-5.7z"/><path d="m11.7 14.3 3.8-3.8"/></>,
+  telefono: <><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></>,
+  mano: <><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4.5a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v8a6.5 6.5 0 0 1-6.5 6.5h-.3A6 6 0 0 1 5.6 18l-1.8-3.4a1.5 1.5 0 0 1 2.5-1.6L8 15"/></>,
+  repetir: <><path d="M17 3.5 20.5 7 17 10.5"/><path d="M3.5 12v-2a3 3 0 0 1 3-3h14"/><path d="M7 20.5 3.5 17 7 13.5"/><path d="M20.5 12v2a3 3 0 0 1-3 3h-14"/></>,
+  libro: <><path d="M5 4.5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><path d="M5 19.5a2 2 0 0 0 2 2h12v-4M9 7h6M9 10.5h4"/></>,
+  candado: <><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></>,
+  play: <><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/></>,
+  refrescar: <><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/></>,
+  lia: <><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.3-4.2A8 8 0 1 1 20 11.5z"/><path d="m8.6 11.6 2.2 2.2 4.6-4.5"/></>,
 }
 
 export function Icon({ name, size = 18, stroke = 1.7, style }) {

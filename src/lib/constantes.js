@@ -10,6 +10,7 @@ export const ESTADOS_CITA = [
   { value: 'Asistió', color: C.green, bg: C.greenLight },
   { value: 'No asistió', color: C.red, bg: C.redLight },
   { value: 'Reagendada', color: C.purple, bg: C.purpleLight },
+  { value: 'Cancelada', color: C.g500, bg: C.g100 },
 ]
 export const estadoCita = (v) => ESTADOS_CITA.find(e => e.value === v) || ESTADOS_CITA[0]
 
@@ -38,6 +39,7 @@ export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','
 export const LIMITE_PRUEBA = 3
 
 // Subscription plans (checkout handled by Recurrente)
+// Max includes Health and Lía; Lía can also be bought alone (receptionist + agenda, without the clinical modules)
 export const PLANES = [
   {
     value: 'basico',
@@ -51,6 +53,24 @@ export const PLANES = [
     nombre: 'Max',
     precio: 'Q375 / mes',
     link: 'https://app.recurrente.com/s/conception/conception-healt-max',
-    incluye: ['Todo lo del plan Básico', 'Inventario por sede', 'Entradas, salidas y traslados', 'Alertas de producto bajo'],
+    incluye: ['Todo lo del plan Básico', 'Lía, su recepcionista virtual en WhatsApp', 'Agenda y seguimiento automáticos', 'Inventario por sede'],
+  },
+  {
+    value: 'lia',
+    nombre: 'Lía',
+    precio: null, // price and Recurrente link pending
+    link: null,
+    incluye: ['Recepcionista virtual en su WhatsApp', 'Contesta y agenda las 24 horas', 'Recontacta, confirma y recuerda citas', 'Agenda de citas (sin expedientes ni cobros)'],
   },
 ]
+export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
+
+// What each account can open: Health (patients, files, charges, reports) and/or Lía
+export function accesos(clinica, planActivo) {
+  const plan = planActivo ? clinica?.plan : null
+  return {
+    prueba: !planActivo,
+    health: !planActivo || plan !== 'lia',
+    lia: plan === 'max' || plan === 'lia',
+  }
+}

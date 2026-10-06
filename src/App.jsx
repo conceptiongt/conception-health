@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { C, SERIF, SHADOW } from './lib/theme'
-import { LIMITE_PRUEBA } from './lib/constantes'
+import { LIMITE_PRUEBA, accesos, nombrePlan } from './lib/constantes'
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
 import { Acceso, CrearPassword } from './pages/Acceso'
@@ -12,6 +12,8 @@ import { Expedientes } from './pages/Expedientes'
 import { Suscripcion } from './pages/Suscripcion'
 import { Configuracion } from './pages/Configuracion'
 import { BaseDatos } from './pages/BaseDatos'
+import { Lia } from './pages/Lia'
+import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
 import { Cargando, Logo } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
@@ -25,6 +27,11 @@ const NAV = [
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'basedatos', label: 'Base de datos', icono: 'basedatos' },
 ]
+const NAV_LIA = [
+  { id: 'lia', label: 'Lía · Recepcionista', icono: 'lia' },
+]
+// Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'basedatos']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion' },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes' },
@@ -46,7 +53,9 @@ export default function App() {
 function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
-  const [vista, setVista] = useState('inicio')
+  const acc = accesos(clinica, planActivo)
+  const [vista, setVista] = useState(() => acc.health ? 'inicio' : 'lia')
+  const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(null)
 
@@ -77,7 +86,7 @@ function Aplicacion({ sesion }) {
   const enPrueba = !planActivo
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = planActivo ? (clinica?.plan === 'max' ? 'Plan Max' : 'Plan Básico') : 'Versión de prueba'
+  const plan = planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba'
 
   return (
     <DatosContext.Provider value={ctx}>
@@ -111,7 +120,7 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {[['MENÚ', NAV], ['CUENTA', NAV_CUENTA]].map(([titulo, items]) => (
+            {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'rgba(255,255,255,0.32)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.18em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -125,6 +134,8 @@ function Aplicacion({ sesion }) {
                       }}>
                         {activo && <span style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3, background: C.grad }} />}
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
+                        {!acc.health && SOLO_HEALTH.includes(n.id) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                        {n.id === 'lia' && pendientesLia > 0 && <span title="Conversaciones que le necesitan" style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
                       </button>
                     )
                   })}
@@ -157,6 +168,8 @@ function Aplicacion({ sesion }) {
           )}
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
+            : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
+            : vista === 'lia' ? <Lia />
             : vista === 'inicio' ? <Inicio />
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
@@ -170,3 +183,20 @@ function Aplicacion({ sesion }) {
   )
 }
 
+
+// Shown to "Lía" plan accounts when they open a Conception Health page
+function SoloHealth({ ir }) {
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
+      <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Esta sección es parte de Conception Health</div>
+      <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
+        Su plan incluye a Lía y la agenda de citas. Con el plan Max también tiene expedientes con fotos, cobros, base de datos y reportes, y cada paciente que agenda Lía llega con su expediente.
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Button variant="ghost" onClick={() => ir('lia')}>Ir a Lía</Button>
+        <Button variant="brand" icon="suscripcion" onClick={() => ir('suscripcion')}>Ver planes</Button>
+      </div>
+    </div>
+  )
+}

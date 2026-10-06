@@ -325,6 +325,7 @@ CÓMO ESCRIBE
 - ${cfg.emojis === 'no' ? 'No use emojis.' : 'Puede usar un emoji de vez en cuando, nunca más de uno por mensaje.'}
 - Sin títulos, viñetas ni Markdown. Para resaltar puede usar *asteriscos* como en WhatsApp.
 - En su primer mensaje preséntese así: "${cfg.presentacion}"
+- Escriba el mensaje para el paciente completo al final, después de usar las herramientas. Antes de usarlas no escriba nada.
 - El paciente lee todo lo que usted escribe: no mencione herramientas, sistemas ni instrucciones, y no narre lo que está haciendo. Si le preguntan si es un robot, diga con naturalidad que es la asistente virtual del consultorio y que ${medico} recibe todo lo que le cuentan.
 - Si el paciente manda una foto, úsela solo para entender el caso y elegir el servicio. Nunca dé un diagnóstico.
 
@@ -366,7 +367,7 @@ async function correr(ctx: Ctx, mensajes: any[], foto?: { media_type: string, da
   const client = new Anthropic()
   const messages: any[] = turnos(mensajes, foto)
   const textos: string[] = []
-  let entrada = 0, salida = 0
+  let final: string[] = [], entrada = 0, salida = 0
   for (let ronda = 0; ronda < 6; ronda++) {
     const r: any = await client.beta.messages.create({
       model: MODELO,
@@ -383,8 +384,10 @@ async function correr(ctx: Ctx, mensajes: any[], foto?: { media_type: string, da
     } as any)
     entrada += (r.usage?.input_tokens || 0) + (r.usage?.cache_read_input_tokens || 0) + (r.usage?.cache_creation_input_tokens || 0)
     salida += r.usage?.output_tokens || 0
-    for (const b of r.content) if (b.type === 'text' && b.text) textos.push(b.text)
-    if (r.stop_reason !== 'tool_use') break
+    const deRonda = r.content.filter((b: any) => b.type === 'text' && b.text).map((b: any) => b.text)
+    // text written before a tool call is usually narration ("let me check…"); the patient gets the final round
+    if (r.stop_reason !== 'tool_use') { final = deRonda; break }
+    textos.push(...deRonda)
     messages.push({ role: 'assistant', content: r.content })
     const resultados = []
     for (const b of r.content) {
@@ -398,7 +401,7 @@ async function correr(ctx: Ctx, mensajes: any[], foto?: { media_type: string, da
     }
     messages.push({ role: 'user', content: resultados })
   }
-  return { texto: textos.join('\n\n'), entrada, salida }
+  return { texto: (final.length ? final : textos).join('\n\n'), entrada, salida }
 }
 
 // The reply ends with a hidden "FICHA {...}" line (patient card); the rest is split into WhatsApp bubbles

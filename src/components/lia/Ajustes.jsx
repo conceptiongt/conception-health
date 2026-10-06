@@ -67,6 +67,15 @@ export function Ajustes({ seccion }) {
           }[cfg.modo]}>
             <Segmentos valor={cfg.modo} onChange={v => set('modo', v)} opciones={[{ value: 'siempre', label: 'Siempre, 24/7' }, { value: 'fuera', label: 'Solo fuera de horario' }, { value: 'pausa', label: 'En pausa' }]} />
           </Campo>
+          <Campo label="A quién contesta" full ayuda={cfg.activacion?.modo === 'palabra'
+            ? `${nombreLia} solo atiende a quien escriba “${cfg.activacion.palabra || nombreLia}” (con o sin tilde, en mayúsculas o minúsculas). Los demás chats no se tocan ni se guardan: los sigue atendiendo usted desde su teléfono.`
+            : `${nombreLia} contesta a todas las personas que escriben a su WhatsApp.`}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Segmentos valor={cfg.activacion?.modo || 'todos'} onChange={v => set('activacion', { palabra: cfg.activacion?.palabra || nombreLia, ...cfg.activacion, modo: v })}
+                opciones={[{ value: 'todos', label: 'A todos' }, { value: 'palabra', label: 'Solo si escriben una palabra' }]} />
+              {cfg.activacion?.modo === 'palabra' && <div style={{ width: 180 }}><Input value={cfg.activacion.palabra} onChange={v => set('activacion.palabra', v)} aria-label="Palabra que activa a Lía" placeholder="Lía" /></div>}
+            </div>
+          </Campo>
         </Grid>
       </Card>
 

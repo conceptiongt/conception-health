@@ -24,6 +24,8 @@ export function configBase(clinica) {
   const nombre = 'Lía'
   return {
     nombre, trato: 'usted', emojis: 'pocos', modo: 'siempre',
+    // 'todos' = answers everyone; 'palabra' = only conversations where the patient wrote the keyword (e.g. "Lía")
+    activacion: { modo: 'todos', palabra: nombre },
     presentacion: `Soy ${nombre}, asistente de ${clinica?.nombre || 'la clínica'}.`,
     datos: {
       doctor: clinica?.nombre || '', especialidad: '', direccion: '', mapa: '', referencias: '', telefono: '',

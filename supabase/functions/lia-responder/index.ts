@@ -110,6 +110,16 @@ const fechaHora = (f: unknown, h: unknown) => {
 const opciones = (ctx: Ctx, dur: number, desde: string, excl?: string) =>
   proximos(ctx, dur, desde, { max: 3, porDia: 2, excl }).map(x => `${fechaLarga(x.fecha)} a las ${x.hora} (${x.fecha} ${x.hora})`).join('; ') || 'ninguna en las próximas semanas'
 
+// Keyword mode: Lía only answers conversations where the patient wrote the keyword (accents and case ignored)
+const dicePalabra = (texto: unknown, palabra: string) => {
+  const k = norm(palabra).replace(/[^a-z0-9 ]/g, '')
+  return !!k && new RegExp(`(^|[^a-z0-9])${k}($|[^a-z0-9])`).test(norm(texto))
+}
+function activada(cfg: any, mensajes: any[]) {
+  if (cfg.activacion?.modo !== 'palabra' || !norm(cfg.activacion.palabra)) return true
+  return mensajes.some(m => m.de === 'l' || (m.de === 'p' && dicePalabra(m.texto, cfg.activacion.palabra)))
+}
+
 // The appointment this conversation holds: a real one in `citas`, or the simulated one of a test chat
 function citaDeConversacion(ctx: Ctx) {
   if (ctx.prueba) return ctx.conv.prueba_cita || null
@@ -430,7 +440,7 @@ function aplicarFicha(ctx: Ctx, f: any) {
 }
 
 // Answers the last patient message(s) of a conversation and stores everything
-async function responder(clinica: any, conv: any, prueba: boolean, foto?: { media_type: string, data: string }) {
+async function responder(clinica: any, conv: any, prueba: boolean, foto?: { media_type: string, data: string }): Promise<{ ctx: Ctx, nuevos: any[], callada?: boolean }> {
   const hoy = ahora().fecha
   const [cfgR, servR, citasR, msgR] = await Promise.all([
     db.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle(),
@@ -444,6 +454,7 @@ async function responder(clinica: any, conv: any, prueba: boolean, foto?: { medi
   const mensajes = (msgR.data || []).reverse()
 
   if (cfg.modo === 'pausa' && !prueba) return { ctx, nuevos: [] }
+  if (!activada(cfg, mensajes)) return { ctx, nuevos: [], callada: true }
   const r = await correr(ctx, mensajes, foto)
   const { partes, ficha } = separar(r.texto)
   aplicarFicha(ctx, ficha)
@@ -506,7 +517,11 @@ Deno.serve(async (req) => {
     try {
       const r = await responder(clinica, conv, true, foto)
       actividad = r.ctx.actividad
-      if (!r.nuevos.length) error = 'sin_respuesta'
+      if (r.callada) {
+        const palabra = r.ctx.cfg.activacion.palabra
+        await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 's', texto: `${r.ctx.cfg.nombre} no contestó: el mensaje no dice “${palabra}”. Así se comportará en WhatsApp con quien no la llame.` })
+        actividad = [{ tipo: 'warn', texto: `No contestó: está configurada para atender solo a quien escriba “${palabra}”` }]
+      } else if (!r.nuevos.length) error = 'sin_respuesta'
     } catch (e) {
       console.error('lia-responder', e)
       error = e instanceof Anthropic.RateLimitError ? 'ocupado' : e instanceof Anthropic.APIError ? 'ia' : 'fallo'

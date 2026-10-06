@@ -61,9 +61,15 @@ export function Conversaciones({ irA }) {
     const t = texto.trim()
     if (!t || !sel) return
     setTexto('')
-    const { error } = await supabase.from('lia_mensajes').insert({ clinica_id: perfil.clinica_id, conversacion_id: sel.id, de: 'd', texto: t })
-    if (error) { toast.error('No se pudo guardar el mensaje'); return }
-    await supabase.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString() }).eq('id', sel.id)
+    // the server sends it through the clinic's WhatsApp (when connected) and stores it
+    const { data, error } = await supabase.functions.invoke('lia-responder', { body: { accion: 'enviar', conversacion_id: sel.id, texto: t } })
+    if (error || data?.error) {
+      setTexto(t)
+      toast.error(data?.error === 'ventana'
+        ? 'Pasaron más de 24 horas desde el último mensaje del paciente: WhatsApp no deja escribirle hasta que vuelva a escribir.'
+        : 'No se pudo enviar el mensaje por WhatsApp')
+      return
+    }
     recargar()
   }
 

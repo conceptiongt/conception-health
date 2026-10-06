@@ -193,6 +193,7 @@ export function Ajustes({ seccion }) {
             <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud enviada para el número <b>{cfg.whatsapp.numero}</b>. <b>Todavía no está conectado</b>: Conception le contactará para terminar la conexión.</div>
             <button style={{ ...botonMini, marginTop: 10 }} onClick={cancelarWhatsApp}>Cancelar solicitud</button>
           </>}
+          {wa === 'conectado' && <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Conectado al número <b>{cfg.whatsapp.numero}</b>.{cfg.activacion?.modo === 'palabra' && <> Por ahora solo contesta a quien escriba “{cfg.activacion.palabra}”.</>}</div>}
         </Card>
         <Card>
           <Conexion icono="citas" titulo="Google Calendar" estado={['Próximamente', C.g500, C.g100]} />

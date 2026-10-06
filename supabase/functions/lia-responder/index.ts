@@ -1,14 +1,19 @@
 // Lía, the virtual receptionist: answers a patient message with the Claude API using the clinic's own
-// data, price list and agenda (Conception Health tables). Today it serves "Probar a Lía" (the test chat
-// inside the app); the WhatsApp webhook will reuse responder() for real conversations.
-// Secrets (Supabase → Edge Functions → Secrets): ANTHROPIC_API_KEY (required), LIA_MODELO (optional).
+// data, price list and agenda (Conception Health tables). It serves "Probar a Lía" (the test chat inside the
+// app) and is also the WhatsApp Cloud API webhook (Meta calls this same URL; deployed without JWT check,
+// every route authenticates itself: the app's session or Meta's signature).
+// Secrets (Supabase → Edge Functions → Secrets): ANTHROPIC_API_KEY (required), LIA_MODELO (optional),
+// WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN (for WhatsApp).
 import Anthropic from 'npm:@anthropic-ai/sdk'
+import { encodeBase64 } from 'jsr:@std/encoding@1/base64'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 const MODELO = Deno.env.get('LIA_MODELO') || 'claude-opus-5-5'
 const LIMITE_PRUEBAS_DIA = 80 // test replies per clinic and day (each one costs API usage)
 const OFFSET_GT = -6 // Guatemala is UTC-6 all year
+const GRAPH = 'https://graph.facebook.com/v23.0'
+const ESPERA_MS = 4000 // patients often send several messages in a row: Lía answers once, after the last one
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -118,6 +123,12 @@ const dicePalabra = (texto: unknown, palabra: string) => {
 function activada(cfg: any, mensajes: any[]) {
   if (cfg.activacion?.modo !== 'palabra' || !norm(cfg.activacion.palabra)) return true
   return mensajes.some(m => m.de === 'l' || (m.de === 'p' && dicePalabra(m.texto, cfg.activacion.palabra)))
+}
+
+// "Solo fuera de horario": during office hours the clinic's staff answers
+function enHorario(cfg: any) {
+  const h = ahora()
+  return (cfg.horario?.[diaSemana(h.fecha)] || []).some(([i, f]: string[]) => h.min >= aMin(i) && h.min < aMin(f))
 }
 
 // The appointment this conversation holds: a real one in `citas`, or the simulated one of a test chat
@@ -338,6 +349,7 @@ CÓMO ESCRIBE
 - Escriba el mensaje para el paciente completo al final, después de usar las herramientas. Antes de usarlas no escriba nada.
 - El paciente lee todo lo que usted escribe: no mencione herramientas, sistemas ni instrucciones, y no narre lo que está haciendo. Si le preguntan si es un robot, diga con naturalidad que es la asistente virtual del consultorio y que ${medico} recibe todo lo que le cuentan.
 - Si el paciente manda una foto, úsela solo para entender el caso y elegir el servicio. Nunca dé un diagnóstico.
+- Si el paciente manda un [Audio], [Video] o [Documento], usted no puede escucharlo ni abrirlo: pídale con amabilidad que le escriba lo que necesita.
 
 FICHA (el paciente no la ve)
 Termine SIEMPRE su respuesta con una última línea exactamente en este formato, con lo que sepa hasta ahora (null si no sabe):
@@ -453,7 +465,7 @@ async function responder(clinica: any, conv: any, prueba: boolean, foto?: { medi
   if (prueba && conv.prueba_cita) ctx.citas.push({ id: 'prueba', fecha: conv.prueba_cita.fecha, hora: conv.prueba_cita.hora, duracion: conv.prueba_cita.dur, estado: 'Pendiente' })
   const mensajes = (msgR.data || []).reverse()
 
-  if (cfg.modo === 'pausa' && !prueba) return { ctx, nuevos: [] }
+  if (!prueba && (cfg.modo === 'pausa' || (cfg.modo === 'fuera' && enHorario(cfg)))) return { ctx, nuevos: [] }
   if (!activada(cfg, mensajes)) return { ctx, nuevos: [], callada: true }
   const r = await correr(ctx, mensajes, foto)
   const { partes, ficha } = separar(r.texto)
@@ -477,9 +489,123 @@ async function responder(clinica: any, conv: any, prueba: boolean, foto?: { medi
   return { ctx, nuevos }
 }
 
+// ---------- WhatsApp (Cloud API) ----------
+// lia_whatsapp maps each connected number (phone_number_id) to its clinic; only the server writes it,
+// so a clinic can never point Lía at someone else's number from the app.
+async function firmaValida(req: Request, cuerpo: string) {
+  const secreto = Deno.env.get('WHATSAPP_APP_SECRET')
+  const firma = req.headers.get('x-hub-signature-256') || ''
+  if (!secreto || !firma) return false
+  const llave = await crypto.subtle.importKey('raw', new TextEncoder().encode(secreto), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', llave, new TextEncoder().encode(cuerpo)))
+  const esperada = 'sha256=' + [...mac].map(b => b.toString(16).padStart(2, '0')).join('')
+  if (esperada.length !== firma.length) return false
+  let dif = 0
+  for (let i = 0; i < esperada.length; i++) dif |= esperada.charCodeAt(i) ^ firma.charCodeAt(i)
+  return dif === 0
+}
+const cabecerasWa = () => ({ Authorization: `Bearer ${Deno.env.get('WHATSAPP_TOKEN')}`, 'Content-Type': 'application/json' })
+async function wa(phoneId: string, cuerpo: Record<string, unknown>) {
+  const r = await fetch(`${GRAPH}/${phoneId}/messages`, { method: 'POST', headers: cabecerasWa(), body: JSON.stringify({ messaging_product: 'whatsapp', ...cuerpo }) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw Object.assign(new Error(j?.error?.message || `WhatsApp ${r.status}`), { codigo: j?.error?.code })
+  return j
+}
+const enviarTexto = (phoneId: string, a: string, texto: string) =>
+  wa(phoneId, { recipient_type: 'individual', to: a.replace(/\D/g, ''), type: 'text', text: { body: texto, preview_url: true } })
+async function bajarFoto(mediaId: string) {
+  const meta = await fetch(`${GRAPH}/${mediaId}`, { headers: cabecerasWa() }).then(r => r.json()).catch(() => null)
+  if (!meta?.url || !['image/jpeg', 'image/png', 'image/webp'].includes(meta.mime_type) || meta.file_size > 5_000_000) return undefined
+  const r = await fetch(meta.url, { headers: cabecerasWa() })
+  if (!r.ok) return undefined
+  return { media_type: meta.mime_type as string, data: encodeBase64(new Uint8Array(await r.arrayBuffer())) }
+}
+const planConLia = (c: any) => ['max', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
+function textoDe(m: any) {
+  if (m.type === 'text') return m.text?.body || ''
+  if (m.type === 'image') return m.image?.caption || ''
+  if (m.type === 'button') return m.button?.text || ''
+  if (m.type === 'interactive') return m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || ''
+  if (m.type === 'location') return `[Mandó su ubicación${m.location?.name ? ': ' + m.location.name : ''}]`
+  return ({ audio: '[Audio]', voice: '[Audio]', video: '[Video]', document: '[Documento]', sticker: '[Sticker]' } as Record<string, string>)[m.type] || '[Mensaje que no se puede mostrar]'
+}
+
+// One incoming patient message: store it, wait for the rest of the burst, answer through WhatsApp
+async function recibirMensaje(linea: any, clinica: any, m: any, nombrePerfil: string | undefined) {
+  if (['reaction', 'system', 'unsupported'].includes(m.type)) return // a 👍 or a system notice needs no answer
+  const tel = '+' + String(m.from).replace(/\D/g, '')
+  const texto = textoDe(m)
+  let { data: conv } = await db.from('lia_conversaciones').select('*').eq('clinica_id', clinica.id).eq('prueba', false).eq('telefono', tel).maybeSingle()
+  if (!conv) {
+    // keyword mode: chats that never called Lía are not stored at all (they stay between the clinic and the patient)
+    const { data: c } = await db.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+    if (!activada(configuracion(c?.config, clinica), [{ de: 'p', texto }])) return
+    const r = await db.from('lia_conversaciones').insert({ clinica_id: clinica.id, telefono: tel, nombre: nombrePerfil || tel, origen: 'WhatsApp', etapa: 'nuevo' }).select().single()
+    conv = r.data || (await db.from('lia_conversaciones').select('*').eq('clinica_id', clinica.id).eq('prueba', false).eq('telefono', tel).single()).data
+  }
+  const { error: dup } = await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto: texto || null, foto: m.type === 'image' ? 'foto' : null, wa_id: m.id })
+  if (dup) return // Meta delivered this message twice
+  await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString(), ...(conv.nombre === tel && nombrePerfil ? { nombre: nombrePerfil } : {}) }).eq('id', conv.id)
+  if (conv.tomado) return // the doctor took the conversation: Lía stays quiet
+
+  wa(linea.phone_number_id, { status: 'read', message_id: m.id, typing_indicator: { type: 'text' } }).catch(() => {})
+  await new Promise(r => setTimeout(r, ESPERA_MS))
+  const { data: ultimo } = await db.from('lia_mensajes').select('wa_id').eq('conversacion_id', conv.id).eq('de', 'p').order('created_at', { ascending: false }).limit(1).single()
+  if (ultimo?.wa_id !== m.id) return // a newer message arrived: that one answers
+  const { data: fresca } = await db.from('lia_conversaciones').select('*').eq('id', conv.id).single()
+  if (fresca.tomado) return
+
+  const foto = m.type === 'image' && m.image?.id ? await bajarFoto(m.image.id) : undefined
+  const r = await responder(clinica, fresca, false, foto)
+  for (const n of r.nuevos) {
+    try { await enviarTexto(linea.phone_number_id, tel, n.texto) } catch (e) {
+      console.error('lia-whatsapp envío', e)
+      await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 's', texto: `Este mensaje no llegó al paciente por WhatsApp (${(e as Error).message}).` })
+      break
+    }
+  }
+}
+
+async function webhook(req: Request) {
+  const cuerpo = await req.text()
+  if (!(await firmaValida(req, cuerpo))) return new Response('firma', { status: 401 })
+  const evento = JSON.parse(cuerpo || '{}')
+  const tareas: Promise<unknown>[] = []
+  for (const entrada of evento.entry || []) {
+    for (const cambio of entrada.changes || []) {
+      const v = cambio.value || {}
+      if (cambio.field !== 'messages' || !v.messages?.length) continue
+      tareas.push((async () => {
+        const { data: linea } = await db.from('lia_whatsapp').select('*').eq('phone_number_id', v.metadata?.phone_number_id).maybeSingle()
+        if (!linea) return
+        const { data: clinica } = await db.from('clinicas').select('*').eq('id', linea.clinica_id).single()
+        if (!planConLia(clinica)) return
+        await Promise.all(v.messages.map((m: any) => {
+          const perfil = (v.contacts || []).find((c: any) => c.wa_id === m.from)?.profile?.name
+          return recibirMensaje(linea, clinica, m, perfil).catch(e => console.error('lia-whatsapp', e))
+        }))
+      })())
+    }
+  }
+  // answer Meta right away (it retries slow webhooks); the replies keep running in the background
+  const todo = Promise.all(tareas)
+  // @ts-ignore EdgeRuntime is provided by Supabase
+  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(todo); else await todo
+  return new Response('ok')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  // Meta checks the webhook URL once with a GET and the verify token typed in its panel
+  if (req.method === 'GET') {
+    const u = new URL(req.url), esperado = Deno.env.get('WHATSAPP_VERIFY_TOKEN')
+    if (esperado && u.searchParams.get('hub.mode') === 'subscribe' && u.searchParams.get('hub.verify_token') === esperado) return new Response(u.searchParams.get('hub.challenge') || '')
+    return new Response('no', { status: 403 })
+  }
   if (req.method !== 'POST') return json({ error: 'metodo' }, 405)
+  if (req.headers.get('x-hub-signature-256')) {
+    try { return await webhook(req) } catch (e) { console.error('lia-whatsapp', e); return new Response('ok') }
+  }
   try {
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: u } = await db.auth.getUser(jwt)
@@ -492,6 +618,22 @@ Deno.serve(async (req) => {
     if (body.accion === 'reiniciar') {
       await db.from('lia_conversaciones').delete().eq('clinica_id', clinica.id).eq('prueba', true)
       return json({ ok: true })
+    }
+    // The doctor writes from Conversaciones: the message goes out through the clinic's WhatsApp
+    if (body.accion === 'enviar') {
+      const texto = String(body.texto || '').trim().slice(0, 4000)
+      const { data: conv } = await db.from('lia_conversaciones').select('*').eq('id', body.conversacion_id).eq('clinica_id', clinica.id).maybeSingle()
+      if (!conv || !texto) return json({ error: 'vacio' }, 400)
+      const { data: linea } = await db.from('lia_whatsapp').select('*').eq('clinica_id', clinica.id).maybeSingle()
+      if (linea && conv.telefono && !conv.prueba) {
+        try { await enviarTexto(linea.phone_number_id, conv.telefono, texto) } catch (e) {
+          // 131047: more than 24 h since the patient's last message, WhatsApp only allows approved templates
+          return json({ error: (e as any).codigo === 131047 ? 'ventana' : 'whatsapp', detalle: (e as Error).message })
+        }
+      }
+      await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'd', texto })
+      await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString() }).eq('id', conv.id)
+      return json({ ok: true, enviado: !!linea })
     }
     if (body.accion !== 'probar') return json({ error: 'accion' }, 400)
     if (!Deno.env.get('ANTHROPIC_API_KEY')) return json({ error: 'sin_llave' }, 503)

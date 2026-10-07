@@ -5,13 +5,14 @@ import { supabase } from '../lib/supabase'
 export function useInventario() {
   const [inv, setInv] = useState(null)
   const recargar = useCallback(async () => {
-    const [s, p, e] = await Promise.all([
+    const [s, p, e, pr] = await Promise.all([
       supabase.from('sedes').select('*').order('nombre'),
       supabase.from('productos').select('*').order('nombre'),
       supabase.from('existencias').select('*'),
+      supabase.from('proveedores').select('*').order('nombre'),
     ])
-    const error = s.error || p.error || e.error
-    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data })
+    const error = s.error || p.error || e.error || pr.error
+    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data, proveedores: pr.data })
   }, [])
   useEffect(() => { recargar() }, [recargar])
   return { inv, recargar }
@@ -55,13 +56,16 @@ export const valorInventario = (inv, sedeId) =>
   (inv?.existencias || []).filter(e => !sedeId || e.sede_id === sedeId)
     .reduce((n, e) => n + Number(e.cantidad) * (Number(inv.productos.find(p => p.id === e.producto_id)?.costo) || 0), 0)
 
-// Locations below their minimum, with a suggested quantity to bring them to twice the minimum
-export function porReabastecer(inv, sedes, productos) {
+// Locations below their minimum. Suggested order: up to the product's maximum (min/max rule, like Odoo),
+// or twice the minimum when no maximum is set. `enCamino` = quantities already ordered and not yet received.
+export function porReabastecer(inv, sedes, productos, enCamino = {}) {
   const filas = []
   for (const s of sedes) for (const p of productos) {
     if (!bajoMinimo(inv, s.id, p)) continue
     const hay = existencia(inv, s.id, p.id), min = Number(p.stock_minimo)
-    filas.push({ sede: s, producto: p, hay, min, sugerido: Math.max(1, Math.ceil(min * 2 - hay)) })
+    const tope = Number(p.stock_maximo) > min ? Number(p.stock_maximo) : min * 2
+    const pedido = enCamino[s.id + '|' + p.id] || 0
+    filas.push({ sede: s, producto: p, hay, min, tope, pedido, sugerido: Math.max(0, Math.ceil(tope - hay - pedido)) })
   }
   return filas.sort((a, b) => a.hay / a.min - b.hay / b.min)
 }

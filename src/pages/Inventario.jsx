@@ -14,6 +14,7 @@ import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
 import { categoriasDe } from '../components/inventario/Selectores'
+import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
 const mesActual = () => new Date().toISOString().slice(0, 7)
@@ -27,20 +28,32 @@ export function Inventario() {
   const [producto, setProducto] = useState(undefined) // product form: undefined closed, null new, object edit
   const [sede, setSede] = useState(undefined)
   const [detalle, setDetalle] = useState(null)  // product detail
+  const [compras, setCompras] = useState(null)  // { ordenes, lineas }
+  const [orden, setOrden] = useState(undefined) // order form: undefined closed, { orden?, inicial? }
+  const [ordenAbierta, setOrdenAbierta] = useState(null)
+  const [proveedor, setProveedor] = useState(undefined) // supplier form, with optional callback
 
   const cargarMovs = useCallback(async () => {
     const { data } = await supabase.from('inventario_movimientos').select('*').order('created_at', { ascending: false }).limit(1000)
     setMovs(data || [])
   }, [])
-  useEffect(() => { cargarMovs() }, [cargarMovs])
-  const recargar = () => { recargarInv(); cargarMovs() }
+  const cargarCompras = useCallback(async () => {
+    const [o, l] = await Promise.all([
+      supabase.from('ordenes_compra').select('*').order('numero', { ascending: false }),
+      supabase.from('ordenes_compra_lineas').select('*'),
+    ])
+    setCompras({ ordenes: o.data || [], lineas: l.data || [] })
+  }, [])
+  useEffect(() => { cargarMovs(); cargarCompras() }, [cargarMovs, cargarCompras])
+  const recargar = () => { recargarInv(); cargarMovs(); cargarCompras() }
 
-  if (!inv || !movs) return <Cargando />
+  if (!inv || !movs || !compras) return <Cargando />
   if (inv.error) return <div style={{ color: C.red, padding: 30 }}>No se pudo cargar el inventario: {inv.error}</div>
 
   const sedes = inv.sedes.filter(s => s.activa)
   const productos = inv.productos.filter(p => p.activo)
-  const reabastecer = porReabastecer(inv, sedes, productos)
+  const reabastecer = porReabastecer(inv, sedes, productos, enCamino(compras.ordenes, compras.lineas))
+  const abiertas = compras.ordenes.filter(o => ['borrador', 'enviada', 'confirmada', 'parcial'].includes(o.estado)).length
   const vencen = porVencer(inv, movs)
   const listo = sedes.length > 0 && productos.length > 0
   const operar = (inicial) => {
@@ -48,11 +61,35 @@ export function Inventario() {
     setMov(inicial)
   }
   const verSede = (id) => { setSedeFiltro(id); setTab('productos') }
+  const nuevaOrden = (inicial = {}) => {
+    if (!sedes.length || !productos.length) { toast.error(!sedes.length ? 'Primero cree una sede' : 'Primero agregue un producto'); return }
+    setOrden({ inicial })
+  }
+  // From restocking: one draft order per location and usual supplier, like Odoo's replenishment
+  const crearOrdenes = async (filas) => {
+    const grupos = {}
+    for (const f of filas) {
+      const k = f.sede.id + '|' + (f.producto.proveedor_id || '')
+      ;(grupos[k] ||= { sede: f.sede.id, proveedor: f.producto.proveedor_id || null, lineas: [] }).lineas.push(f)
+    }
+    let creadas = 0
+    for (const g of Object.values(grupos)) {
+      const { data, error } = await supabase.from('ordenes_compra').insert({ sede_id: g.sede, proveedor_id: g.proveedor }).select().single()
+      if (error) continue
+      const { error: e2 } = await supabase.from('ordenes_compra_lineas').insert(g.lineas.map(f => ({ orden_id: data.id, producto_id: f.producto.id, cantidad: f.sugerido, costo_unitario: Number(f.producto.costo) || 0 })))
+      if (!e2) creadas++
+    }
+    if (!creadas) { toast.error('No se pudieron crear las órdenes'); return }
+    toast.success(creadas === 1 ? 'Se creó 1 orden de compra en borrador' : `Se crearon ${creadas} órdenes de compra en borrador (una por sede y proveedor)`)
+    await cargarCompras(); setTab('compras')
+  }
 
   const TABS = [
     { value: 'resumen', label: 'Resumen', icono: 'inicio' },
     { value: 'productos', label: 'Productos', icono: 'caja' },
     { value: 'reabastecer', label: `Reabastecer${reabastecer.length ? ` (${reabastecer.length})` : ''}`, icono: 'alerta' },
+    { value: 'compras', label: `Compras${abiertas ? ` (${abiertas})` : ''}`, icono: 'cartera' },
+    { value: 'proveedores', label: 'Proveedores', icono: 'usuarios' },
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
     { value: 'historial', label: 'Historial', icono: 'actividad' },
   ]
@@ -61,11 +98,22 @@ export function Inventario() {
     <>
       <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} · vale ${fmtQ(valorInventario(inv))}`}>
         <Button variant="ghost" icon="sede" onClick={() => setSede(null)}>Nueva sede</Button>
-        <Button icon="mas" onClick={() => setProducto(null)}>Nuevo producto</Button>
+        <Button variant="ghost" icon="mas" onClick={() => setProducto(null)}>Nuevo producto</Button>
+        <Button icon="cartera" onClick={() => nuevaOrden()}>Nueva compra</Button>
       </Encabezado>
 
       {/* Everyday operations, like a warehouse dashboard */}
-      <div className="inv-cuatro" style={{ marginBottom: 22 }}>
+      <div className="inv-ops" style={{ marginBottom: 22 }}>
+        <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderRadius: 24, border: 'none', background: C.lavender, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+        }}>
+          <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="cartera" size={21} /></div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 500, color: C.black, letterSpacing: '-0.015em' }}>Comprar</div>
+            <div style={{ fontSize: 12.5, color: C.g600, lineHeight: 1.35 }}>Órdenes a proveedores</div>
+            {abiertas > 0 && <div style={{ fontSize: 11.5, fontWeight: 600, color: C.purple, marginTop: 3 }}>{abiertas} abiertas</div>}
+          </div>
+        </button>
         {OPERACIONES.map(o => {
           const n = movs.filter(m => m.tipo === o.tipo && m.fecha?.startsWith(mesActual()) && (o.tipo !== 'traslado' || m.delta > 0)).length
           const off = o.tipo === 'traslado' && sedes.length < 2
@@ -91,14 +139,23 @@ export function Inventario() {
         ? <Resumen inv={inv} movs={movs} sedes={sedes} productos={productos} reabastecer={reabastecer} vencen={vencen} operar={operar} verSede={verSede} irA={setTab} abrir={setDetalle} />
         : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} />}
-      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} />}
+      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={crearOrdenes} />}
+      {tab === 'compras' && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
+      {tab === 'proveedores' && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
       {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
       {tab === 'historial' && <Historial inv={inv} movs={movs} onCambio={recargar} />}
 
       {detalle && <ProductoDetalle inv={inv} movs={movs} sedes={sedes} producto={inv.productos.find(p => p.id === detalle.id) || detalle}
         onClose={() => setDetalle(null)} operar={(i) => { setDetalle(null); operar(i) }} editar={(p) => { setDetalle(null); setProducto(p) }} />}
       {mov && <MovimientoModal inv={inv} inicial={mov} onClose={() => setMov(null)} onGuardado={() => { setMov(null); recargar() }} />}
-      {producto !== undefined && <ProductoModal producto={producto} categorias={categoriasDe(inv.productos)} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
+      {orden !== undefined && <OrdenModal inv={inv} orden={orden.orden} lineasIniciales={orden.orden ? compras.lineas.filter(l => l.orden_id === orden.orden.id) : []} inicial={orden.inicial}
+        onNuevoProveedor={(cb) => setProveedor({ p: null, cb })}
+        onClose={() => setOrden(undefined)} onGuardado={async (id) => { setOrden(undefined); await cargarCompras(); setTab('compras'); setOrdenAbierta(id) }} />}
+      {ordenAbierta && compras.ordenes.find(o => o.id === ordenAbierta) && <OrdenDetalle inv={inv} orden={compras.ordenes.find(o => o.id === ordenAbierta)} lineas={compras.lineas.filter(l => l.orden_id === ordenAbierta)}
+        onClose={() => setOrdenAbierta(null)} onCambio={recargar} onEditar={(o) => { setOrdenAbierta(null); setOrden({ orden: o }) }} />}
+      {proveedor !== undefined && <ProveedorModal proveedor={proveedor.p} onClose={() => setProveedor(undefined)}
+        onGuardado={(data) => { const cb = proveedor.cb; setProveedor(undefined); recargarInv(); cb?.(data.id) }} />}
+      {producto !== undefined && <ProductoModal producto={producto} categorias={categoriasDe(inv.productos)} proveedores={inv.proveedores} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
       {sede !== undefined && <SedeModal sede={sede} onClose={() => setSede(undefined)} onGuardado={() => { setSede(undefined); recargar() }} />}
     </>
   )
@@ -413,20 +470,32 @@ function ProductoDetalle({ inv, movs, sedes, producto: p, onClose, operar, edita
 }
 
 // ─── Restock suggestions and expiring lots ───
-function Reabastecer({ filas, vencen, inv, operar }) {
+function Reabastecer({ filas, vencen, inv, operar, crearOrdenes }) {
   const sede = (id) => inv.sedes.find(s => s.id === id)
   const producto = (id) => inv.productos.find(p => p.id === id)
+  const proveedor = (id) => inv.proveedores.find(p => p.id === id)
+  const clave = (f) => f.sede.id + '|' + f.producto.id
+  const pedibles = filas.filter(f => f.sugerido > 0)
+  const [marcadas, setMarcadas] = useState(() => new Set(pedibles.map(clave)))
+  const [busy, setBusy] = useState(false)
+  const alternar = (k) => setMarcadas(m => { const n = new Set(m); n.has(k) ? n.delete(k) : n.add(k); return n })
+  const elegidas = pedibles.filter(f => marcadas.has(clave(f)))
+  const crear = async () => { setBusy(true); await crearOrdenes(elegidas); setBusy(false) }
   return (
     <>
-      <Card title="Productos por reabastecer" right={<span style={{ fontSize: 12.5, color: C.g400 }}>Sugerido: lo necesario para llegar al doble del mínimo</span>}>
+      <Card title="Productos por reabastecer" right={pedibles.length > 0 && <Button icon="cartera" onClick={crear} disabled={busy || !elegidas.length}>{busy ? 'Creando…' : `Crear orden de compra (${elegidas.length})`}</Button>}>
+        <div style={{ fontSize: 13, color: C.g500, marginTop: -6, marginBottom: 14 }}>Se sugiere pedir lo necesario para llegar al máximo de cada producto (o al doble del mínimo si no tiene máximo), descontando lo que ya viene en camino. Se crea un borrador por sede y proveedor.</div>
         {filas.length === 0
           ? <Vacio icono="check" titulo="Nada por reabastecer" texto="Todas las sedes están sobre el mínimo de cada producto." />
-          : <Tabla columnas={['Producto', 'Sede', 'Hay', 'Mínimo', 'Pedir', '']}
-              filas={filas.map(f => ({ key: f.sede.id + f.producto.id, celdas: [
-                <strong>{f.producto.nombre}</strong>, f.sede.nombre,
-                <strong style={{ color: f.hay ? C.amber : C.red }}>{fmtCant(f.hay)}</strong>, fmtCant(f.min),
-                <span style={{ fontWeight: 700 }}>{fmtCant(f.sugerido)} {f.producto.unidad}</span>,
-                <Button size="sm" variant="ghost" icon="descargar" onClick={() => operar({ tipo: 'entrada', sede: f.sede.id, producto: f.producto.id, cantidad: f.sugerido })}>Ya llegó</Button>,
+          : <Tabla columnas={['', 'Producto', 'Sede', 'Hay', 'Mín. / máx.', 'En camino', 'Pedir', 'Proveedor', '']}
+              filas={filas.map(f => ({ key: clave(f), celdas: [
+                f.sugerido > 0 ? <input type="checkbox" checked={marcadas.has(clave(f))} onChange={() => alternar(clave(f))} style={{ width: 16, height: 16, accentColor: C.purple }} /> : '',
+                <strong style={{ fontWeight: 500 }}>{f.producto.nombre}</strong>, f.sede.nombre,
+                <strong style={{ color: f.hay ? C.amber : C.red, fontWeight: 600 }}>{fmtCant(f.hay)}</strong>, `${fmtCant(f.min)} / ${fmtCant(f.tope)}`,
+                f.pedido ? <span style={{ color: C.purple }}>{fmtCant(f.pedido)}</span> : '—',
+                f.sugerido > 0 ? <span style={{ fontWeight: 600 }}>{fmtCant(f.sugerido)} {f.producto.unidad}</span> : <span style={{ color: C.g400 }}>Ya pedido</span>,
+                proveedor(f.producto.proveedor_id)?.nombre || <span style={{ color: C.g400 }}>—</span>,
+                <Button size="sm" variant="ghost" icon="descargar" onClick={() => operar({ tipo: 'entrada', sede: f.sede.id, producto: f.producto.id, cantidad: f.sugerido || undefined })}>Ya llegó</Button>,
               ] }))} />}
       </Card>
       <Card title="Por vencer (próximos 60 días)" style={{ marginTop: 16 }}>

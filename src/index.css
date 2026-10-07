@@ -73,3 +73,12 @@ button:focus-visible { outline: 2px solid #6161FF; outline-offset: 2px; }
 .inv-cuatro { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1180px) { .inv-cuatro { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .inv-cuatro { grid-template-columns: 1fr; } }
+
+/* Purchase order lines */
+.oc-fila { display: grid; grid-template-columns: minmax(0, 2fr) 100px 140px 110px 32px; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid #F0F1F5; }
+.oc-fila.oc-cab { border-top: none; font-size: 12px; color: #676879; background: #F8F9FB; border-radius: 16px 16px 0 0; }
+@media (max-width: 640px) { .oc-fila { grid-template-columns: 1fr 1fr; } .oc-fila > :first-child { grid-column: 1 / -1; } .oc-fila.oc-cab { display: none; } }
+.inv-ops { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1380px) { .inv-ops { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .inv-ops { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .inv-ops { grid-template-columns: 1fr; } }

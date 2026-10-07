@@ -3,8 +3,8 @@ import { Icon } from './Icon'
 
 // Pill buttons: violet is the single action color; secondary actions are outlined
 const VARIANTS = {
-  primary: { background: C.purple, color: '#fff', border: `1px solid ${C.purple}` },
-  brand: { background: C.purple, color: '#fff', border: `1px solid ${C.purple}` },
+  primary: { background: C.purple, color: C.onPurple, border: `1px solid ${C.purple}` },
+  brand: { background: C.purple, color: C.onPurple, border: `1px solid ${C.purple}` },
   ghost: { background: '#fff', color: C.black, border: `1px solid ${C.g300}` },
   danger: { background: '#fff', color: C.red, border: '1px solid #F4C4CD' },
   soft: { background: C.purpleMid, color: C.purple, border: `1px solid ${C.purpleLight}` },

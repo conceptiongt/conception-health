@@ -3,6 +3,7 @@ import { C, SHADOW } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
 import { slug } from '../lib/excel'
+import { especialidad } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Card, Badge, Indicadores } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -100,7 +101,7 @@ export function Inicio() {
     <>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
-        <div style={{ fontSize: 14, color: C.g400, fontStyle: 'italic', marginTop: 4 }}>No está aquí para encajar. Está para destacar.</div>
+        <div style={{ fontSize: 14, color: C.g500, marginTop: 4 }}>{especialidad(clinica?.especialidad).lema}</div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>

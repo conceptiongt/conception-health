@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { TIPOS_CITA, ESTADOS_CITA, estadoCita } from '../lib/constantes'
+import { ESTADOS_CITA, estadoCita } from '../lib/constantes'
+import { especialidad, tiposDe } from '../lib/especialidades'
+import { CamposEspecialidad, limpiarDatos } from './CamposEspecialidad'
 import { hoyISO, fmtFecha, fmtFechaCorta, fmtQ, saldo } from '../lib/formato'
 import { Button } from './ui/Button'
 import { Badge } from './ui/Varios'
@@ -13,11 +15,12 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from './Servicio
 
 // Create or edit a consultation on its own full screen (roomy notes); `cita` null = new
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
-  const { servicios, sedes = [], acc, citas = [], cobros = [] } = useDatos()
+  const { servicios, sedes = [], acc, citas = [], cobros = [], clinica } = useDatos()
+  const esp = especialidad(clinica?.especialidad)
   const [f, setF] = useState({
     fecha: cita?.fecha || hoyISO(), hora: cita?.hora?.slice(0, 5) || '', tipo: cita?.tipo || 'Seguimiento',
     estado: cita?.estado || 'Pendiente', peso: cita?.peso ?? '', talla: cita?.talla ?? '',
-    procedimiento: cita?.procedimiento || '', notas: cita?.notas || '', sede: cita?.sede_id || paciente?.sede_id || (sedes.length === 1 ? sedes[0].id : ''),
+    procedimiento: cita?.procedimiento || '', notas: cita?.notas || '', datos: cita?.datos || {}, sede: cita?.sede_id || paciente?.sede_id || (sedes.length === 1 ? sedes[0].id : ''),
   })
   const [serv, setServ] = useState(() => servicioInicial(cita?.tipo || 'Seguimiento', servicios, cita))
   const [busy, setBusy] = useState(false)
@@ -36,7 +39,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
       servicio_id: s.servicio_id, servicio: s.servicio,
       fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado,
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
-      procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null,
+      procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
     }
     setBusy(true)
@@ -89,14 +92,19 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
               <Campo label="Hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
               <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
-              <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></Campo>
+              <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
               <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita} />
             </Grid>
           </section>
 
           <section className="bloque">
+            <h3>{esp.label}</h3>
+            <CamposEspecialidad esp={clinica?.especialidad} valor={f.datos} onChange={set('datos')} />
+          </section>
+
+          <section className="bloque">
             <h3>Notas médicas</h3>
-            <Textarea value={f.notas} onChange={set('notas')} rows={14} placeholder="Motivo de consulta, hallazgos, diagnóstico, indicaciones…" />
+            <Textarea value={f.notas} onChange={set('notas')} rows={14} placeholder={esp.notas} />
             <div style={{ marginTop: 16 }}>
               <Campo label="Procedimiento realizado / a realizar"><Textarea value={f.procedimiento} onChange={set('procedimiento')} rows={3} /></Campo>
             </div>

@@ -13,6 +13,8 @@ import { toast } from '../components/ui/Toast'
 import { VinculoStudio } from '../components/VinculoStudio'
 import { SelectorColor } from '../components/SelectorColor'
 import { SedeModal } from '../components/inventario/Formularios'
+import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
+import { cargarSugeridos } from '../lib/sugeridos'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
@@ -31,25 +33,32 @@ export function Configuracion() {
 
 // ─── Name, logo and color: used in the menu, the screens and every PDF ───
 function Marca() {
-  const { clinica, recargarSesion } = useDatos()
+  const { clinica, recargarSesion, servicios, recargar } = useDatos()
   const [nombre, setNombre] = useState(clinica?.nombre || '')
+  const [esp, setEsp] = useState(clinica?.especialidad || '')
   const [color, setColor] = useState(clinica?.color || COLOR_BASE)
   const [busy, setBusy] = useState(false)
   const [subiendo, setSubiendo] = useState(false)
   const logo = urlLogo(clinica)
-  const cambiado = nombre.trim() !== (clinica?.nombre || '') || color.toUpperCase() !== (clinica?.color || COLOR_BASE).toUpperCase()
+  const cambiado = nombre.trim() !== (clinica?.nombre || '') || esp !== (clinica?.especialidad || '') || color.toUpperCase() !== (clinica?.color || COLOR_BASE).toUpperCase()
 
   const elegirColor = (c) => { setColor(c); aplicarMarca(c) } // live preview
   const guardar = async () => {
     if (!nombre.trim()) { toast.error('Escriba el nombre'); return }
     setBusy(true)
-    const { error } = await supabase.from('clinicas').update({ nombre: nombre.trim(), color: color.toUpperCase() }).eq('id', clinica.id)
+    const cambioEsp = esp && esp !== clinica?.especialidad
+    const { error } = await supabase.from('clinicas').update({ nombre: nombre.trim(), color: color.toUpperCase(), especialidad: esp || null }).eq('id', clinica.id)
+    if (!error && cambioEsp) {
+      const r = await cargarSugeridos({ ...clinica, especialidad: esp }, servicios)
+      if (r.n) toast.success(`Se agregaron ${r.n} servicios de ${especialidad(esp).label} a sus tarifas`)
+      recargar()
+    }
     setBusy(false)
     if (error) { toast.error('No se pudo guardar'); return }
     toast.success('Marca actualizada')
     recargarSesion()
   }
-  const descartar = () => { setNombre(clinica?.nombre || ''); setColor(clinica?.color || COLOR_BASE); aplicarMarca(clinica?.color) }
+  const descartar = () => { setNombre(clinica?.nombre || ''); setEsp(clinica?.especialidad || ''); setColor(clinica?.color || COLOR_BASE); aplicarMarca(clinica?.color) }
 
   const subirLogo = async (e) => {
     const file = e.target.files?.[0]
@@ -80,10 +89,15 @@ function Marca() {
 
   return (
     <Card title="Marca" right={cambiado && <div style={{ display: 'flex', gap: 8 }}><Button variant="ghost" size="sm" onClick={descartar}>Descartar</Button><Button size="sm" onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</Button></div>}>
-      <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 18 }}>Su nombre, logo y color aparecen en el menú, en los botones y en todos los documentos PDF que imprima.</div>
+      <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 18 }}>Su nombre, especialidad, logo y color aparecen en el menú, en los botones y en todos los documentos PDF que imprima.</div>
       <div className="config-marca">
         <div>
           <Campo label="Nombre del consultorio o doctor"><Input value={nombre} onChange={setNombre} /></Campo>
+          <div style={{ marginTop: 14 }}>
+            <Campo label="Especialidad" ayuda="Adapta los tipos de consulta, los datos clínicos de cada cita y sus tarifas sugeridas">
+              <Select value={esp} onChange={setEsp}><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
+            </Campo>
+          </div>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: C.g600, margin: '18px 0 8px' }}>Logotipo</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 84, height: 84, borderRadius: 24, border: `1px solid ${C.line}`, background: C.g50, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -140,6 +154,15 @@ function Sedes() {
 
 // ─── Price list: one compact searchable table ───
 function Tarifas({ servicios, clinicaId, onCambio }) {
+  const { clinica } = useDatos()
+  const esp = especialidad(clinica?.especialidad)
+  const faltan = esp.servicios.filter(([c, n]) => !servicios.some(s => s.categoria === c && s.nombre.toLowerCase() === n.toLowerCase())).length
+  const sugeridos = async () => {
+    const r = await cargarSugeridos(clinica, servicios)
+    if (r.error) { toast.error('No se pudieron agregar'); return }
+    toast.success(`Se agregaron ${r.n} servicios. Escriba sus precios en la tabla.`)
+    onCambio()
+  }
   const [buscar, setBuscar] = useState('')
   const [cat, setCat] = useState('')
   const [nuevo, setNuevo] = useState({ categoria: 'Procedimiento', nombre: '', precio: '' })
@@ -177,7 +200,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   let previa = null
 
   return (
-    <Card title={`Tarifas (${servicios.length})`}>
+    <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
       <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14 }}>Al registrar una cita se llena el precio y se crea el cobro del paciente.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0,1fr) 140px auto', gap: 8, alignItems: 'end', marginBottom: 16 }} className="tarifa-nueva">

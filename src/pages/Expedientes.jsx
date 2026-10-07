@@ -4,6 +4,7 @@ import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro } from '../lib/formato'
 import { slug } from '../lib/excel'
+import { resumenDatos } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -149,8 +150,8 @@ function Expediente({ paciente, onVolver }) {
         ] },
         { titulo: 'Antecedentes', pares: [['Alergias', paciente.alergias], ['Enfermedades crónicas', paciente.enfermedades], ['Medicamentos actuales', paciente.medicamentos]] },
         paciente.notas_medicas && { titulo: 'Notas médicas generales', texto: paciente.notas_medicas },
-        { titulo: 'Consultas', tabla: { headers: ['Fecha', 'Hora', 'Tipo', 'Estado', 'Peso', 'Talla', 'Procedimiento', 'Notas'],
-          filas: misCitas.map(c => [fmtFechaCorta(c.fecha), fmtHora(c.hora), [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, c.peso ? `${c.peso} kg` : '—', c.talla ? `${c.talla} cm` : '—', c.procedimiento || '—', c.notas || '—']) } },
+        { titulo: 'Consultas', tabla: { headers: ['Fecha', 'Hora', 'Tipo', 'Estado', 'Peso', 'Talla', 'Datos clínicos', 'Procedimiento', 'Notas'],
+          filas: misCitas.map(c => [fmtFechaCorta(c.fecha), fmtHora(c.hora), [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, c.peso ? `${c.peso} kg` : '—', c.talla ? `${c.talla} cm` : '—', resumenDatos(c.datos, clinica?.especialidad) || '—', c.procedimiento || '—', c.notas || '—']) } },
         { titulo: 'Cobros', tabla: { headers: ['Fecha', 'Concepto', 'Precio', 'Descuento', 'Total', 'Pagado', 'Saldo', 'Método', 'Vence'],
           filas: [...misCobros.map(c => [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio), Number(c.descuento) ? fmtQ(c.descuento) : '—', fmtQ(totalCobro(c)), fmtQ(c.pagado), fmtQ(saldo(c)), c.metodo || '—', c.vence ? fmtFechaCorta(c.vence) : '—']),
             ...(misCobros.length ? [{ _total: true, celdas: ['', 'Total', '', '', fmtQ(totalPrecio), fmtQ(totalPagado), fmtQ(totalPrecio - totalPagado), '', ''] }] : [])] } },
@@ -163,8 +164,8 @@ function Expediente({ paciente, onVolver }) {
           ['Contacto de emergencia', paciente.contacto_emergencia], ['Teléfono de emergencia', paciente.telefono_emergencia], ['Notas médicas', paciente.notas_medicas],
         ].map(([k, v]) => ({ k, v })) },
         { nombre: 'Consultas', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Hora', key: 'h', width: 8 }, { header: 'Tipo', key: 't', width: 18 }, { header: 'Estado', key: 'e', width: 12 },
-          { header: 'Peso (kg)', key: 'p', width: 10 }, { header: 'Talla (cm)', key: 'ta', width: 10 }, { header: 'Procedimiento', key: 'pr', width: 28 }, { header: 'Notas', key: 'n', width: 50 }],
-          filas: misCitas.map(c => ({ f: c.fecha, h: fmtHora(c.hora), t: c.tipo, e: c.estado, p: c.peso, ta: c.talla, pr: c.procedimiento, n: c.notas })) },
+          { header: 'Peso (kg)', key: 'p', width: 10 }, { header: 'Talla (cm)', key: 'ta', width: 10 }, { header: 'Datos clínicos', key: 'dc', width: 40 }, { header: 'Procedimiento', key: 'pr', width: 28 }, { header: 'Notas', key: 'n', width: 50 }],
+          filas: misCitas.map(c => ({ f: c.fecha, h: fmtHora(c.hora), t: c.tipo, e: c.estado, p: c.peso, ta: c.talla, dc: resumenDatos(c.datos, clinica?.especialidad), pr: c.procedimiento, n: c.notas })) },
         { nombre: 'Cobros', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Concepto', key: 'c', width: 30 }, { header: 'Precio', key: 'p', width: 12, moneda: true },
           { header: 'Descuento', key: 'd', width: 12, moneda: true }, { header: 'Total', key: 't', width: 12, moneda: true }, { header: 'Pagado', key: 'pa', width: 12, moneda: true }, { header: 'Saldo', key: 's', width: 12, moneda: true }, { header: 'Método', key: 'm', width: 14 },
           { header: 'Vence', key: 'v', width: 12 }, { header: 'Observaciones', key: 'o', width: 40 }],
@@ -273,7 +274,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
 }
 
 function Consultas({ citas, onAbrir }) {
-  const { sedes } = useDatos()
+  const { sedes, clinica } = useDatos()
   return (
     <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => onAbrir(null)} icon="mas">Nueva cita</Button>}>
       {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : citas.map((c, i) => {
@@ -289,7 +290,7 @@ function Consultas({ citas, onAbrir }) {
                 <span style={{ fontWeight: 500 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
               </div>
               <div style={{ fontSize: 13, color: C.g600, marginTop: 3 }}>
-                {[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, c.procedimiento].filter(Boolean).join(' · ')}
+                {[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, resumenDatos(c.datos, clinica?.especialidad), c.procedimiento].filter(Boolean).join(' · ')}
               </div>
               {c.notas && <div style={{ fontSize: 13, color: C.g700, marginTop: 4, whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.notas}</div>}
             </div>

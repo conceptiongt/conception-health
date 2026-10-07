@@ -181,7 +181,7 @@ function Configurar({ sedes, productos, onSede, onProducto }) {
       {pasos.map((p, i) => (
         <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderTop: i ? `1px solid ${C.g100}` : 'none', alignItems: 'center', opacity: i > actual ? 0.5 : 1 }}>
           <div style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600,
-            background: p.hecho ? C.greenLight : i === actual ? C.purple : C.g100, color: p.hecho ? C.green : i === actual ? '#fff' : C.g400 }}>
+            background: p.hecho ? C.greenLight : i === actual ? C.purple : C.g100, color: p.hecho ? C.green : i === actual ? C.onPurple : C.g400 }}>
             {p.hecho ? <Icon name="check" size={16} stroke={2.6} /> : i + 1}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>

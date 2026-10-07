@@ -103,7 +103,7 @@ export function Pestanas({ opciones, valor, onChange }) {
         <button key={o.value} onClick={() => onChange(o.value)} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 160, border: 'none', cursor: 'pointer',
           fontSize: 14, fontWeight: 500, fontFamily: 'inherit',
-          background: valor === o.value ? C.purple : 'transparent', color: valor === o.value ? '#fff' : C.g600,
+          background: valor === o.value ? C.purple : 'transparent', color: valor === o.value ? C.onPurple : C.g600,
         }}>{o.icono && <Icon name={o.icono} size={16} />}{o.label}</button>
       ))}
     </div>
@@ -140,7 +140,7 @@ export function Segmentos({ opciones, valor, onChange }) {
         return (
           <button key={o.value} onClick={() => onChange(o.value)} style={{
             padding: '7px 15px', borderRadius: 160, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
-            fontWeight: 500, background: activo ? C.purple : 'transparent', color: activo ? '#fff' : C.g600,
+            fontWeight: 500, background: activo ? C.purple : 'transparent', color: activo ? C.onPurple : C.g600,
           }}>{o.label}{o.n != null && <span style={{ marginLeft: 6, opacity: 0.7 }}>{o.n}</span>}</button>
         )
       })}

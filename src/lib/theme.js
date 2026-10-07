@@ -5,7 +5,7 @@ export const COLOR_BASE = '#6161FF'
 
 export const C = {
   // brand: a single color for actions and active states (clinic color, violet by default)
-  purple: 'var(--acento)', purpleDark: 'var(--acento-oscuro)', purpleLight: 'var(--acento-claro)', purpleMid: 'var(--acento-tenue)',
+  purple: 'var(--acento)', onPurple: 'var(--acento-texto)', purpleDark: 'var(--acento-oscuro)', purpleLight: 'var(--acento-claro)', purpleMid: 'var(--acento-tenue)',
   cyan: '#3AC9FF',
   grad: 'linear-gradient(135deg, var(--acento) 0%, #3AC9FF 100%)',
   prism: 'conic-gradient(from 270deg, #8181FF 15%, #33DBDB 40%, #33D58E 55%, #FFD633 65%, #FC527D 85%, #8181FF 100%)',
@@ -49,5 +49,22 @@ export function aplicarMarca(color) {
   r.setProperty('--acento-tenue', mezclar(c, '#FFFFFF', 0.9))
   const [R, G, B] = aRgb(c)
   r.setProperty('--acento-anillo', `rgba(${R},${G},${B},0.14)`)
+
+  // Side menu painted with the clinic color; white letters on dark colors, dark letters on light ones
+  const oscuro = contraste(c, '#FFFFFF') >= 3
+  r.setProperty('--acento-texto', oscuro ? '#FFFFFF' : '#1F2230')
+  r.setProperty('--menu-fondo', c)
+  r.setProperty('--menu-fondo2', mezclar(c, '#000000', oscuro ? 0.16 : 0.06))
+  r.setProperty('--menu-texto', oscuro ? '#FFFFFF' : '#1F2230')
+  r.setProperty('--menu-suave', oscuro ? 'rgba(255,255,255,0.78)' : 'rgba(31,34,48,0.70)')
+  r.setProperty('--menu-titulo', oscuro ? 'rgba(255,255,255,0.60)' : 'rgba(31,34,48,0.55)')
+  r.setProperty('--menu-activo', oscuro ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.60)')
+  r.setProperty('--menu-hover', oscuro ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.35)')
+  r.setProperty('--menu-tarjeta', oscuro ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.50)')
+  r.setProperty('--menu-linea', oscuro ? 'rgba(255,255,255,0.24)' : 'rgba(31,34,48,0.14)')
 }
+
+// WCAG contrast ratio between two hex colors
+function luz(hex) { return aRgb(hex).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0) }
+export function contraste(a, b) { const x = luz(a), y = luz(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
 aplicarMarca(COLOR_BASE)

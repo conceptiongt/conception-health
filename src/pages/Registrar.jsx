@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
-import { TIPOS_CITA, ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
+import { ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
+import { tiposDe } from '../lib/especialidades'
 import { hoyISO, fmtFecha, fmtHora, fmtQ, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import { useDatos, mensajeError } from '../hooks/useDatos'
 import { Button } from '../components/ui/Button'
@@ -110,7 +111,7 @@ export function Registrar() {
             {conSedes && <Campo label="Sede *"><Select value={f.sede} onChange={set('sede')}><option value="">Seleccione…</option>{sedes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}</Select></Campo>}
             <Campo label="Fecha *"><Input type="date" value={f.fecha} onChange={set('fecha')} required /></Campo>
             <Campo label="Hora" ayuda="Cada cita dura 1 hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
-            <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></Campo>
+            <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
             <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} />
             <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Opcional" /></Campo>

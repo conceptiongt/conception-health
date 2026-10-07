@@ -19,19 +19,19 @@ button { transition: background-color .15s, border-color .15s, color .15s; }
 .layout { display: flex; min-height: 100vh; }
 .sidebar {
   width: 264px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
-  background: #FFFFFF;
-  border-right: 1px solid #E3E5EE;
+  background: linear-gradient(180deg, var(--menu-fondo) 0%, var(--menu-fondo2) 100%);
+  color: var(--menu-texto);
 }
 .main { flex: 1; min-width: 0; width: 100%; padding: 32px clamp(16px, 3vw, 44px) 72px; animation: aparecer 0.25s ease; }
 .nav-item { transition: background 0.15s, color 0.15s; }
-.nav-item:hover { background: #F5F6F8 !important; color: #333333 !important; }
+.nav-item:hover { background: var(--menu-hover) !important; color: var(--menu-texto) !important; }
 .fila:hover { background: #F8F9FB; }
 .topbar { display: none; }
 @media (max-width: 860px) {
   .layout { display: block; }
   .sidebar { position: fixed; left: 0; top: 0; z-index: 150; transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 0 5px 45px rgba(0,0,0,0.15); }
   .sidebar.abierta { transform: none; }
-  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: #FFFFFF; border-bottom: 1px solid #E3E5EE; padding: 10px 14px; }
+  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: var(--menu-fondo); color: var(--menu-texto); padding: 10px 14px; }
   .main { padding: 20px 16px 64px; }
 }
 

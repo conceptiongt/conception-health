@@ -16,6 +16,9 @@ import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
 import { Pagos } from './pages/Pagos'
 import { urlLogo, iniciales } from './lib/marca'
+import { especialidad } from './lib/especialidades'
+import { cargarSugeridos } from './lib/sugeridos'
+import { ElegirEspecialidad } from './components/ElegirEspecialidad'
 import { aplicarMarca } from './lib/theme'
 import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
@@ -66,6 +69,15 @@ function Aplicacion({ sesion }) {
 
   useEffect(() => { aplicarMarca(clinica?.color) }, [clinica?.color])
 
+  // first entry with a specialty: fill Tarifas with its suggested services (once)
+  const sugiriendo = useRef(false)
+  useEffect(() => {
+    if (!datos || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
+    sugiriendo.current = true
+    cargarSugeridos(clinica, datos.servicios).then(() => { recargar(); recargarSesion() })
+  }, [datos, clinica, recargar, recargarSesion])
+  const [sinEspecialidad, setSinEspecialidad] = useState(true)
+
   // Conception Studio link: refresh its status and send this clinic's monthly totals when data changes
   const syncTimer = useRef(null)
   useEffect(() => {
@@ -103,43 +115,51 @@ function Aplicacion({ sesion }) {
     <DatosContext.Provider value={ctx}>
       <div className="layout">
         <div className="topbar">
-          <button onClick={() => setMenu(true)} aria-label="Menú" style={{ background: 'none', border: 'none', color: C.black, cursor: 'pointer', display: 'flex', padding: 4 }}><Icon name="menu" size={22} /></button>
-          {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ height: 28, maxWidth: 140, objectFit: 'contain' }} /> : <Logo variant="dark" height={28} />}
-          <span style={{ color: C.purple, fontSize: 11, fontWeight: 600, letterSpacing: '0.22em' }}>HEALTH</span>
+          <button onClick={() => setMenu(true)} aria-label="Menú" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', padding: 4 }}><Icon name="menu" size={22} /></button>
+          <span style={{ background: '#fff', borderRadius: 10, padding: '5px 9px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ height: 26, maxWidth: 120, objectFit: 'contain' }} /> : <Logo variant="dark" height={24} />}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', lineHeight: 1.25, minWidth: 0 }}>CONCEPTION<br />HEALTH</span>
         </div>
         {menu && <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(11,17,32,0.45)', zIndex: 140 }} />}
 
         <aside className={`sidebar${menu ? ' abierta' : ''}`}>
-          <div style={{ padding: '28px 24px 22px' }}>
-            {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ height: 44, maxWidth: 200, objectFit: 'contain', display: 'block' }} /> : <Logo variant="dark" height={44} />}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <div style={{ padding: '22px 18px 18px' }}>
+            <div style={{ background: '#fff', borderRadius: 18, padding: '16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 92, boxShadow: '0 6px 20px rgba(0,0,0,0.10)' }}>
+              {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ maxHeight: 64, maxWidth: '100%', objectFit: 'contain', display: 'block' }} /> : <Logo variant="dark" height={46} />}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 }}>
               <span style={{ height: 3, width: 22, borderRadius: 3, background: C.prism }} />
-              <span style={{ color: C.purple, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.32em' }}>HEALTH</span>
+              <span style={{ color: 'var(--menu-texto)', fontSize: 11, fontWeight: 600, letterSpacing: '0.24em' }}>CONCEPTION HEALTH</span>
             </div>
           </div>
 
-          <div style={{ margin: '0 16px 18px', padding: 14, borderRadius: 16, background: C.bgApp, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 20, background: C.purple, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+          <div style={{ margin: '0 16px 18px', padding: 12, borderRadius: 16, background: 'var(--menu-tarjeta)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 20, background: '#fff', color: C.purpleDark, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
               {iniciales(nombreClinica)}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: C.black, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClinica}</div>
-              <div style={{ color: planActivo ? C.green : C.amber, fontSize: 12, fontWeight: 500, marginTop: 1 }}>{plan}</div>
+              <div style={{ color: 'var(--menu-texto)', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClinica}</div>
+              <div style={{ color: 'var(--menu-suave)', fontSize: 12, marginTop: 1, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                <span style={{ width: 7, height: 7, borderRadius: 4, flexShrink: 0, background: planActivo ? '#5BE08F' : '#FFC94D', boxShadow: '0 0 0 2px rgba(255,255,255,0.5)' }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{plan}</span>
+              </div>
+              {clinica?.especialidad && <div style={{ color: 'var(--menu-suave)', fontSize: 11.5, marginTop: 2, lineHeight: 1.3 }}>{especialidad(clinica.especialidad).label}</div>}
             </div>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
-                <div style={{ padding: '0 26px 8px', color: C.g400, fontSize: 11, fontWeight: 500, letterSpacing: '0.16em' }}>{titulo}</div>
+                <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {items.map(n => {
                     const activo = vista === n.id
                     return (
                       <button key={n.id} className="nav-item" onClick={() => ir(n.id)} style={{
-                        position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                        position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
                         textAlign: 'left', fontSize: 14, fontWeight: activo ? 600 : 400, letterSpacing: '-0.01em', fontFamily: 'inherit',
-                        background: activo ? C.sidebarActive : 'none', color: activo ? C.purple : C.g600,
+                        background: activo ? 'var(--menu-activo)' : 'none', color: activo ? 'var(--menu-texto)' : 'var(--menu-suave)',
                       }}>
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
                         {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
@@ -153,10 +173,10 @@ function Aplicacion({ sesion }) {
             ))}
           </div>
 
-          <div style={{ margin: 16, padding: '12px 14px', borderRadius: 16, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ margin: 16, padding: '12px 14px', borderRadius: 16, border: '1px solid var(--menu-linea)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: C.g400, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em' }}>SESIÓN</div>
-              <div style={{ color: C.g600, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
+              <div style={{ color: 'var(--menu-titulo)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em' }}>SESIÓN</div>
+              <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
             </div>
             <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
@@ -165,6 +185,7 @@ function Aplicacion({ sesion }) {
         </aside>
 
         <main className="main">
+          {datos && clinica && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
           {enPrueba && (
             <div style={{ background: C.lavender, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>

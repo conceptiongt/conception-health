@@ -65,7 +65,7 @@ export function Compras({ inv, compras, onNueva, onAbrir }) {
   )
 
   const chip = (valor, label, n) => (
-    <button key={valor} onClick={() => setEstado(valor)} style={{ padding: '7px 14px', borderRadius: 160, border: `1px solid ${estado === valor ? C.purple : C.g200}`, background: estado === valor ? C.purple : '#fff', color: estado === valor ? '#fff' : C.g600, fontWeight: 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+    <button key={valor} onClick={() => setEstado(valor)} style={{ padding: '7px 14px', borderRadius: 160, border: `1px solid ${estado === valor ? C.purple : C.g200}`, background: estado === valor ? C.purple : '#fff', color: estado === valor ? C.onPurple : C.g600, fontWeight: 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
       {label}{n != null && <span style={{ opacity: 0.7, marginLeft: 6 }}>{n}</span>}
     </button>
   )
@@ -268,7 +268,7 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
             return (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {i > 0 && <span style={{ width: 22, height: 2, borderRadius: 2, background: hecho || actual ? C.purple : C.g200 }} />}
-                <span style={{ padding: '5px 12px', borderRadius: 160, fontSize: 12.5, fontWeight: 500, background: actual ? C.purple : hecho ? C.purpleLight : C.g100, color: actual ? '#fff' : hecho ? C.purple : C.g400 }}>
+                <span style={{ padding: '5px 12px', borderRadius: 160, fontSize: 12.5, fontWeight: 500, background: actual ? C.purple : hecho ? C.purpleLight : C.g100, color: actual ? C.onPurple : hecho ? C.purple : C.g400 }}>
                   {t}{actual && o.estado === 'parcial' ? ' · en parte' : ''}
                 </span>
               </div>

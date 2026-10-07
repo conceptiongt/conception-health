@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { APP_NOMBRE } from '../lib/constantes'
 import { Button } from '../components/ui/Button'
-import { Campo, Input } from '../components/ui/Campos'
+import { Campo, Input, Select } from '../components/ui/Campos'
+import { ESPECIALIDADES } from '../lib/especialidades'
 import { Logo } from '../components/ui/Varios'
 
 const redirect = () => window.location.origin
@@ -29,6 +30,7 @@ function Aviso({ tipo = 'info', children }) {
 export function Acceso() {
   const [modo, setModo] = useState('entrar') // entrar | crear | olvido
   const [nombre, setNombre] = useState('')
+  const [esp, setEsp] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState(null)
@@ -47,10 +49,11 @@ export function Acceso() {
   const crear = async (e) => {
     e.preventDefault()
     if (!nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor o de la clínica.' }); return }
+    if (!esp) { setMsg({ tipo: 'error', t: 'Elija su especialidad.' }); return }
     setBusy(true); setMsg(null)
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { shouldCreateUser: true, data: { nombre: nombre.trim() }, emailRedirectTo: redirect() },
+      options: { shouldCreateUser: true, data: { nombre: nombre.trim(), especialidad: esp }, emailRedirectTo: redirect() },
     })
     setBusy(false)
     if (error) setMsg({ tipo: 'error', t: 'No se pudo enviar el correo. Revise la dirección e intente de nuevo en unos minutos.' })
@@ -92,6 +95,9 @@ export function Acceso() {
             Puede probar {APP_NOMBRE} gratis con hasta 3 pacientes.
           </div>
           <Campo label="Nombre del doctor o clínica"><Input value={nombre} onChange={setNombre} required placeholder="Ej. Dr. Juan Pérez" /></Campo>
+          <Campo label="Especialidad" ayuda="La plataforma se adapta a su especialidad; puede cambiarla después">
+            <Select value={esp} onChange={setEsp} required><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
+          </Campo>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Crear cuenta'}</Button>
           <div>{link('Ya tengo cuenta', 'entrar')}</div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { C, SERIF, SHADOW } from './lib/theme'
-import { LIMITE_PRUEBA, accesos, nombrePlan } from './lib/constantes'
+import { LIMITE_PRUEBA, LIA_DISPONIBLE, accesos, nombrePlan } from './lib/constantes'
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
 import { Acceso, CrearPassword } from './pages/Acceso'
@@ -13,6 +13,7 @@ import { Suscripcion } from './pages/Suscripcion'
 import { Configuracion } from './pages/Configuracion'
 import { BaseDatos } from './pages/BaseDatos'
 import { Lia } from './pages/Lia'
+import { Inventario } from './pages/Inventario'
 import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
 import { Cargando, Logo } from './components/ui/Varios'
@@ -26,12 +27,13 @@ const NAV = [
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'basedatos', label: 'Base de datos', icono: 'basedatos' },
+  { id: 'inventario', label: 'Inventario', icono: 'caja' },
 ]
 const NAV_LIA = [
   { id: 'lia', label: 'Lía · Recepcionista', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'basedatos']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'basedatos', 'inventario']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion' },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes' },
@@ -54,7 +56,7 @@ function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
   const acc = accesos(clinica, planActivo)
-  const [vista, setVista] = useState(() => acc.health ? 'inicio' : 'lia')
+  const [vista, setVista] = useState(() => acc.health || !LIA_DISPONIBLE ? 'inicio' : 'lia')
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(null)
@@ -82,7 +84,7 @@ function Aplicacion({ sesion }) {
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [] }), recargar, perfil, clinica, planActivo, ir, recargarSesion }
+  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
   const enPrueba = !planActivo
   const usados = datos?.pacientes.length ?? 0
 
@@ -134,7 +136,8 @@ function Aplicacion({ sesion }) {
                       }}>
                         {activo && <span style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3, background: C.grad }} />}
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
-                        {!acc.health && SOLO_HEALTH.includes(n.id) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                        {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                        {n.id === 'lia' && !LIA_DISPONIBLE && <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 10, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em' }}>PRONTO</span>}
                         {n.id === 'lia' && pendientesLia > 0 && <span title="Conversaciones que le necesitan" style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
                       </button>
                     )
@@ -169,7 +172,8 @@ function Aplicacion({ sesion }) {
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
-            : vista === 'lia' ? <Lia />
+            : vista === 'lia' ? (LIA_DISPONIBLE ? <Lia /> : <LiaProximamente />)
+            : vista === 'inventario' ? (acc.inventario ? <Inventario /> : <SoloMax ir={ir} />)
             : vista === 'inicio' ? <Inicio />
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
@@ -191,12 +195,40 @@ function SoloHealth({ ir }) {
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Esta sección es parte de Conception Health</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
-        Su plan incluye a Lía y la agenda de citas. Con el plan Max también tiene expedientes con fotos, cobros, base de datos y reportes, y cada paciente que agenda Lía llega con su expediente.
+        Su plan incluye a Lía y la agenda de citas. Con el plan Ultra también tiene expedientes con fotos, cobros, inventario, base de datos y reportes, y cada paciente que agenda Lía llega con su expediente.
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         <Button variant="ghost" onClick={() => ir('lia')}>Ir a Lía</Button>
         <Button variant="brand" icon="suscripcion" onClick={() => ir('suscripcion')}>Ver planes</Button>
       </div>
+    </div>
+  )
+}
+
+// Lía is being finished on its own; shown instead of the receptionist until it is ready
+function LiaProximamente() {
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '56px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="lia" size={26} /></div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em', marginBottom: 6 }}>PRÓXIMAMENTE</div>
+      <div style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 700, color: C.black, marginBottom: 8 }}>Estamos trabajando en Lía</div>
+      <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto', lineHeight: 1.6 }}>
+        Su recepcionista virtual en WhatsApp: contestará, agendará y recordará citas por usted. Le avisaremos en cuanto esté disponible.
+      </div>
+    </div>
+  )
+}
+
+// Shown to accounts whose plan does not include inventory
+function SoloMax({ ir }) {
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="caja" size={26} /></div>
+      <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Inventario por sede</div>
+      <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
+        Lleve el inventario de cada sede (de ciudad o departamental), descargue los productos desde el expediente de cada paciente y reciba avisos de existencia baja. Está incluido en los planes Max y Ultra.
+      </div>
+      <Button variant="brand" icon="suscripcion" onClick={() => ir('suscripcion')}>Ver planes</Button>
     </div>
   )
 }

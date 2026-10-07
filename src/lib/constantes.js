@@ -38,22 +38,30 @@ export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','
 // Trial accounts can register this many patients (also enforced by the database)
 export const LIMITE_PRUEBA = 3
 
-// Subscription plans (checkout handled by Recurrente)
-// Max includes Health and Lía; Lía can also be bought alone (receptionist + agenda, without the clinical modules)
+// Subscription plans (checkout handled by Recurrente). Prices are not announced yet: `precio: null`
+// shows "Precio por anunciar" and hides the subscribe button.
+// Básico = Health; Max = Básico + inventory per location; Ultra = Max + Lía; Lía = only the receptionist.
 export const PLANES = [
   {
     value: 'basico',
     nombre: 'Básico',
-    precio: 'Q275 / mes',
+    precio: null, // was Q275 / mes
     link: 'https://app.recurrente.com/s/conception/healt',
     incluye: ['Pacientes ilimitados', 'Citas y seguimiento', 'Expedientes con fotos', 'Cobros y saldos', 'Reportes en Excel y PDF'],
   },
   {
     value: 'max',
     nombre: 'Max',
-    precio: 'Q375 / mes',
+    precio: null, // was Q375 / mes
     link: 'https://app.recurrente.com/s/conception/conception-healt-max',
-    incluye: ['Todo lo del plan Básico', 'Lía, su recepcionista virtual en WhatsApp', 'Agenda y seguimiento automáticos', 'Inventario por sede'],
+    incluye: ['Todo lo del plan Básico', 'Inventario por sede', 'Descarga de productos desde el expediente', 'Avisos de existencia baja'],
+  },
+  {
+    value: 'ultra',
+    nombre: 'Ultra',
+    precio: null,
+    link: null, // Recurrente link pending
+    incluye: ['Todo lo del plan Max', 'Lía, su recepcionista virtual en WhatsApp', 'Agenda y seguimiento automáticos', 'Cada paciente que agenda Lía llega con su expediente'],
   },
   {
     value: 'lia',
@@ -65,12 +73,35 @@ export const PLANES = [
 ]
 export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
 
-// What each account can open: Health (patients, files, charges, reports) and/or Lía
+// Lía is being finished on its own; until then the menu shows a "coming soon" page
+export const LIA_DISPONIBLE = false
+
+// What each account can open: Health (patients, files, charges, reports), inventory and/or Lía
+// (inventory is also enforced by the database: `inventario_habilitado()`)
 export function accesos(clinica, planActivo) {
   const plan = planActivo ? clinica?.plan : null
   return {
     prueba: !planActivo,
     health: !planActivo || plan !== 'lia',
-    lia: plan === 'max' || plan === 'lia',
+    inventario: !planActivo || plan === 'max' || plan === 'ultra',
+    lia: LIA_DISPONIBLE && (plan === 'ultra' || plan === 'lia'),
   }
+}
+
+export const DEPARTAMENTOS = ['Alta Verapaz', 'Baja Verapaz', 'Chimaltenango', 'Chiquimula', 'El Progreso', 'Escuintla', 'Guatemala', 'Huehuetenango', 'Izabal', 'Jalapa', 'Jutiapa', 'Petén', 'Quetzaltenango', 'Quiché', 'Retalhuleu', 'Sacatepéquez', 'San Marcos', 'Santa Rosa', 'Sololá', 'Suchitepéquez', 'Totonicapán', 'Zacapa']
+
+export const TIPOS_SEDE = [
+  { value: 'ciudad', label: 'Sede ciudad' },
+  { value: 'departamental', label: 'Sede departamental' },
+]
+
+export const UNIDADES = ['unidad', 'caja', 'vial', 'ampolla', 'frasco', 'jeringa', 'ml', 'g', 'par', 'paquete']
+
+// Stock movements: sign of the quantity and how they read on screen
+export const TIPOS_MOVIMIENTO = {
+  entrada: { label: 'Entrada', color: C.green, bg: C.greenLight },
+  uso: { label: 'Uso en paciente', color: C.purple, bg: C.purpleLight },
+  salida: { label: 'Salida / merma', color: C.red, bg: C.redLight },
+  ajuste: { label: 'Ajuste', color: C.amber, bg: C.amberLight },
+  traslado: { label: 'Traslado', color: C.blue, bg: C.blueLight },
 }

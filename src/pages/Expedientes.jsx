@@ -12,6 +12,7 @@ import { Modal } from '../components/ui/Modal'
 import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { CitaModal } from '../components/CitaModal'
+import { ProductosPaciente } from '../components/ProductosPaciente'
 import { toast } from '../components/ui/Toast'
 
 export function Expedientes({ abrirId }) {
@@ -90,10 +91,11 @@ const TABS = [
   { value: 'consultas', label: 'Consultas', icono: 'citas' },
   { value: 'fotos', label: 'Fotos', icono: 'camara' },
   { value: 'cobros', label: 'Cobros', icono: 'cartera' },
+  { value: 'productos', label: 'Productos usados', icono: 'caja', inventario: true },
 ]
 
 function Expediente({ paciente, onVolver }) {
-  const { citas, cobros, clinica, perfil, recargar } = useDatos()
+  const { citas, cobros, clinica, perfil, recargar, acc } = useDatos()
   const [tab, setTab] = useState('datos')
   const [editando, setEditando] = useState(false)
   const [archivos, setArchivos] = useState(null)
@@ -180,11 +182,12 @@ function Expediente({ paciente, onVolver }) {
         <Stat icono="camara" label="Fotos" valor={archivos ? archivos.length : '…'} />
       </div>
 
-      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS} valor={tab} onChange={setTab} /></div>
+      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => !t.inventario || acc.inventario)} valor={tab} onChange={setTab} /></div>
 
       {tab === 'datos' && <DatosMedicos paciente={paciente} onEditar={() => setEditando(true)} />}
       {tab === 'consultas' && <Consultas paciente={paciente} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={recargar} />}
       {tab === 'fotos' && <Fotos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
+      {tab === 'productos' && acc.inventario && <ProductosPaciente paciente={paciente} citas={misCitas} />}
       {tab === 'cobros' && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
 
       {editando && <PacienteModal paciente={paciente} onClose={() => setEditando(false)} onGuardado={() => { setEditando(false); recargar() }} />}

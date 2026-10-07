@@ -57,10 +57,10 @@ export function Suscripcion() {
         {planActivo && !cancelada && <Button variant="danger" size="sm" onClick={() => setConfirmar(true)}>Cancelar suscripción</Button>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(290px,1fr))', gap: 16, marginTop: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 16, marginTop: 16 }}>
         {PLANES.map(p => {
           const actual = planActivo && !cancelada && clinica?.plan === p.value
-          const destacado = p.value === 'max'
+          const destacado = p.value === 'ultra'
           return (
             <div key={p.value} style={{ borderRadius: 22, padding: 1.5, boxShadow: SHADOW, background: actual || destacado ? C.grad : C.line }}>
               <div style={{ background: '#fff', borderRadius: 21, padding: 26, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -68,7 +68,7 @@ export function Suscripcion() {
                   <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em' }}>PLAN {p.nombre.toUpperCase()}</div>
                   {actual ? <Badge color={C.purple} bg={C.purpleLight}>Su plan</Badge> : destacado && <Badge color={C.purple} bg={C.purpleLight}>Más completo</Badge>}
                 </div>
-                <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Lía', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
+                <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Inventario por sede', ultra: 'Max + Lía, su recepcionista virtual', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
                   {p.precio
                     ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 800, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
@@ -86,7 +86,7 @@ export function Suscripcion() {
                 <div style={{ marginTop: 24 }}>
                   {actual
                     ? <Button variant="ghost" icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Gestionar suscripción</Button>
-                    : p.link
+                    : p.link && p.precio
                       ? <Button variant={destacado ? 'brand' : 'primary'} icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Suscribirme al plan {p.nombre}</Button>
                       : <Button variant="ghost" style={{ width: '100%' }} disabled>Próximamente</Button>}
                 </div>

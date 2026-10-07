@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { enMes } from './formato'
+import { STUDIO_URL, STUDIO_ANON_KEY } from './config'
 
 // Conception Studio (the agency platform) — public endpoint; only the functions below are reachable without login
-const studio = createClient('https://otyoaxnkqlrjjwfxymwf.supabase.co', 'sb_publishable__uColSB_x66wQWY2qygkEA_3jxbvftJ', {
+const studio = createClient(STUDIO_URL, STUDIO_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false, storageKey: 'studio-vinculo' },
 })
 

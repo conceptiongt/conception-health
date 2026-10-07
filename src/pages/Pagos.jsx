@@ -112,7 +112,7 @@ export function Pagos() {
         <Tabla columnas={['Fecha', 'Paciente', 'Concepto', 'Total', 'Pagado', 'Saldo', 'Avance', 'Estado', '']} onFila={(f) => setAbierto(f.cobro)} vacio="Ningún cobro con estos filtros"
           filas={lista.map(c => filaCobro(c, true))} />
       ) : (
-        <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, overflow: 'hidden' }}>
           <div className="pago-fila pago-cab"><span>Paciente</span><span>Cobros</span><span>Total</span><span>Pagado</span><span>Saldo</span><span>Estado</span></div>
           {grupos.length === 0 && <div style={{ padding: 30, textAlign: 'center', color: C.g400 }}>Ningún paciente con estos filtros</div>}
           {grupos.map(g => {

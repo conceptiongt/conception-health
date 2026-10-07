@@ -1,36 +1,38 @@
-// Conception Health design tokens — quiet, editorial clinic workspace.
-// The accent is the clinic's own color (Configuración → Marca), exposed as CSS variables by aplicarMarca().
-export const COLOR_BASE = '#1F5F5B'
+// Conception Health design tokens — light workspace in the style of monday.com:
+// white cards on a soft gray canvas, one action color, pastel surfaces, pill buttons.
+// The action color is the clinic's own (Configuración → Marca), exposed as CSS variables by aplicarMarca().
+export const COLOR_BASE = '#6161FF'
 
 export const C = {
-  // accent (clinic color): solid, darker, light tint and very light tint
+  // brand: a single color for actions and active states (clinic color, violet by default)
   purple: 'var(--acento)', purpleDark: 'var(--acento-oscuro)', purpleLight: 'var(--acento-claro)', purpleMid: 'var(--acento-tenue)',
-  cyan: 'var(--acento)',
-  grad: 'var(--acento)',
-  prism: 'var(--acento)',
+  cyan: '#3AC9FF',
+  grad: 'linear-gradient(135deg, var(--acento) 0%, #3AC9FF 100%)',
+  prism: 'conic-gradient(from 270deg, #8181FF 15%, #33DBDB 40%, #33D58E 55%, #FFD633 65%, #FC527D 85%, #8181FF 100%)',
 
+  // sidebar (light, like the product UI)
   sidebar: '#FFFFFF', sidebar2: '#FFFFFF',
-  sidebarActive: 'var(--acento-tenue)', sidebarHover: '#F4F3F0',
+  sidebarActive: 'var(--acento-tenue)', sidebarHover: '#F5F6F8',
 
-  // ink & warm neutrals
-  black: '#1C1C1E', bgApp: '#F7F7F5', line: '#E7E5E0',
-  g50: '#FAFAF8', g100: '#F2F1EE', g200: '#E1DFD9', g300: '#C8C5BD', g400: '#8F8C85',
-  g500: '#6B6963', g600: '#55534E', g700: '#3A3936',
+  // ink & neutrals (g400+ meet WCAG AA on white for small text)
+  black: '#333333', bgApp: '#F5F6F8', line: '#E3E5EE',
+  g50: '#F8F9FB', g100: '#F0F1F5', g200: '#DDDFEB', g300: '#B9BCCB', g400: '#6F7282',
+  g500: '#5F6172', g600: '#535768', g700: '#3B3E4C',
 
-  // status: muted, readable
-  green: '#2E6B47', greenLight: '#EAF3EC', amber: '#8A5A12', amberLight: '#F8F0E1',
-  red: '#B23A3A', redLight: '#F9ECEB', blue: '#2F5D8C', blueLight: '#EBF1F7',
-  orange: '#9A4E1C', orangeLight: '#F8EEE6',
+  // status pills: soft pastel fill, dark readable text
+  green: '#1E7B45', greenLight: '#DDF7CE', amber: '#8A5200', amberLight: '#FFEACC',
+  red: '#C8304A', redLight: '#FFE0E5', blue: '#1F63C6', blueLight: '#DCF4FF',
+  orange: '#A8490D', orangeLight: '#FFE6D5',
 
-  // very soft surfaces for tiles
-  mint: '#F1F6F2', sky: '#EFF4F8', peach: '#FAF3EC', lavender: '#F4F2F7', periwinkle: '#F1F2F7', peony: '#F9F1F3',
+  // pastel surfaces for feature tiles (never for text)
+  mint: '#E3FBD3', sky: '#DCF7FF', peach: '#FFEBDD', lavender: '#EFE3F8', periwinkle: '#E7ECFF', peony: '#FDE3FA',
 }
 
 export const SANS = "'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-export const SERIF = SANS
-export const SHADOW = 'none'
-export const SHADOW_HOVER = '0 6px 20px rgba(28, 28, 30, 0.06)'
-export const RADIO = { card: 12, input: 8, badge: 4, boton: 8, imagen: 8 }
+export const SERIF = SANS // headings use the same family
+export const SHADOW = '0 2px 48px rgba(205, 208, 223, 0.40)'
+export const SHADOW_HOVER = '0 5px 45px rgba(0, 0, 0, 0.12)'
+export const RADIO = { card: 24, input: 6, badge: 6, boton: 160, imagen: 12 }
 
 // ─── Clinic accent color → CSS variables ───
 const aRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255] }
@@ -42,11 +44,10 @@ export function aplicarMarca(color) {
   const c = valido(color) ? color : COLOR_BASE
   const r = document.documentElement.style
   r.setProperty('--acento', c)
-  r.setProperty('--acento-oscuro', mezclar(c, '#000000', 0.25))
-  r.setProperty('--acento-claro', mezclar(c, '#FFFFFF', 0.82))
-  r.setProperty('--acento-tenue', mezclar(c, '#FFFFFF', 0.92))
+  r.setProperty('--acento-oscuro', mezclar(c, '#000000', 0.2))
+  r.setProperty('--acento-claro', mezclar(c, '#FFFFFF', 0.78))
+  r.setProperty('--acento-tenue', mezclar(c, '#FFFFFF', 0.9))
   const [R, G, B] = aRgb(c)
   r.setProperty('--acento-anillo', `rgba(${R},${G},${B},0.14)`)
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', '#F7F7F5')
 }
 aplicarMarca(COLOR_BASE)

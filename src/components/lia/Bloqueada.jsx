@@ -42,7 +42,7 @@ export function Bloqueada() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 14, marginTop: 16 }}>
         {[max, sola].map(p => (
-          <div key={p.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, boxShadow: SHADOW }}>
+          <div key={p.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 22, boxShadow: SHADOW }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.14em' }}>{p.value === 'max' ? 'PLAN MAX · HEALTH + LÍA' : 'SOLO LÍA'}</div>
             <div style={{ fontSize: 26, fontWeight: 600, margin: '6px 0 10px' }}>{p.precio || 'Precio por anunciar'}</div>
             <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.6 }}>{p.incluye.join(' · ')}</div>

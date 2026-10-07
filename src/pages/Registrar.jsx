@@ -74,12 +74,12 @@ export function Registrar() {
       <>
         <Encabezado titulo="Paciente registrado" subtitulo={`${listo.paciente.nombre} · ${fmtFecha(listo.cita.fecha)} · ${fmtHora(listo.cita.hora)}`} />
         {listo.cobro && (
-          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.green}`, borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.green}`, borderRadius: 16, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 14 }}>Se registró el cobro <strong>{listo.cobro.concepto}</strong> por <strong>{fmtQ(listo.cobro.precio)}</strong>. Puede aplicar un descuento o registrar pagos en su expediente.</div>
           </div>
         )}
         <Card title="Mensaje de confirmación">
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, margin: 0, fontSize: 14, lineHeight: 1.6 }}>{msg}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 16, padding: 16, margin: 0, fontSize: 14, lineHeight: 1.6 }}>{msg}</pre>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
             <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
             {wa && <Button variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
@@ -116,7 +116,7 @@ export function Registrar() {
             <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Opcional" /></Campo>
           </Grid>
           {ocupada && (
-            <div style={{ marginTop: 14, background: C.amberLight, color: C.amber, borderRadius: 12, padding: '11px 14px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ marginTop: 14, background: C.amberLight, color: C.amber, borderRadius: 24, padding: '11px 14px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center' }}>
               <Icon name="alerta" size={17} />
               <span>Ya hay una cita a esa hora con <strong>{nombreOcupada || 'otro paciente'}</strong>. Puede guardar de todas formas o elegir otra hora.</span>
             </div>

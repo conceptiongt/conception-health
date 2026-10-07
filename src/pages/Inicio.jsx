@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { C } from '../lib/theme'
+import { C, SHADOW } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
 import { slug } from '../lib/excel'
@@ -11,9 +11,11 @@ import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from 
 import { sedeCobro } from '../components/Pagos'
 
 const hoy = new Date()
-const COLOR_ESTADO = { Pendiente: '#8A5A12', Confirmada: '#2F5D8C', 'Asistió': '#2E6B47', 'No asistió': '#B23A3A', Reagendada: '#9A4E1C', Cancelada: '#8F8C85' }
+const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780' }
 const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
-const saludo = () => { const h = hoy.getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
+const Seccion = ({ children }) => (
+  <div style={{ fontSize: 11, fontWeight: 600, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
+)
 
 export function Inicio() {
   const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes } = useDatos()
@@ -96,31 +98,38 @@ export function Inicio() {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', paddingBottom: 18, marginBottom: 18, borderBottom: `1px solid ${C.line}` }}>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontSize: 13, color: C.g500 }}>{(t => t.charAt(0).toUpperCase() + t.slice(1))(hoy.toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
-          <h1 style={{ fontSize: 26, fontWeight: 500, color: C.black, margin: '2px 0 0', letterSpacing: '-0.02em' }}>{saludo()}, {nombre}</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <SelectorPeriodo valor={periodo} onChange={(p) => setPeriodo({ mes: p.mes === '' ? 0 : p.mes, anio: p.anio })} todosMeses={false} />
-          <AgregarAnio />
-          <Exportar clinica={nombre} preparar={preparar} />
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
+        <div style={{ fontSize: 14, color: C.g400, fontStyle: 'italic', marginTop: 4 }}>No está aquí para encajar. Está para destacar.</div>
       </div>
-      {sedes.length > 0 && <div style={{ marginBottom: 16 }}><FiltroSede valor={sede} onChange={setSede} /></div>}
 
-      <div style={{ fontSize: 13, color: C.g500, marginBottom: 8 }}>{esActual ? 'Este mes' : MESES[periodo.mes] + ' ' + periodo.anio}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: C.g700 }}>Período:</span>
+        <SelectorPeriodo valor={periodo} onChange={(p) => setPeriodo({ mes: p.mes === '' ? 0 : p.mes, anio: p.anio })} todosMeses={false} />
+        <AgregarAnio />
+        <div style={{ flex: 1 }} />
+        <Exportar clinica={nombre} preparar={preparar} />
+      </div>
+      {sedes.length > 0 && <div style={{ marginBottom: 18 }}><FiltroSede valor={sede} onChange={setSede} /></div>}
+
       <Indicadores items={[
-        { label: 'Pacientes nuevos', valor: fmtNum(nuevos.length), sub: 'Registrados en el mes' },
+        { label: 'Pacientes del mes', valor: fmtNum(nuevos.length), sub: 'Total registrados' },
         { label: 'Desde redes', valor: fmtNum(deRedes), sub: pct(deRedes) },
-        { label: 'Referidos y otros', valor: fmtNum(otros), sub: pct(otros) },
-        { label: 'Citas', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
-        { label: 'Cobrado', valor: fmtQ(ventasMes), sub: `En ${periodo.anio}: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
+        { label: 'Referidos / otros', valor: fmtNum(otros), sub: pct(otros) },
+        { label: 'Citas del mes', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
+        { label: 'Ventas del mes', valor: fmtQ(ventasMes), sub: `Anual: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
         { label: 'Saldo pendiente', valor: fmtQ(pendienteTotal), color: pendienteTotal > 0 ? C.red : C.black, sub: `${vencidos.length} vencidos`, onClick: () => ir('pagos') },
       ]} />
 
-      <div style={{ fontSize: 13, color: C.g500, margin: '22px 0 8px' }}>Estado de las citas</div>
-      <Indicadores items={porEstado.map(e => ({ label: PLURAL[e.value], valor: e.n, punto: COLOR_ESTADO[e.value] }))} />
+      <Seccion>Estado de citas — {esActual ? 'este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</Seccion>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
+        {porEstado.map(e => (
+          <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center' }}>
+            <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
+            <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
+          </div>
+        ))}
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 22 }}>
         <Card title="Pacientes por mes">
@@ -128,7 +137,7 @@ export function Inicio() {
             {seis.map((s, i) => (
               <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
                 <span style={{ fontSize: 12, marginBottom: 4, color: C.g600 }}>{s.n}</span>
-                <div style={{ width: '62%', height: `${(s.n / maxMes) * 120}px`, minHeight: s.n ? 3 : 0, background: i === 5 ? C.purple : C.purpleLight, borderRadius: '4px 4px 0 0' }} />
+                <div style={{ width: '62%', height: `${(s.n / maxMes) * 120}px`, minHeight: s.n ? 3 : 0, background: C.grad, opacity: i === 5 ? 1 : 0.75, borderRadius: '6px 6px 0 0' }} />
               </div>
             ))}
           </div>

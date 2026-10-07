@@ -351,7 +351,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
           <Campo label="Consulta (opcional)"><Select value={citaId} onChange={setCitaId}><option value="">—</option>{citas.map(c => <option key={c.id} value={c.id}>{fmtFechaCorta(c.fecha)} · {c.tipo || 'Consulta'}</option>)}</Select></Campo>
           <Campo label="Notas (opcional)"><Input value={notas} onChange={setNotas} /></Campo>
         </Grid>
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 16, borderRadius: 10, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600 }}>
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 16, borderRadius: 16, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600 }}>
           <input type="file" accept="image/*,application/pdf" multiple onChange={subir} disabled={!!subiendo} style={{ display: 'none' }} />
           {subiendo ? `Subiendo ${subiendo} archivo(s)…` : 'Elegir fotos o tomar foto'}
         </label>
@@ -365,7 +365,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
           <Card key={et.value} title={`${et.label} (${lista.length})`} style={{ marginTop: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 10 }}>
               {lista.map(a => (
-                <button key={a.id} onClick={() => setVer(a)} style={{ padding: 0, border: `1px solid ${C.g200}`, borderRadius: 10, overflow: 'hidden', background: C.g50, cursor: 'pointer', textAlign: 'left' }}>
+                <button key={a.id} onClick={() => setVer(a)} style={{ padding: 0, border: `1px solid ${C.g200}`, borderRadius: 16, overflow: 'hidden', background: C.g50, cursor: 'pointer', textAlign: 'left' }}>
                   {(a.mime || '').startsWith('image/')
                     ? <img src={a.url} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
                     : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}><Icon name="archivo" size={30} /></div>}
@@ -381,7 +381,7 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
       {ver && (
         <Modal title={ETAPAS_FOTO.find(e => e.value === ver.etapa)?.label} subtitle={`${fmtFecha(ver.fecha)}${ver.notas ? ' · ' + ver.notas : ''}`} onClose={() => setVer(null)} maxWidth={820}>
           {(ver.mime || '').startsWith('image/')
-            ? <img src={ver.url} alt="" style={{ width: '100%', borderRadius: 10 }} />
+            ? <img src={ver.url} alt="" style={{ width: '100%', borderRadius: 16 }} />
             : <a href={ver.url} target="_blank" rel="noopener noreferrer">Abrir archivo</a>}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')} icon="descargar">Descargar</Button>

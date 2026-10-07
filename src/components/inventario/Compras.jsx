@@ -57,7 +57,7 @@ export function Compras({ inv, compras, onNueva, onAbrir }) {
   const valorPorRecibir = porRecibir.reduce((n, o) => n + lineas.filter(l => l.orden_id === o.id).reduce((m, l) => m + pendienteLinea(l) * Number(l.costo_unitario), 0), 0)
 
   const tarjeta = (titulo, valor, sub, superficie, onClick) => (
-    <button onClick={onClick} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', border: 'none', borderRadius: 12, padding: '18px 22px', background: superficie, cursor: 'pointer' }}>
+    <button onClick={onClick} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', border: 'none', borderRadius: 24, padding: '18px 22px', background: superficie, cursor: 'pointer' }}>
       <div style={{ fontSize: 13, color: C.g600 }}>{titulo}</div>
       <div style={{ fontFamily: SERIF, fontSize: 28, fontWeight: 500, letterSpacing: '-0.03em', marginTop: 4 }}>{valor}</div>
       <div style={{ fontSize: 12.5, color: C.g600 }}>{sub}</div>
@@ -384,7 +384,7 @@ export function Proveedores({ inv, compras, onEditar, onNuevaOrden }) {
           const comprado = suyas.reduce((n, o) => n + totalOC(compras.lineas.filter(l => l.orden_id === o.id)), 0)
           const productos = inv.productos.filter(x => x.proveedor_id === p.id).length
           return (
-            <div key={p.id} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, boxShadow: SHADOW, opacity: p.activo ? 1 : 0.55, display: 'flex', flexDirection: 'column' }}>
+            <div key={p.id} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 22, boxShadow: SHADOW, opacity: p.activo ? 1 : 0.55, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <div style={{ width: 42, height: 42, borderRadius: 21, background: C.periwinkle, color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{p.nombre.slice(0, 1).toUpperCase()}</div>
                 <div style={{ minWidth: 0 }}>

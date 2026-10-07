@@ -71,7 +71,7 @@ export function AbonoModal({ cobro, paciente, onClose, onGuardado }) {
   }
   return (
     <Modal title="Registrar pago" subtitle={`${paciente?.nombre || ''} · ${cobro.concepto}`} onClose={onClose} maxWidth={520}>
-      <div style={{ display: 'flex', gap: 24, padding: '12px 14px', borderRadius: 10, background: C.g50, border: `1px solid ${C.line}`, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 24, padding: '12px 14px', borderRadius: 16, background: C.g50, border: `1px solid ${C.line}`, marginBottom: 16, flexWrap: 'wrap' }}>
         <div><div style={{ fontSize: 12, color: C.g500 }}>Total</div><div style={{ fontWeight: 500 }}>{fmtQ(totalCobro(cobro))}</div></div>
         <div><div style={{ fontSize: 12, color: C.g500 }}>Pagado</div><div style={{ fontWeight: 500, color: C.green }}>{fmtQ(cobro.pagado)}</div></div>
         <div><div style={{ fontSize: 12, color: C.g500 }}>Saldo</div><div style={{ fontWeight: 500, color: pendiente > 0 ? C.red : C.green }}>{fmtQ(pendiente)}</div></div>
@@ -134,7 +134,7 @@ export function CobroDetalle({ cobro, paciente, onClose, onCambio }) {
       ]} />
 
       {saldo(cobro) > 0 && (
-        <div style={{ marginTop: 16, padding: '12px 14px', border: `1px solid ${C.line}`, borderRadius: 10 }}>
+        <div style={{ marginTop: 16, padding: '12px 14px', border: `1px solid ${C.line}`, borderRadius: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Plazo para pagar</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {[[15, 'días'], [30, 'días'], [2, 'meses'], [3, 'meses'], [6, 'meses']].map(([n, u]) => (
@@ -150,7 +150,7 @@ export function CobroDetalle({ cobro, paciente, onClose, onCambio }) {
       {!abonos ? <div style={{ color: C.g400 }}>Cargando…</div> : abonos.length === 0 ? (
         <div style={{ color: C.g400, fontSize: 13.5 }}>Todavía no hay pagos registrados.</div>
       ) : (
-        <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 16, overflow: 'hidden' }}>
           {abonos.map((a, i) => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: i ? `1px solid ${C.g100}` : 'none', fontSize: 13.5 }}>
               <span style={{ width: 84, color: C.g500 }}>{fmtFechaCorta(a.fecha)}</span>

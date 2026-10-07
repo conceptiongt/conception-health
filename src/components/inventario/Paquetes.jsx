@@ -37,7 +37,7 @@ export function Paquetes({ inv, onCambio }) {
             const servicio = servicios.find(s => s.id === p.servicio_id)
             const costo = items.reduce((n, i) => n + Number(i.cantidad) * (Number(prod(i.producto_id)?.costo) || 0), 0)
             return (
-              <div key={p.id} className="op-tile" onClick={() => setEditando(p)} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, cursor: 'pointer', opacity: p.activo ? 1 : 0.55 }}>
+              <div key={p.id} className="op-tile" onClick={() => setEditando(p)} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 18, cursor: 'pointer', opacity: p.activo ? 1 : 0.55 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 500 }}>{p.nombre}</div>
@@ -113,7 +113,7 @@ function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
         </Campo>
       </Grid>
       <div style={{ fontSize: 13.5, fontWeight: 500, margin: '18px 0 8px' }}>Insumos</div>
-      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 16 }}>
         {items.length === 0 && <div style={{ padding: '12px 14px', color: C.g400, fontSize: 13.5 }}>Busque abajo los insumos del procedimiento</div>}
         {items.map((it, i) => (
           <div key={it.producto} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderTop: i ? `1px solid ${C.g100}` : 'none' }}>
@@ -192,7 +192,7 @@ export function UsarPaqueteModal({ inv, paciente, citas, sedeInicial, onClose, o
       </Grid>
       <div style={{ fontSize: 13.5, fontWeight: 500, margin: '18px 0 4px' }}>Insumos a descontar</div>
       <div style={{ fontSize: 12.5, color: C.g500, marginBottom: 8 }}>Puede cambiar las cantidades solo para este paciente; el paquete no cambia.</div>
-      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 16 }}>
         {items.map((it, i) => {
           const hay = existencia(inv, sede, it.producto), falta = Number(it.cantidad) > hay
           return (
@@ -259,7 +259,7 @@ export function ConteoModal({ inv, sedeInicial, onClose, onGuardado }) {
         <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar producto…" style={{ flex: '1 1 200px', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.g200}`, fontFamily: 'inherit', fontSize: 13.5 }} />
         {categorias.length > 0 && <select value={categoria} onChange={e => setCategoria(e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.g200}`, fontFamily: 'inherit', fontSize: 13.5 }}><option value="">Toda categoría</option>{categorias.map(c => <option key={c}>{c}</option>)}</select>}
       </div>
-      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, maxHeight: '48vh', overflowY: 'auto' }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 16, maxHeight: '48vh', overflowY: 'auto' }}>
         <div className="conteo-fila conteo-cab"><span>Producto</span><span>En sistema</span><span>Contado</span><span>Diferencia</span></div>
         {lista.map(p => {
           const sis = existencia(inv, sede, p.id), v = contado[p.id] ?? '', dif = v === '' ? null : Number(v) - sis

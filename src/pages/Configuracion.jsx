@@ -86,9 +86,9 @@ function Marca() {
           <Campo label="Nombre del consultorio o doctor"><Input value={nombre} onChange={setNombre} /></Campo>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: C.g600, margin: '18px 0 8px' }}>Logotipo</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 84, height: 84, borderRadius: 12, border: `1px solid ${C.line}`, background: C.g50, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <div style={{ width: 84, height: 84, borderRadius: 24, border: `1px solid ${C.line}`, background: C.g50, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               {logo ? <img src={logo} alt="Logo" style={{ maxWidth: '86%', maxHeight: '86%', objectFit: 'contain' }} />
-                : <span style={{ width: 52, height: 52, borderRadius: 10, background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{iniciales(nombre)}</span>}
+                : <span style={{ width: 52, height: 52, borderRadius: 16, background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{iniciales(nombre)}</span>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 12px', borderRadius: 8, border: `1px solid ${C.g200}`, background: '#fff', cursor: subiendo ? 'default' : 'pointer', fontSize: 13 }}>
@@ -103,7 +103,7 @@ function Marca() {
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: C.g600, marginBottom: 8 }}>Color principal</div>
           <SelectorColor valor={color} onChange={elegirColor} />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, padding: 12, borderRadius: 10, background: C.g50, border: `1px solid ${C.line}`, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, padding: 12, borderRadius: 16, background: C.g50, border: `1px solid ${C.line}`, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12.5, color: C.g500 }}>Vista previa:</span>
             <Button size="sm">Botón principal</Button>
             <Button size="sm" variant="soft">Seleccionado</Button>
@@ -195,7 +195,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
         <Segmentos valor={cat} onChange={setCat} opciones={[{ value: '', label: 'Todas', n: servicios.length }, ...TIPOS_CITA.map(t => ({ value: t, label: t, n: servicios.filter(s => s.categoria === t).length }))]} />
       </div>
 
-      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflowX: 'auto' }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 16, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead><tr><th style={th}>Servicio</th><th style={th}>Tipo</th><th style={{ ...th, textAlign: 'right' }}>Precio</th><th style={{ ...th, width: 80 }} /></tr></thead>
           <tbody>

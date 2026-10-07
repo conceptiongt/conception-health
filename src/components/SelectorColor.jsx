@@ -51,7 +51,7 @@ export function SelectorColor({ valor, onChange }) {
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
       <div style={{ width: 240 }}>
         <div ref={caja} onPointerDown={arrastrar} style={{
-          position: 'relative', height: 160, borderRadius: 10, cursor: 'crosshair', touchAction: 'none',
+          position: 'relative', height: 160, borderRadius: 16, cursor: 'crosshair', touchAction: 'none',
           background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h}, 100%, 50%))`,
         }}>
           <span style={{ position: 'absolute', left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%`, width: 16, height: 16, marginLeft: -8, marginTop: -8, borderRadius: '50%', border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(0,0,0,0.35)', background: hex, pointerEvents: 'none' }} />
@@ -61,7 +61,7 @@ export function SelectorColor({ valor, onChange }) {
       </div>
       <div style={{ flex: '1 1 180px', minWidth: 180 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ width: 44, height: 44, borderRadius: 10, background: hex, border: `1px solid ${C.line}` }} />
+          <span style={{ width: 44, height: 44, borderRadius: 16, background: hex, border: `1px solid ${C.line}` }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: C.g500, marginBottom: 4 }}>Código</div>
             <input value={texto} onChange={e => deHex(e.target.value.trim())} style={campo} placeholder="#1F5F5B" />

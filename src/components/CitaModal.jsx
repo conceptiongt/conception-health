@@ -67,7 +67,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
   return (
     <div>
       <button onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Volver</button>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', paddingBottom: 18, marginBottom: 22, borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{ fontSize: 13, color: C.g500 }}>{cita ? 'Editar cita' : 'Nueva cita'}</div>
           <h1 style={{ fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.02em' }}>{paciente?.nombre}</h1>

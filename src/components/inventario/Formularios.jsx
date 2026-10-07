@@ -9,6 +9,7 @@ import { Modal } from '../ui/Modal'
 import { Icon } from '../ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { toast } from '../ui/Toast'
+import { BuscadorProducto, ElegirCategoria } from './Selectores'
 
 // The four everyday operations, in plain words
 export const OPERACIONES = [
@@ -23,7 +24,7 @@ export const operacion = (tipo) => OPERACIONES.find(o => o.tipo === tipo)
 export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
   const sedes = inv.sedes.filter(s => s.activa), productos = inv.productos.filter(p => p.activo)
   const [f, setF] = useState({
-    tipo: inicial.tipo, sede: inicial.sede || sedes[0]?.id || '', producto: inicial.producto || productos[0]?.id || '',
+    tipo: inicial.tipo, sede: inicial.sede || sedes[0]?.id || '', producto: inicial.producto || '',
     cantidad: inicial.cantidad != null ? String(inicial.cantidad) : '', lote: '', vence: '', notas: '', fecha: hoyISO(),
   })
   const [destino, setDestino] = useState(sedes.find(s => s.id !== f.sede)?.id || '')
@@ -78,13 +79,13 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
         {f.tipo === 'traslado'
           ? <Campo label="Hacia la sede"><Select value={destinoOk} onChange={setDestino}>{sedes.filter(s => s.id !== f.sede).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>
           : <Campo label="Fecha"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>}
-        <Campo label="Producto" full><Select value={f.producto} onChange={set('producto')}>{productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</Select></Campo>
+        <Campo label="Producto" full><BuscadorProducto productos={productos} valor={f.producto} onChange={set('producto')} inv={inv} sedeId={f.sede} soloConExistencia={sale} /></Campo>
       </Grid>
 
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 150px', padding: '12px 16px', borderRadius: 14, background: C.g50, border: `1px solid ${C.line}` }}>
           <div style={{ fontSize: 11.5, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>HAY AHORA EN ESTA SEDE</div>
-          <div style={{ fontSize: 24, fontWeight: 800, marginTop: 2 }}>{fmtCant(disponible)} <span style={{ fontSize: 14, fontWeight: 600, color: C.g500 }}>{prod?.unidad}</span></div>
+          <div style={{ fontSize: 24, fontWeight: 800, marginTop: 2 }}>{prod ? fmtCant(disponible) : '—'} <span style={{ fontSize: 14, fontWeight: 600, color: C.g500 }}>{prod?.unidad}</span></div>
         </div>
         <div style={{ flex: '1 1 150px' }}>
           <Campo label={f.tipo === 'ajuste' ? '¿Cuántos contó en físico?' : f.tipo === 'entrada' ? '¿Cuántos llegaron?' : f.tipo === 'traslado' ? '¿Cuántos va a mover?' : '¿Cuántos va a sacar?'}>
@@ -118,7 +119,7 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
   )
 }
 
-export function ProductoModal({ producto, onClose, onGuardado }) {
+export function ProductoModal({ producto, categorias = [], onClose, onGuardado }) {
   const [f, setF] = useState({ nombre: producto?.nombre || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', costo: producto?.costo ?? '', activo: producto?.activo ?? true })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
@@ -136,7 +137,7 @@ export function ProductoModal({ producto, onClose, onGuardado }) {
     <Modal title={producto ? 'Editar producto' : 'Nuevo producto'} onClose={onClose}>
       <Grid min={200}>
         <Campo label="Nombre *" full><Input value={f.nombre} onChange={set('nombre')} placeholder="Ej. Toxina botulínica 100U" /></Campo>
-        <Campo label="Categoría" ayuda="Para agrupar: Inyectables, Insumos…"><Input value={f.categoria} onChange={set('categoria')} /></Campo>
+        <Campo label="Categoría" full ayuda="Elija una o cree la suya; sirve para encontrar el producto más rápido"><ElegirCategoria valor={f.categoria} onChange={set('categoria')} categorias={categorias} /></Campo>
         <Campo label="Se cuenta por"><Input value={f.unidad} onChange={set('unidad')} list="unidades" /><datalist id="unidades">{UNIDADES.map(u => <option key={u} value={u} />)}</datalist></Campo>
         <Campo label="Mínimo por sede" ayuda="Si una sede baja de aquí, le avisamos para reabastecer"><Input type="number" min="0" step="any" value={f.stock_minimo} onChange={set('stock_minimo')} placeholder="0" /></Campo>
         <Campo label="Costo por unidad (Q)" ayuda="Para saber cuánto vale su inventario"><Input type="number" min="0" step="0.01" value={f.costo} onChange={set('costo')} /></Campo>

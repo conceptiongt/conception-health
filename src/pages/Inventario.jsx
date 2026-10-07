@@ -13,6 +13,7 @@ import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
+import { categoriasDe } from '../components/inventario/Selectores'
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
 const mesActual = () => new Date().toISOString().slice(0, 7)
@@ -97,7 +98,7 @@ export function Inventario() {
       {detalle && <ProductoDetalle inv={inv} movs={movs} sedes={sedes} producto={inv.productos.find(p => p.id === detalle.id) || detalle}
         onClose={() => setDetalle(null)} operar={(i) => { setDetalle(null); operar(i) }} editar={(p) => { setDetalle(null); setProducto(p) }} />}
       {mov && <MovimientoModal inv={inv} inicial={mov} onClose={() => setMov(null)} onGuardado={() => { setMov(null); recargar() }} />}
-      {producto !== undefined && <ProductoModal producto={producto} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
+      {producto !== undefined && <ProductoModal producto={producto} categorias={categoriasDe(inv.productos)} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
       {sede !== undefined && <SedeModal sede={sede} onClose={() => setSede(undefined)} onGuardado={() => { setSede(undefined); recargar() }} />}
     </>
   )

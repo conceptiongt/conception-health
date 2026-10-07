@@ -9,6 +9,7 @@ import { Button } from './ui/Button'
 import { Modal } from './ui/Modal'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
+import { BuscadorProducto } from './inventario/Selectores'
 
 // Products used on a patient: each one is taken out of a location's stock, only if there is enough
 export function ProductosPaciente({ paciente, citas }) {
@@ -101,9 +102,9 @@ function DescargaModal({ inv, paciente, citas, ultimaSede, onClose, onGuardado }
       <Grid min={200}>
         <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>
         <Campo label="Fecha"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>
-        <Campo label="Producto" full ayuda={conExistencia.length ? 'Solo aparecen los productos con existencia en esta sede' : undefined}>
+        <Campo label="Producto" full ayuda={conExistencia.length ? 'Escriba el nombre o filtre por categoría; solo se pueden elegir los que hay en esta sede' : undefined}>
           {conExistencia.length
-            ? <Select value={f.producto} onChange={set('producto')}><option value="">— Elegir —</option>{conExistencia.map(p => <option key={p.id} value={p.id}>{p.nombre} — hay {fmtCant(existencia(inv, f.sede, p.id))} {p.unidad}</option>)}</Select>
+            ? <BuscadorProducto productos={productos} valor={f.producto} onChange={set('producto')} inv={inv} sedeId={f.sede} soloConExistencia />
             : <div style={{ padding: '11px 13px', borderRadius: 10, background: C.g50, border: `1px solid ${C.g200}`, color: C.g500, fontSize: 14 }}>No hay existencia de ningún producto en esta sede</div>}
         </Campo>
         <Campo label={`Cantidad${prod ? ` (${prod.unidad})` : ''}`} ayuda={prod ? `Disponible: ${fmtCant(disponible)}` : undefined}><Input type="number" min="0" step="any" value={f.cantidad} onChange={set('cantidad')} /></Campo>

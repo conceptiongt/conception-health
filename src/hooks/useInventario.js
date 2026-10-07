@@ -41,3 +41,37 @@ export function errorInventario(error, porDefecto = 'No se pudo guardar') {
   if (t.includes('row-level security')) return 'Su plan no incluye inventario'
   return porDefecto
 }
+
+// Overall status of a product across the active locations
+export function estadoProducto(inv, sedes, p) {
+  const total = sedes.reduce((n, s) => n + existencia(inv, s.id, p.id), 0)
+  if (total <= 0) return { clave: 'agotado', label: 'Agotado', color: '#C23B3B', bg: '#FCEDED', total }
+  if (sedes.some(s => bajoMinimo(inv, s.id, p))) return { clave: 'bajo', label: 'Reabastecer', color: '#9A6200', bg: '#FDF5E4', total }
+  return { clave: 'ok', label: 'En existencia', color: '#1F7A4D', bg: '#E9F6EF', total }
+}
+
+// What the stock is worth (cost × quantity), optionally for one location
+export const valorInventario = (inv, sedeId) =>
+  (inv?.existencias || []).filter(e => !sedeId || e.sede_id === sedeId)
+    .reduce((n, e) => n + Number(e.cantidad) * (Number(inv.productos.find(p => p.id === e.producto_id)?.costo) || 0), 0)
+
+// Locations below their minimum, with a suggested quantity to bring them to twice the minimum
+export function porReabastecer(inv, sedes, productos) {
+  const filas = []
+  for (const s of sedes) for (const p of productos) {
+    if (!bajoMinimo(inv, s.id, p)) continue
+    const hay = existencia(inv, s.id, p.id), min = Number(p.stock_minimo)
+    filas.push({ sede: s, producto: p, hay, min, sugerido: Math.max(1, Math.ceil(min * 2 - hay)) })
+  }
+  return filas.sort((a, b) => a.hay / a.min - b.hay / b.min)
+}
+
+// Received lots with an expiry date in the next `dias` days (or already expired) where there is still stock
+export function porVencer(inv, movimientos, dias = 60) {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const limite = new Date(hoy); limite.setDate(limite.getDate() + dias)
+  return (movimientos || [])
+    .filter(m => m.tipo === 'entrada' && m.vence && new Date(m.vence + 'T00:00') <= limite && existencia(inv, m.sede_id, m.producto_id) > 0)
+    .map(m => ({ ...m, dias: Math.round((new Date(m.vence + 'T00:00') - hoy) / 86400000) }))
+    .sort((a, b) => a.dias - b.dias)
+}

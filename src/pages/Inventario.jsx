@@ -1,147 +1,490 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, SERIF } from '../lib/theme'
-import { DEPARTAMENTOS, TIPOS_SEDE, UNIDADES, TIPOS_MOVIMIENTO } from '../lib/constantes'
-import { fmtQ, fmtFechaCorta, hoyISO } from '../lib/formato'
+import { C, SERIF, SHADOW } from '../lib/theme'
+import { TIPOS_MOVIMIENTO } from '../lib/constantes'
+import { fmtQ, fmtFechaCorta } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
-import { useInventario, existencia, bajoMinimo, totalProducto, fmtCant, errorInventario } from '../hooks/useInventario'
-import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
+import { useInventario, existencia, bajoMinimo, estadoProducto, valorInventario, porReabastecer, porVencer, fmtCant, errorInventario } from '../hooks/useInventario'
+import { Encabezado, Tabla, Card, Badge, Vacio, Cargando, Pestanas } from '../components/ui/Varios'
 import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
-import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../components/ui/Campos'
+import { Icon } from '../components/ui/Icon'
+import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
+import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
 
-const TABS = [
-  { value: 'existencias', label: 'Existencias', icono: 'caja' },
-  { value: 'movimientos', label: 'Movimientos', icono: 'actividad' },
-  { value: 'productos', label: 'Productos', icono: 'archivo' },
-  { value: 'sedes', label: 'Sedes', icono: 'sede' },
-]
-
-export const tipoSedeLabel = (v) => TIPOS_SEDE.find(t => t.value === v)?.label || v
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
+const mesActual = () => new Date().toISOString().slice(0, 7)
 
 export function Inventario() {
-  const { inv, recargar } = useInventario()
-  const [tab, setTab] = useState('existencias')
-  const [mov, setMov] = useState(null) // movement modal: { tipo }
+  const { inv, recargar: recargarInv } = useInventario()
+  const [movs, setMovs] = useState(null)
+  const [tab, setTab] = useState('resumen')
+  const [sedeFiltro, setSedeFiltro] = useState('')
+  const [mov, setMov] = useState(null)          // movement form: { tipo, sede?, producto?, cantidad? }
+  const [producto, setProducto] = useState(undefined) // product form: undefined closed, null new, object edit
+  const [sede, setSede] = useState(undefined)
+  const [detalle, setDetalle] = useState(null)  // product detail
 
-  if (!inv) return <Cargando />
+  const cargarMovs = useCallback(async () => {
+    const { data } = await supabase.from('inventario_movimientos').select('*').order('created_at', { ascending: false }).limit(1000)
+    setMovs(data || [])
+  }, [])
+  useEffect(() => { cargarMovs() }, [cargarMovs])
+  const recargar = () => { recargarInv(); cargarMovs() }
+
+  if (!inv || !movs) return <Cargando />
   if (inv.error) return <div style={{ color: C.red, padding: 30 }}>No se pudo cargar el inventario: {inv.error}</div>
 
   const sedes = inv.sedes.filter(s => s.activa)
   const productos = inv.productos.filter(p => p.activo)
-  const bajos = productos.filter(p => sedes.some(s => bajoMinimo(inv, s.id, p)))
+  const reabastecer = porReabastecer(inv, sedes, productos)
+  const vencen = porVencer(inv, movs)
   const listo = sedes.length > 0 && productos.length > 0
+  const operar = (inicial) => {
+    if (!listo) { toast.error(!sedes.length ? 'Primero cree una sede' : 'Primero agregue un producto'); return }
+    setMov(inicial)
+  }
+  const verSede = (id) => { setSedeFiltro(id); setTab('productos') }
+
+  const TABS = [
+    { value: 'resumen', label: 'Resumen', icono: 'inicio' },
+    { value: 'productos', label: 'Productos', icono: 'caja' },
+    { value: 'reabastecer', label: `Reabastecer${reabastecer.length ? ` (${reabastecer.length})` : ''}`, icono: 'alerta' },
+    { value: 'sedes', label: 'Sedes', icono: 'sede' },
+    { value: 'historial', label: 'Historial', icono: 'actividad' },
+  ]
 
   return (
     <>
-      <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'}`}>
-        {listo && <>
-          <Button variant="ghost" icon="repetir" onClick={() => setMov({ tipo: 'traslado' })} disabled={sedes.length < 2} title={sedes.length < 2 ? 'Necesita al menos dos sedes' : undefined}>Traslado</Button>
-          <Button variant="ghost" icon="editar" onClick={() => setMov({ tipo: 'salida' })}>Salida o ajuste</Button>
-          <Button icon="mas" onClick={() => setMov({ tipo: 'entrada' })}>Registrar entrada</Button>
-        </>}
+      <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} · vale ${fmtQ(valorInventario(inv))}`}>
+        <Button variant="ghost" icon="sede" onClick={() => setSede(null)}>Nueva sede</Button>
+        <Button icon="mas" onClick={() => setProducto(null)}>Nuevo producto</Button>
       </Encabezado>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
-        <Stat icono="sede" label="Sedes" valor={sedes.length} color={C.blue} bg={C.blueLight} />
-        <Stat icono="caja" label="Productos" valor={productos.length} />
-        <Stat icono="alerta" label="Bajo el mínimo" valor={bajos.length} color={bajos.length ? C.red : C.green} bg={bajos.length ? C.redLight : C.greenLight}
-          sub={bajos.length ? bajos.slice(0, 3).map(p => p.nombre).join(', ') + (bajos.length > 3 ? '…' : '') : 'Todo en orden'} />
+      {/* Everyday operations, like a warehouse dashboard */}
+      <div className="inv-cuatro" style={{ marginBottom: 22 }}>
+        {OPERACIONES.map(o => {
+          const n = movs.filter(m => m.tipo === o.tipo && m.fecha?.startsWith(mesActual()) && (o.tipo !== 'traslado' || m.delta > 0)).length
+          const off = o.tipo === 'traslado' && sedes.length < 2
+          return (
+            <button key={o.tipo} className="op-tile" onClick={() => off ? toast.error('Necesita al menos dos sedes para trasladar') : operar({ tipo: o.tipo })} style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 18, border: `1px solid ${C.line}`, background: '#fff',
+              boxShadow: SHADOW, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: off ? 0.55 : 1,
+            }}>
+              <div style={{ width: 44, height: 44, borderRadius: 13, background: o.bg, color: o.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name={o.icono} size={21} /></div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: C.black }}>{o.titulo}</div>
+                <div style={{ fontSize: 12.5, color: C.g500, lineHeight: 1.35 }}>{o.texto}</div>
+                {n > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: o.color, marginTop: 3 }}>{n} este mes</div>}
+              </div>
+            </button>
+          )
+        })}
       </div>
 
-      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS} valor={tab} onChange={setTab} /></div>
+      <div style={{ marginBottom: 18 }}><Pestanas opciones={TABS} valor={tab} onChange={setTab} /></div>
 
-      {tab === 'existencias' && (
-        !sedes.length ? <PrimerPaso icono="sede" titulo="Cree su primera sede" texto="Cada sede (de ciudad o departamental) lleva su propio inventario." boton="Crear sede" onClick={() => setTab('sedes')} />
-        : !productos.length ? <PrimerPaso icono="caja" titulo="Agregue sus productos" texto="Insumos, medicamentos o materiales que usa en sus pacientes." boton="Agregar producto" onClick={() => setTab('productos')} />
-        : <Existencias inv={inv} sedes={sedes} productos={productos} />
-      )}
-      {tab === 'movimientos' && <Movimientos inv={inv} onCambio={recargar} />}
-      {tab === 'productos' && <Productos inv={inv} onCambio={recargar} />}
-      {tab === 'sedes' && <Sedes inv={inv} onCambio={recargar} />}
+      {tab === 'resumen' && (listo
+        ? <Resumen inv={inv} movs={movs} sedes={sedes} productos={productos} reabastecer={reabastecer} vencen={vencen} operar={operar} verSede={verSede} irA={setTab} abrir={setDetalle} />
+        : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
+      {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} />}
+      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} />}
+      {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
+      {tab === 'historial' && <Historial inv={inv} movs={movs} onCambio={recargar} />}
 
-      {mov && <MovimientoModal inv={inv} tipoInicial={mov.tipo} onClose={() => setMov(null)} onGuardado={() => { setMov(null); recargar() }} />}
+      {detalle && <ProductoDetalle inv={inv} movs={movs} sedes={sedes} producto={inv.productos.find(p => p.id === detalle.id) || detalle}
+        onClose={() => setDetalle(null)} operar={(i) => { setDetalle(null); operar(i) }} editar={(p) => { setDetalle(null); setProducto(p) }} />}
+      {mov && <MovimientoModal inv={inv} inicial={mov} onClose={() => setMov(null)} onGuardado={() => { setMov(null); recargar() }} />}
+      {producto !== undefined && <ProductoModal producto={producto} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
+      {sede !== undefined && <SedeModal sede={sede} onClose={() => setSede(undefined)} onGuardado={() => { setSede(undefined); recargar() }} />}
     </>
   )
 }
 
-function PrimerPaso({ icono, titulo, texto, boton, onClick }) {
+// ─── First use: three clear steps ───
+function Configurar({ sedes, productos, onSede, onProducto }) {
+  const pasos = [
+    { hecho: sedes.length > 0, titulo: 'Cree sus sedes', texto: 'De ciudad (ej. «Zona 10», «Zona 15») o departamentales (ej. «Quetzaltenango»). Cada una lleva su propio inventario.', boton: 'Crear sede', accion: onSede },
+    { hecho: productos.length > 0, titulo: 'Agregue sus productos', texto: 'Insumos, medicamentos o materiales que usa con sus pacientes, con su mínimo y costo.', boton: 'Agregar producto', accion: onProducto },
+    { hecho: false, titulo: 'Registre lo que tiene', texto: 'Con «Recibir» anote lo que hay en cada sede. Desde ahí, cada uso en un paciente se descuenta solo.' },
+  ]
+  const actual = pasos.findIndex(p => !p.hecho)
   return (
-    <Card><Vacio icono={icono} titulo={titulo} texto={texto}><Button icon="mas" onClick={onClick}>{boton}</Button></Vacio></Card>
+    <Card title="Configure su inventario en 3 pasos">
+      {pasos.map((p, i) => (
+        <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderTop: i ? `1px solid ${C.g100}` : 'none', alignItems: 'center', opacity: i > actual ? 0.5 : 1 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800,
+            background: p.hecho ? C.greenLight : i === actual ? C.purple : C.g100, color: p.hecho ? C.green : i === actual ? '#fff' : C.g400 }}>
+            {p.hecho ? <Icon name="check" size={16} stroke={2.6} /> : i + 1}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{p.titulo}</div>
+            <div style={{ fontSize: 13.5, color: C.g500 }}>{p.texto}</div>
+          </div>
+          {i === actual && p.accion && <Button icon="mas" onClick={p.accion}>{p.boton}</Button>}
+        </div>
+      ))}
+    </Card>
   )
 }
 
-// ─── Stock table: one column per location ───
-function Existencias({ inv, sedes, productos }) {
+function Kpi({ icono, label, valor, sub, color = C.purple, bg = C.purpleMid, onClick }) {
+  return (
+    <div onClick={onClick} className={onClick ? 'op-tile' : undefined} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '16px 18px', boxShadow: SHADOW, cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.g500, fontSize: 13, fontWeight: 600 }}>
+        <span style={{ width: 28, height: 28, borderRadius: 8, background: bg, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icono} size={15} /></span>{label}
+      </div>
+      <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 800, marginTop: 8, letterSpacing: '-0.02em' }}>{valor}</div>
+      {sub && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{sub}</div>}
+    </div>
+  )
+}
+
+// ─── Overview ───
+function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, verSede, irA, abrir }) {
+  const { pacientes } = useDatos()
+  const conExistencia = productos.filter(p => sedes.some(s => existencia(inv, s.id, p.id) > 0)).length
+  const usosMes = movs.filter(m => m.tipo === 'uso' && m.fecha?.startsWith(mesActual()))
+  const atencion = [
+    ...vencen.slice(0, 4).map(v => ({ key: 'v' + v.id, tipo: 'vence', ...v })),
+    ...reabastecer.slice(0, 6).map(r => ({ key: 'r' + r.sede.id + r.producto.id, tipo: 'bajo', ...r })),
+  ]
+  const nombre = (id) => inv.productos.find(p => p.id === id)
+  const sedeDe = (id) => inv.sedes.find(s => s.id === id)
+  return (
+    <>
+      <div className="inv-cuatro" style={{ marginBottom: 16 }}>
+        <Kpi icono="cartera" label="Valor del inventario" valor={fmtQ(valorInventario(inv))} sub="Según el costo de cada producto" />
+        <Kpi icono="caja" label="Con existencia" valor={`${conExistencia} de ${productos.length}`} sub="productos" color={C.green} bg={C.greenLight} onClick={() => irA('productos')} />
+        <Kpi icono="alerta" label="Por reabastecer" valor={reabastecer.length} sub={reabastecer.length ? 'Bajo el mínimo' : 'Todo en orden'} color={reabastecer.length ? C.amber : C.green} bg={reabastecer.length ? C.amberLight : C.greenLight} onClick={() => irA('reabastecer')} />
+        <Kpi icono="reloj" label="Por vencer" valor={vencen.length} sub="En los próximos 60 días" color={vencen.length ? C.red : C.green} bg={vencen.length ? C.redLight : C.greenLight} onClick={() => irA('reabastecer')} />
+      </div>
+
+      <div className="inv-dos">
+        <Card title="Necesita atención" right={reabastecer.length > 6 && <Button variant="ghost" size="sm" onClick={() => irA('reabastecer')}>Ver todo</Button>}>
+          {atencion.length === 0 ? (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '6px 0' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: C.greenLight, color: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={20} stroke={2.4} /></div>
+              <div><div style={{ fontWeight: 700 }}>Todo en orden</div><div style={{ fontSize: 13.5, color: C.g500 }}>Ninguna sede está bajo el mínimo y nada vence pronto.</div></div>
+            </div>
+          ) : atencion.map((a, i) => (
+            <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i ? `1px solid ${C.g100}` : 'none' }}>
+              <div style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, background: a.tipo === 'vence' ? C.red : C.amber }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {a.tipo === 'bajo' ? <>
+                  <div style={{ fontWeight: 700 }}>{a.producto.nombre}</div>
+                  <div style={{ fontSize: 13, color: C.g500 }}>{a.sede.nombre}: quedan <strong style={{ color: a.hay ? C.amber : C.red }}>{fmtCant(a.hay)}</strong> de un mínimo de {fmtCant(a.min)} {a.producto.unidad}</div>
+                </> : <>
+                  <div style={{ fontWeight: 700 }}>{nombre(a.producto_id)?.nombre}{a.lote ? ` · lote ${a.lote}` : ''}</div>
+                  <div style={{ fontSize: 13, color: C.g500 }}>{sedeDe(a.sede_id)?.nombre}: <strong style={{ color: C.red }}>{a.dias < 0 ? `venció hace ${-a.dias} días` : a.dias === 0 ? 'vence hoy' : `vence en ${a.dias} días`}</strong> ({fmtFechaCorta(a.vence)})</div>
+                </>}
+              </div>
+              {a.tipo === 'bajo'
+                ? <Button size="sm" variant="ghost" icon="descargar" onClick={() => operar({ tipo: 'entrada', sede: a.sede.id, producto: a.producto.id, cantidad: a.sugerido })}>Recibir</Button>
+                : <Button size="sm" variant="ghost" icon="subir" onClick={() => operar({ tipo: 'salida', sede: a.sede_id, producto: a.producto_id })}>Sacar</Button>}
+            </div>
+          ))}
+        </Card>
+
+        <Card title="Por sede">
+          {sedes.map((s, i) => {
+            const items = productos.filter(p => existencia(inv, s.id, p.id) > 0).length
+            const bajos = productos.filter(p => bajoMinimo(inv, s.id, p)).length
+            return (
+              <button key={s.id} onClick={() => verSede(s.id)} className="fila" style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, padding: '11px 6px', border: 'none', borderTop: i ? `1px solid ${C.g100}` : 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', borderRadius: 8 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: s.tipo === 'departamental' ? C.blueLight : C.purpleMid, color: s.tipo === 'departamental' ? C.blue : C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="sede" size={17} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
+                  <div style={{ fontSize: 12.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{items} {items === 1 ? 'producto' : 'productos'}{bajos ? <span style={{ color: C.amber, fontWeight: 600 }}> · {bajos} por reabastecer</span> : ''}</div>
+                </div>
+                <div style={{ fontWeight: 700, color: C.black, whiteSpace: 'nowrap' }}>{fmtQ(valorInventario(inv, s.id))}</div>
+                <Icon name="flecha" size={15} style={{ color: C.g300 }} />
+              </button>
+            )
+          })}
+        </Card>
+      </div>
+
+      <Card title="Últimos movimientos" style={{ marginTop: 16 }} right={<Button variant="ghost" size="sm" onClick={() => irA('historial')}>Ver historial</Button>}>
+        {movs.length === 0 ? <div style={{ color: C.g400 }}>Aún no hay movimientos. Empiece con «Recibir».</div>
+          : movs.filter(m => m.tipo !== 'traslado' || m.delta > 0).slice(0, 6).map((m, i) => {
+            const t = TIPOS_MOVIMIENTO[m.tipo], p = nombre(m.producto_id), pac = pacientes.find(x => x.id === m.paciente_id)
+            return (
+              <div key={m.id} onClick={() => p && abrir(p)} className="fila" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 8 }}>
+                <Badge color={t.color} bg={t.bg}>{t.label}</Badge>
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <strong>{p?.nombre}</strong> <span style={{ color: C.g500 }}>· {m.tipo === 'traslado' ? `hacia ${sedeDe(m.sede_id)?.nombre}` : sedeDe(m.sede_id)?.nombre}{pac ? ` · ${pac.nombre}` : ''}</span>
+                </div>
+                <strong style={{ color: m.delta > 0 ? C.green : C.red, whiteSpace: 'nowrap' }}>{m.delta > 0 ? '+' : '−'}{fmtCant(Math.abs(m.delta))}</strong>
+                <span style={{ fontSize: 12.5, color: C.g400, whiteSpace: 'nowrap', width: 70, textAlign: 'right' }}>{fmtFechaCorta(m.fecha)}</span>
+              </div>
+            )
+          })}
+        {usosMes.length > 0 && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 10 }}>Este mes se descargaron productos en {new Set(usosMes.map(u => u.paciente_id)).size} pacientes.</div>}
+      </Card>
+    </>
+  )
+}
+
+// ─── Products: cards (or list) with status and stock per location ───
+function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo }) {
   const { clinica } = useDatos()
-  const [sedeId, setSedeId] = useState('')
   const [buscar, setBuscar] = useState('')
-  const [soloBajos, setSoloBajos] = useState(false)
-  const visibles = sedeId ? sedes.filter(s => s.id === sedeId) : sedes
+  const [estado, setEstado] = useState('')
+  const [categoria, setCategoria] = useState('')
+  const [vista, setVista] = useState(() => { try { return localStorage.getItem('inv_vista') || 'tarjetas' } catch { return 'tarjetas' } })
+  const cambiarVista = (v) => { setVista(v); try { localStorage.setItem('inv_vista', v) } catch { /* private mode */ } }
+  const visibles = sedeFiltro ? sedes.filter(s => s.id === sedeFiltro) : sedes
+  const categorias = [...new Set(inv.productos.filter(p => p.activo && p.categoria).map(p => p.categoria))].sort()
   const q = buscar.trim().toLowerCase()
-  const bajo = (p, s) => bajoMinimo(inv, s.id, p)
-  const lista = productos.filter(p => (!q || p.nombre.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q)) && (!soloBajos || visibles.some(s => bajo(p, s))))
+  const lista = inv.productos
+    .filter(p => p.activo || estado === 'inactivo')
+    .map(p => ({ p, e: estadoProducto(inv, visibles, p) }))
+    .filter(({ p, e }) => (!q || p.nombre.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q))
+      && (!categoria || p.categoria === categoria)
+      && (estado === 'inactivo' ? !p.activo : !estado || e.clave === estado))
+  const conteo = (clave) => inv.productos.filter(p => p.activo && estadoProducto(inv, visibles, p).clave === clave).length
 
   const preparar = () => ({
-    titulo: 'Inventario', subtitulo: sedeId ? visibles[0].nombre : 'Todas las sedes',
-    secciones: [{ tabla: { headers: ['Producto', 'Unidad', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : []), 'Mínimo'],
-      filas: lista.map(p => [p.nombre, p.unidad, ...visibles.map(s => fmtCant(existencia(inv, s.id, p.id))), ...(visibles.length > 1 ? [fmtCant(visibles.reduce((n, s) => n + existencia(inv, s.id, p.id), 0))] : []), fmtCant(p.stock_minimo)]) } }],
+    titulo: 'Inventario', subtitulo: sedeFiltro ? visibles[0]?.nombre : 'Todas las sedes',
+    secciones: [{ tabla: { headers: ['Producto', 'Unidad', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : []), 'Mínimo', 'Estado'],
+      filas: lista.map(({ p, e }) => [p.nombre, p.unidad, ...visibles.map(s => fmtCant(existencia(inv, s.id, p.id))), ...(visibles.length > 1 ? [fmtCant(e.total)] : []), fmtCant(p.stock_minimo), e.label]) } }],
     excel: { archivo: 'inventario', hojas: [{ nombre: 'Existencias', columnas: [
       { header: 'Producto', key: 'p', width: 30 }, { header: 'Categoría', key: 'c', width: 16 }, { header: 'Unidad', key: 'u', width: 10 },
-      ...visibles.map((s, i) => ({ header: s.nombre, key: 's' + i, width: 14 })), { header: 'Total', key: 't', width: 10 }, { header: 'Mínimo por sede', key: 'm', width: 14 },
-    ], filas: lista.map(p => ({ p: p.nombre, c: p.categoria, u: p.unidad, ...Object.fromEntries(visibles.map((s, i) => ['s' + i, existencia(inv, s.id, p.id)])),
-      t: visibles.reduce((n, s) => n + existencia(inv, s.id, p.id), 0), m: Number(p.stock_minimo) })) }] },
+      ...visibles.map((s, i) => ({ header: s.nombre, key: 's' + i, width: 14 })), { header: 'Total', key: 't', width: 10 },
+      { header: 'Mínimo por sede', key: 'm', width: 14 }, { header: 'Costo', key: 'co', width: 12, moneda: true }, { header: 'Valor', key: 'v', width: 14, moneda: true }, { header: 'Estado', key: 'e', width: 14 },
+    ], filas: lista.map(({ p, e }) => ({ p: p.nombre, c: p.categoria, u: p.unidad, ...Object.fromEntries(visibles.map((s, i) => ['s' + i, existencia(inv, s.id, p.id)])),
+      t: e.total, m: Number(p.stock_minimo), co: p.costo != null ? Number(p.costo) : null, v: e.total * (Number(p.costo) || 0), e: e.label })) }] },
   })
 
+  const chip = (valor, label, n) => (
+    <button key={valor} onClick={() => setEstado(valor)} style={{ padding: '7px 13px', borderRadius: 20, border: `1px solid ${estado === valor ? C.black : C.g200}`, background: estado === valor ? C.black : '#fff', color: estado === valor ? '#fff' : C.g600, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {label}{n != null && <span style={{ opacity: 0.6, marginLeft: 5 }}>{n}</span>}
+    </button>
+  )
   const sel = filtroStyle
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
-        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar producto…" style={{ ...sel, flex: '1 1 220px' }} />
-        <select value={sedeId} onChange={e => setSedeId(e.target.value)} style={sel}>
-          <option value="">Todas las sedes</option>
-          {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.g600, cursor: 'pointer' }}>
-          <input type="checkbox" checked={soloBajos} onChange={e => setSoloBajos(e.target.checked)} />Solo bajo el mínimo
-        </label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+        <div style={{ position: 'relative', flex: '1 1 240px' }}>
+          <Icon name="buscar" size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.g400 }} />
+          <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar producto o categoría…" style={{ ...sel, width: '100%', paddingLeft: 36 }} />
+        </div>
+        <select value={sedeFiltro} onChange={e => setSedeFiltro(e.target.value)} style={sel}><option value="">Todas las sedes</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+        {categorias.length > 0 && <select value={categoria} onChange={e => setCategoria(e.target.value)} style={sel}><option value="">Toda categoría</option>{categorias.map(c => <option key={c}>{c}</option>)}</select>}
+        <div style={{ display: 'inline-flex', border: `1px solid ${C.g200}`, borderRadius: 10, overflow: 'hidden' }}>
+          {[['tarjetas', 'Tarjetas'], ['lista', 'Lista']].map(([v, l]) => <button key={v} onClick={() => cambiarVista(v)} style={{ padding: '9px 12px', border: 'none', background: vista === v ? C.g100 : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: vista === v ? C.black : C.g500, fontFamily: 'inherit' }}>{l}</button>)}
+        </div>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </div>
-      <Tabla
-        columnas={['Producto', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : [])]}
-        vacio="Ningún producto coincide"
-        filas={lista.map(p => ({ key: p.id, celdas: [
-          <div><strong>{p.nombre}</strong><div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria, p.unidad, Number(p.stock_minimo) ? `mínimo ${fmtCant(p.stock_minimo)}` : null].filter(Boolean).join(' · ')}</div></div>,
-          ...visibles.map(s => {
-            const n = existencia(inv, s.id, p.id)
-            return <span style={{ fontWeight: 700, color: n === 0 ? C.g300 : bajo(p, s) ? C.red : C.black }}>{fmtCant(n)}{bajo(p, s) && <span style={{ fontSize: 11.5, fontWeight: 600 }}> · bajo</span>}</span>
-          }),
-          ...(visibles.length > 1 ? [<strong>{fmtCant(visibles.reduce((n, s) => n + existencia(inv, s.id, p.id), 0))}</strong>] : []),
-        ] }))}
-      />
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+        {chip('', 'Todos')}{chip('ok', 'En existencia', conteo('ok'))}{chip('bajo', 'Reabastecer', conteo('bajo'))}{chip('agotado', 'Agotados', conteo('agotado'))}
+        {inv.productos.some(p => !p.activo) && chip('inactivo', 'Desactivados')}
+      </div>
+
+      {inv.productos.length === 0 ? <Card><Vacio icono="caja" titulo="Aún no hay productos" texto="Agregue los insumos y medicamentos que usa con sus pacientes."><Button icon="mas" onClick={onNuevo}>Nuevo producto</Button></Vacio></Card>
+        : lista.length === 0 ? <Card><div style={{ color: C.g400, textAlign: 'center', padding: 20 }}>Ningún producto coincide</div></Card>
+        : vista === 'lista' ? (
+          <Tabla columnas={['Producto', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : []), 'Estado']} onFila={(f) => abrir(f.p)}
+            filas={lista.map(({ p, e }) => ({ key: p.id, p, celdas: [
+              <div><strong>{p.nombre}</strong><div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria, p.unidad].filter(Boolean).join(' · ')}</div></div>,
+              ...visibles.map(s => { const n = existencia(inv, s.id, p.id); return <span style={{ fontWeight: 700, color: n === 0 ? C.g300 : bajoMinimo(inv, s.id, p) ? C.amber : C.black }}>{fmtCant(n)}</span> }),
+              ...(visibles.length > 1 ? [<strong>{fmtCant(e.total)}</strong>] : []),
+              <Badge color={e.color} bg={e.bg}>{e.label}</Badge>,
+            ] }))} />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))', gap: 12 }}>
+            {lista.map(({ p, e }) => {
+              const filas = visibles.filter(s => inv.existencias.some(x => x.sede_id === s.id && x.producto_id === p.id))
+              return (
+                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: C.black, lineHeight: 1.3 }}>{p.nombre}</div>
+                      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{p.categoria || 'Sin categoría'}</div>
+                    </div>
+                    <Badge color={e.color} bg={e.bg}>{e.label}</Badge>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '14px 0 10px' }}>
+                    <span style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 800, color: C.black, letterSpacing: '-0.02em', lineHeight: 1 }}>{fmtCant(e.total)}</span>
+                    <span style={{ fontSize: 13, color: C.g500 }}>{p.unidad}{visibles.length > 1 ? ' en total' : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 'auto' }}>
+                    {filas.length === 0 ? <div style={{ fontSize: 12.5, color: C.g400 }}>Aún no se ha recibido en {sedeFiltro ? 'esta sede' : 'ninguna sede'}</div> : filas.map(s => {
+                      const n = existencia(inv, s.id, p.id), min = Number(p.stock_minimo), bajo = bajoMinimo(inv, s.id, p)
+                      const pct = Math.min(100, min > 0 ? (n / (min * 2)) * 100 : n > 0 ? 100 : 0)
+                      return (
+                        <div key={s.id}>
+                          <div style={{ display: 'flex', fontSize: 12.5, marginBottom: 3 }}>
+                            <span style={{ flex: 1, color: C.g600 }}>{s.nombre}</span>
+                            <strong style={{ color: n === 0 ? C.red : bajo ? C.amber : C.black }}>{fmtCant(n)}</strong>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: C.g100, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: n === 0 ? C.red : bajo ? '#E0A526' : C.green }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
     </>
   )
 }
 
-// ─── Movements history ───
-function Movimientos({ inv, onCambio }) {
+// ─── One product: stock per location, lots and its history ───
+function ProductoDetalle({ inv, movs, sedes, producto: p, onClose, operar, editar }) {
   const { pacientes } = useDatos()
-  const [movs, setMovs] = useState(null)
-  const [sedeId, setSedeId] = useState('')
-  const [tipo, setTipo] = useState('')
-  const cargar = useCallback(async () => {
-    const { data } = await supabase.from('inventario_movimientos').select('*').order('created_at', { ascending: false }).limit(500)
-    setMovs(data || [])
-  }, [])
-  useEffect(() => { cargar() }, [cargar])
-  if (!movs) return <Cargando />
+  const e = estadoProducto(inv, sedes, p)
+  const suyos = movs.filter(m => m.producto_id === p.id && (m.tipo !== 'traslado' || m.delta > 0))
+  const lotes = movs.filter(m => m.producto_id === p.id && m.tipo === 'entrada' && (m.lote || m.vence) && existencia(inv, m.sede_id, p.id) > 0)
+  const usado = movs.filter(m => m.producto_id === p.id && m.tipo === 'uso' && m.fecha?.startsWith(mesActual())).reduce((n, m) => n - m.delta, 0)
+  const sede = (id) => inv.sedes.find(s => s.id === id)
+  const dato = (label, valor) => (
+    <div style={{ flex: '1 1 120px', padding: '12px 14px', borderRadius: 14, background: C.g50, border: `1px solid ${C.line}` }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 800, marginTop: 2 }}>{valor}</div>
+    </div>
+  )
+  return (
+    <Modal title={p.nombre} subtitle={[p.categoria, `se cuenta por ${p.unidad}`].filter(Boolean).join(' · ')} onClose={onClose} maxWidth={760}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+        <Badge color={e.color} bg={e.bg}>{e.label}</Badge>
+        <div style={{ flex: 1 }} />
+        <Button size="sm" variant="ghost" icon="editar" onClick={() => editar(p)}>Editar producto</Button>
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
+        {dato('EN TOTAL', `${fmtCant(e.total)} ${p.unidad}`)}
+        {dato('VALOR', p.costo != null ? fmtQ(e.total * Number(p.costo)) : '—')}
+        {dato('USADO ESTE MES', fmtCant(usado))}
+        {dato('MÍNIMO POR SEDE', Number(p.stock_minimo) ? fmtCant(p.stock_minimo) : '—')}
+      </div>
 
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Por sede</div>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden', marginBottom: 18 }}>
+        {sedes.map((s, i) => {
+          const n = existencia(inv, s.id, p.id), bajo = bajoMinimo(inv, s.id, p)
+          return (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: i ? `1px solid ${C.g100}` : 'none', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 140 }}><strong>{s.nombre}</strong>{bajo && <span style={{ color: C.amber, fontSize: 12.5, fontWeight: 600 }}> · bajo el mínimo</span>}</div>
+              <strong style={{ width: 70, textAlign: 'right', color: n === 0 ? C.g300 : bajo ? C.amber : C.black }}>{fmtCant(n)}</strong>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button size="sm" variant="ghost" onClick={() => operar({ tipo: 'entrada', sede: s.id, producto: p.id })}>Recibir</Button>
+                <Button size="sm" variant="ghost" onClick={() => operar({ tipo: 'ajuste', sede: s.id, producto: p.id })}>Contar</Button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {lotes.length > 0 && <>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Lotes recibidos</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+          {lotes.map(l => {
+            const dias = l.vence ? Math.round((new Date(l.vence + 'T00:00') - new Date(new Date().toDateString())) / 86400000) : null
+            const pronto = dias != null && dias <= 60
+            return <span key={l.id} style={{ padding: '6px 11px', borderRadius: 10, fontSize: 12.5, background: pronto ? C.redLight : C.g50, color: pronto ? C.red : C.g600, border: `1px solid ${pronto ? '#F1CFCF' : C.line}` }}>
+              {sede(l.sede_id)?.nombre}{l.lote ? ` · lote ${l.lote}` : ''}{l.vence ? ` · vence ${fmtFechaCorta(l.vence)}` : ''}
+            </span>
+          })}
+        </div>
+      </>}
+
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Movimientos recientes</div>
+      {suyos.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Sin movimientos</div> : suyos.slice(0, 12).map((m, i) => {
+        const t = TIPOS_MOVIMIENTO[m.tipo], pac = pacientes.find(x => x.id === m.paciente_id)
+        return (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: i ? `1px solid ${C.g100}` : 'none', fontSize: 13.5 }}>
+            <span style={{ width: 84, flexShrink: 0, color: C.g400 }}>{fmtFechaCorta(m.fecha)}</span>
+            <Badge color={t.color} bg={t.bg}>{t.label}</Badge>
+            <span style={{ flex: 1, minWidth: 0, color: C.g600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.tipo === 'traslado' ? `hacia ${sede(m.sede_id)?.nombre}` : sede(m.sede_id)?.nombre}{pac ? ` · ${pac.nombre}` : ''}{m.notas ? ` · ${m.notas}` : ''}</span>
+            <strong style={{ color: m.delta > 0 ? C.green : C.red }}>{m.delta > 0 ? '+' : '−'}{fmtCant(Math.abs(m.delta))}</strong>
+          </div>
+        )
+      })}
+    </Modal>
+  )
+}
+
+// ─── Restock suggestions and expiring lots ───
+function Reabastecer({ filas, vencen, inv, operar }) {
   const sede = (id) => inv.sedes.find(s => s.id === id)
   const producto = (id) => inv.productos.find(p => p.id === id)
-  const paciente = (id) => pacientes.find(p => p.id === id)
+  return (
+    <>
+      <Card title="Productos por reabastecer" right={<span style={{ fontSize: 12.5, color: C.g400 }}>Sugerido: lo necesario para llegar al doble del mínimo</span>}>
+        {filas.length === 0
+          ? <Vacio icono="check" titulo="Nada por reabastecer" texto="Todas las sedes están sobre el mínimo de cada producto." />
+          : <Tabla columnas={['Producto', 'Sede', 'Hay', 'Mínimo', 'Pedir', '']}
+              filas={filas.map(f => ({ key: f.sede.id + f.producto.id, celdas: [
+                <strong>{f.producto.nombre}</strong>, f.sede.nombre,
+                <strong style={{ color: f.hay ? C.amber : C.red }}>{fmtCant(f.hay)}</strong>, fmtCant(f.min),
+                <span style={{ fontWeight: 700 }}>{fmtCant(f.sugerido)} {f.producto.unidad}</span>,
+                <Button size="sm" variant="ghost" icon="descargar" onClick={() => operar({ tipo: 'entrada', sede: f.sede.id, producto: f.producto.id, cantidad: f.sugerido })}>Ya llegó</Button>,
+              ] }))} />}
+      </Card>
+      <Card title="Por vencer (próximos 60 días)" style={{ marginTop: 16 }}>
+        {vencen.length === 0
+          ? <div style={{ color: C.g400 }}>Nada vence pronto. Anote la fecha de vencimiento al «Recibir» para que le avisemos.</div>
+          : <Tabla columnas={['Producto', 'Sede', 'Lote', 'Vence', '']}
+              filas={vencen.map(v => ({ key: v.id, celdas: [
+                <strong>{producto(v.producto_id)?.nombre}</strong>, sede(v.sede_id)?.nombre, v.lote || '—',
+                <span style={{ color: C.red, fontWeight: 700 }}>{fmtFechaCorta(v.vence)} · {v.dias < 0 ? 'vencido' : v.dias === 0 ? 'hoy' : `en ${v.dias} días`}</span>,
+                <Button size="sm" variant="ghost" icon="subir" onClick={() => operar({ tipo: 'salida', sede: v.sede_id, producto: v.producto_id })}>Sacar</Button>,
+              ] }))} />}
+      </Card>
+    </>
+  )
+}
+
+// ─── Locations ───
+function Sedes({ inv, verSede, onEditar }) {
+  if (inv.sedes.length === 0) return <Card><Vacio icono="sede" titulo="Aún no hay sedes" texto="Ej. «Zona 10» y «Zona 15» (de ciudad) y «Quetzaltenango» (departamental)."><Button icon="mas" onClick={() => onEditar(null)}>Nueva sede</Button></Vacio></Card>
+  const productos = inv.productos.filter(p => p.activo)
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: 12 }}>
+      {inv.sedes.map(s => {
+        const items = productos.filter(p => existencia(inv, s.id, p.id) > 0).length
+        const bajos = productos.filter(p => bajoMinimo(inv, s.id, p)).length
+        const dep = s.tipo === 'departamental'
+        return (
+          <Card key={s.id} style={{ opacity: s.activa ? 1 : 0.55, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: dep ? C.blueLight : C.purpleMid, color: dep ? C.blue : C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="sede" size={20} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 800 }}>{s.nombre}</div>
+                <div style={{ fontSize: 13, color: C.g500 }}>{dep ? 'Sede departamental' : 'Sede ciudad'}{lugarSede(s) ? ` · ${lugarSede(s)}` : ''}</div>
+              </div>
+            </div>
+            {s.direccion && <div style={{ fontSize: 13, color: C.g600, marginTop: 10 }}>{s.direccion}</div>}
+            <div style={{ display: 'flex', gap: 18, margin: '16px 0 14px' }}>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>VALOR</div><div style={{ fontWeight: 800, fontSize: 16 }}>{fmtQ(valorInventario(inv, s.id))}</div></div>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>PRODUCTOS</div><div style={{ fontWeight: 800, fontSize: 16 }}>{items}</div></div>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>REABASTECER</div><div style={{ fontWeight: 800, fontSize: 16, color: bajos ? C.amber : C.green }}>{bajos}</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+              {s.activa && <Button size="sm" onClick={() => verSede(s.id)} style={{ flex: 1 }}>Ver productos</Button>}
+              <Button size="sm" variant="ghost" icon="editar" onClick={() => onEditar(s)}>Editar</Button>
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Full history ───
+function Historial({ inv, movs, onCambio }) {
+  const { pacientes } = useDatos()
+  const [sedeId, setSedeId] = useState('')
+  const [tipo, setTipo] = useState('')
+  const sede = (id) => inv.sedes.find(s => s.id === id)
+  const producto = (id) => inv.productos.find(p => p.id === id)
   const lista = movs.filter(m => (!sedeId || m.sede_id === sedeId) && (!tipo || m.tipo === tipo))
 
   const deshacer = async (m) => {
@@ -151,7 +494,7 @@ function Movimientos({ inv, onCambio }) {
     const { error } = await (m.traslado_id ? q.eq('traslado_id', m.traslado_id) : q.eq('id', m.id))
     if (error) { toast.error(errorInventario(error, 'No se pudo deshacer')); return }
     toast.success('Movimiento deshecho')
-    cargar(); onCambio()
+    onCambio()
   }
 
   const sel = filtroStyle
@@ -165,7 +508,7 @@ function Movimientos({ inv, onCambio }) {
         columnas={['Fecha', 'Movimiento', 'Producto', 'Sede', 'Cantidad', 'Detalle', '']}
         vacio="Aún no hay movimientos"
         filas={lista.map(m => {
-          const t = TIPOS_MOVIMIENTO[m.tipo], p = producto(m.producto_id), pac = paciente(m.paciente_id)
+          const t = TIPOS_MOVIMIENTO[m.tipo], p = producto(m.producto_id), pac = pacientes.find(x => x.id === m.paciente_id)
           return { key: m.id, celdas: [
             fmtFechaCorta(m.fecha), <Badge color={t.color} bg={t.bg}>{t.label}</Badge>, p?.nombre || '—', sede(m.sede_id)?.nombre || '—',
             <strong style={{ color: m.delta > 0 ? C.green : C.red }}>{m.delta > 0 ? '+' : '−'}{fmtCant(Math.abs(m.delta))} <span style={{ fontWeight: 500, color: C.g400 }}>{p?.unidad}</span></strong>,
@@ -175,193 +518,5 @@ function Movimientos({ inv, onCambio }) {
         })}
       />
     </>
-  )
-}
-
-// ─── Entry / exit / adjustment / transfer ───
-function MovimientoModal({ inv, tipoInicial, onClose, onGuardado }) {
-  const sedes = inv.sedes.filter(s => s.activa), productos = inv.productos.filter(p => p.activo)
-  const [f, setF] = useState({ tipo: tipoInicial, sede: sedes[0]?.id || '', destino: sedes[1]?.id || '', producto: productos[0]?.id || '', cantidad: '', lote: '', vence: '', notas: '', fecha: hoyISO() })
-  const [busy, setBusy] = useState(false)
-  const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
-  const prod = productos.find(p => p.id === f.producto)
-  const disponible = existencia(inv, f.sede, f.producto)
-  const n = Number(f.cantidad)
-  const delta = f.tipo === 'entrada' ? n : f.tipo === 'ajuste' ? n - disponible : -n
-  const falta = f.tipo !== 'entrada' && f.tipo !== 'ajuste' && n > disponible
-
-  const guardar = async () => {
-    if (!f.sede || !f.producto) { toast.error('Elija la sede y el producto'); return }
-    if (f.cantidad === '' || isNaN(n) || n < 0 || (f.tipo !== 'ajuste' && n === 0)) { toast.error('Escriba una cantidad válida'); return }
-    if (falta) { toast.error(`Solo hay ${fmtCant(disponible)} en esa sede`); return }
-    if (f.tipo === 'traslado' && f.destino === f.sede) { toast.error('Elija una sede de destino distinta'); return }
-    if (f.tipo === 'ajuste' && delta === 0) { toast.error('La cantidad contada es igual a la existencia'); return }
-    const comun = { producto_id: f.producto, fecha: f.fecha, notas: f.notas.trim() || null }
-    let filas
-    if (f.tipo === 'traslado') {
-      const traslado_id = crypto.randomUUID()
-      filas = [{ ...comun, tipo: 'traslado', sede_id: f.sede, delta: -n, traslado_id }, { ...comun, tipo: 'traslado', sede_id: f.destino, delta: n, traslado_id }]
-    } else {
-      filas = [{ ...comun, tipo: f.tipo, sede_id: f.sede, delta, lote: f.tipo === 'entrada' ? f.lote.trim() || null : null, vence: f.tipo === 'entrada' ? f.vence || null : null }]
-    }
-    setBusy(true)
-    const { error } = await supabase.from('inventario_movimientos').insert(filas) // one request = all rows or none
-    setBusy(false)
-    if (error) { toast.error(errorInventario(error)); return }
-    toast.success('Inventario actualizado')
-    onGuardado()
-  }
-
-  const opcionesTipo = [['entrada', 'Entrada (compra o donación)'], ['salida', 'Salida / merma (vencido, dañado…)'], ['ajuste', 'Ajuste por conteo'], ...(sedes.length > 1 ? [['traslado', 'Traslado entre sedes']] : [])]
-  return (
-    <Modal title="Movimiento de inventario" subtitle={TIPOS_MOVIMIENTO[f.tipo].label} onClose={onClose}>
-      <Grid min={200}>
-        <Campo label="Tipo" full><Select value={f.tipo} onChange={set('tipo')}>{opcionesTipo.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Campo>
-        <Campo label={f.tipo === 'traslado' ? 'Sede de origen' : 'Sede'}><Select value={f.sede} onChange={set('sede')}>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>
-        {f.tipo === 'traslado' && <Campo label="Sede de destino"><Select value={f.destino} onChange={set('destino')}>{sedes.filter(s => s.id !== f.sede).map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
-        <Campo label="Producto" full><Select value={f.producto} onChange={set('producto')}>{productos.map(p => <option key={p.id} value={p.id}>{p.nombre} — hay {fmtCant(existencia(inv, f.sede, p.id))} {p.unidad}</option>)}</Select></Campo>
-        <Campo label={f.tipo === 'ajuste' ? `Cantidad contada (${prod?.unidad || ''})` : `Cantidad (${prod?.unidad || ''})`}
-          ayuda={f.tipo === 'ajuste' ? `El sistema tiene ${fmtCant(disponible)}; se ajusta a lo que usted contó` : f.tipo !== 'entrada' ? `Disponible en esta sede: ${fmtCant(disponible)}` : undefined}>
-          <Input type="number" min="0" step="any" value={f.cantidad} onChange={set('cantidad')} />
-        </Campo>
-        <Campo label="Fecha"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>
-        {f.tipo === 'entrada' && <>
-          <Campo label="Lote (opcional)"><Input value={f.lote} onChange={set('lote')} /></Campo>
-          <Campo label="Vence (opcional)"><Input type="date" value={f.vence} onChange={set('vence')} /></Campo>
-        </>}
-        <Campo label="Notas (opcional)" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder={f.tipo === 'entrada' ? 'Proveedor, factura…' : 'Motivo'} /></Campo>
-      </Grid>
-      {falta && <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: C.redLight, color: C.red, fontSize: 13.5, fontWeight: 600 }}>No hay suficiente existencia: en esta sede solo hay {fmtCant(disponible)}.</div>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={guardar} disabled={busy || falta}>{busy ? 'Guardando…' : 'Guardar'}</Button>
-      </div>
-    </Modal>
-  )
-}
-
-// ─── Products catalogue ───
-function Productos({ inv, onCambio }) {
-  const [editando, setEditando] = useState(undefined)
-  const [verInactivos, setVerInactivos] = useState(false)
-  const lista = inv.productos.filter(p => verInactivos || p.activo)
-  return (
-    <Card title={`Productos (${inv.productos.filter(p => p.activo).length})`} right={<>
-      {inv.productos.some(p => !p.activo) && <label style={{ fontSize: 13, color: C.g500, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}><input type="checkbox" checked={verInactivos} onChange={e => setVerInactivos(e.target.checked)} />Ver desactivados</label>}
-      <Button size="sm" icon="mas" onClick={() => setEditando(null)}>Agregar producto</Button>
-    </>}>
-      {lista.length === 0 ? <div style={{ color: C.g400 }}>Aún no hay productos</div> : (
-        <Tabla
-          columnas={['Producto', 'Categoría', 'Unidad', 'Mínimo por sede', 'Costo', 'Existencia total', '']}
-          filas={lista.map(p => ({ key: p.id, celdas: [
-            <span style={{ fontWeight: 700, color: p.activo ? C.black : C.g400 }}>{p.nombre}{!p.activo && ' (desactivado)'}</span>, p.categoria || '—', p.unidad,
-            Number(p.stock_minimo) ? fmtCant(p.stock_minimo) : '—', p.costo != null ? fmtQ(p.costo) : '—', <strong>{fmtCant(totalProducto(inv, p.id))}</strong>,
-            <Button variant="ghost" size="sm" icon="editar" onClick={() => setEditando(p)}>Editar</Button>,
-          ] }))}
-        />
-      )}
-      {editando !== undefined && <ProductoModal producto={editando} onClose={() => setEditando(undefined)} onGuardado={() => { setEditando(undefined); onCambio() }} />}
-    </Card>
-  )
-}
-
-function ProductoModal({ producto, onClose, onGuardado }) {
-  const [f, setF] = useState({ nombre: producto?.nombre || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', costo: producto?.costo ?? '', activo: producto?.activo ?? true })
-  const [busy, setBusy] = useState(false)
-  const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
-  const guardar = async () => {
-    if (!f.nombre.trim()) { toast.error('Escriba el nombre'); return }
-    const fila = { nombre: f.nombre.trim(), categoria: f.categoria.trim() || null, unidad: f.unidad.trim() || 'unidad', stock_minimo: Number(f.stock_minimo) || 0, costo: f.costo === '' ? null : Number(f.costo), activo: f.activo }
-    setBusy(true)
-    const { error } = producto ? await supabase.from('productos').update(fila).eq('id', producto.id) : await supabase.from('productos').insert(fila)
-    setBusy(false)
-    if (error) { toast.error(errorInventario(error)); return }
-    toast.success('Producto guardado')
-    onGuardado()
-  }
-  return (
-    <Modal title={producto ? 'Editar producto' : 'Nuevo producto'} onClose={onClose}>
-      <Grid min={200}>
-        <Campo label="Nombre *" full><Input value={f.nombre} onChange={set('nombre')} placeholder="Ej. Toxina botulínica 100U, Ácido hialurónico 1 ml…" /></Campo>
-        <Campo label="Categoría (opcional)"><Input value={f.categoria} onChange={set('categoria')} placeholder="Ej. Inyectables, Insumos" /></Campo>
-        <Campo label="Unidad"><Input value={f.unidad} onChange={set('unidad')} list="unidades" /><datalist id="unidades">{UNIDADES.map(u => <option key={u} value={u} />)}</datalist></Campo>
-        <Campo label="Existencia mínima por sede" ayuda="Avisa cuando una sede queda por debajo"><Input type="number" min="0" step="any" value={f.stock_minimo} onChange={set('stock_minimo')} placeholder="0" /></Campo>
-        <Campo label="Costo por unidad (Q, opcional)"><Input type="number" min="0" step="0.01" value={f.costo} onChange={set('costo')} /></Campo>
-        {producto && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activo} onChange={e => set('activo')(e.target.checked)} />Producto activo (desactívelo si ya no lo usa; su historial se conserva)</label></Campo>}
-      </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
-      </div>
-    </Modal>
-  )
-}
-
-// ─── Locations (city / departmental) ───
-function Sedes({ inv, onCambio }) {
-  const [editando, setEditando] = useState(undefined)
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, fontSize: 13.5, color: C.g500, minWidth: 220 }}>Puede tener varias sedes en la misma ciudad con distinto nombre, y sedes departamentales. Cada una lleva su propio inventario.</div>
-        <Button icon="mas" onClick={() => setEditando(null)}>Nueva sede</Button>
-      </div>
-      {inv.sedes.length === 0 ? <PrimerPaso icono="sede" titulo="Aún no hay sedes" texto="Ej. «Zona 10» y «Zona 15» (sedes ciudad) y «Quetzaltenango» (sede departamental)." boton="Crear sede" onClick={() => setEditando(null)} /> : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
-          {inv.sedes.map(s => {
-            const items = (inv.existencias || []).filter(e => e.sede_id === s.id && Number(e.cantidad) > 0).length
-            return (
-              <Card key={s.id} style={{ opacity: s.activa ? 1 : 0.55 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 700 }}>{s.nombre}</div>
-                    <div style={{ fontSize: 13, color: C.g500, marginTop: 2 }}>{lugarSede(s) || 'Sin ubicación'}</div>
-                  </div>
-                  <Badge color={s.tipo === 'departamental' ? C.blue : C.purple} bg={s.tipo === 'departamental' ? C.blueLight : C.purpleLight}>{s.tipo === 'departamental' ? 'Departamental' : 'Ciudad'}</Badge>
-                </div>
-                {s.direccion && <div style={{ fontSize: 13, color: C.g600, marginTop: 10 }}>{s.direccion}</div>}
-                <div style={{ display: 'flex', alignItems: 'center', marginTop: 14, gap: 8 }}>
-                  <span style={{ flex: 1, fontSize: 13, color: C.g500 }}>{s.activa ? `${items} ${items === 1 ? 'producto' : 'productos'} con existencia` : 'Sede desactivada'}</span>
-                  <Button variant="ghost" size="sm" icon="editar" onClick={() => setEditando(s)}>Editar</Button>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-      {editando !== undefined && <SedeModal sede={editando} onClose={() => setEditando(undefined)} onGuardado={() => { setEditando(undefined); onCambio() }} />}
-    </>
-  )
-}
-
-function SedeModal({ sede, onClose, onGuardado }) {
-  const [f, setF] = useState({ nombre: sede?.nombre || '', tipo: sede?.tipo || 'ciudad', departamento: sede?.departamento || 'Guatemala', municipio: sede?.municipio || '', direccion: sede?.direccion || '', activa: sede?.activa ?? true })
-  const [busy, setBusy] = useState(false)
-  const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
-  const guardar = async () => {
-    if (!f.nombre.trim()) { toast.error('Escriba el nombre de la sede'); return }
-    const fila = { nombre: f.nombre.trim(), tipo: f.tipo, departamento: f.departamento || null, municipio: f.municipio.trim() || null, direccion: f.direccion.trim() || null, activa: f.activa }
-    setBusy(true)
-    const { error } = sede ? await supabase.from('sedes').update(fila).eq('id', sede.id) : await supabase.from('sedes').insert(fila)
-    setBusy(false)
-    if (error) { toast.error(errorInventario(error)); return }
-    toast.success('Sede guardada')
-    onGuardado()
-  }
-  return (
-    <Modal title={sede ? 'Editar sede' : 'Nueva sede'} onClose={onClose}>
-      <Grid min={200}>
-        <Campo label="Nombre de la sede *" full><Input value={f.nombre} onChange={set('nombre')} placeholder="Ej. Zona 10, Zona 15, Quetzaltenango" /></Campo>
-        <Campo label="Tipo"><Select value={f.tipo} onChange={set('tipo')}>{TIPOS_SEDE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</Select></Campo>
-        <Campo label="Departamento"><Select value={f.departamento} onChange={set('departamento')}><option value="">—</option>{DEPARTAMENTOS.map(d => <option key={d}>{d}</option>)}</Select></Campo>
-        <Campo label="Ciudad o municipio"><Input value={f.municipio} onChange={set('municipio')} placeholder="Ej. Guatemala, Mixco, Xela" /></Campo>
-        <Campo label="Dirección (opcional)" full><Input value={f.direccion} onChange={set('direccion')} /></Campo>
-        {sede && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activa} onChange={e => set('activa')(e.target.checked)} />Sede activa (desactívela si cerró; su historial se conserva)</label></Campo>}
-      </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
-      </div>
-    </Modal>
   )
 }

@@ -42,13 +42,13 @@ export function BaseDatos() {
 
   const origenTexto = (p) => p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen)
   const preparar = () => ({
-    titulo: 'Base de datos de pacientes',
-    subtitulo: `${filas.length} contactos`,
+    titulo: 'Pacientes',
+    subtitulo: `${filas.length} pacientes`,
     secciones: [{ tabla: {
       headers: ['Nombre', 'Teléfono', 'Correo', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Registrado', 'Consultas'],
       filas: filas.map(f => [f.p.nombre, f.p.telefono || '—', f.p.email || '—', ...(sedes.length ? [nombreSede(sedes, f.p.sede_id) || '—'] : []), origenTexto(f.p), fmtFechaCorta(f.p.created_at), f.consultas]),
     } }],
-    excel: { archivo: 'base-de-datos-pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
+    excel: { archivo: 'pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
       { header: 'Nombre', key: 'n', width: 32 }, { header: 'Teléfono', key: 't', width: 15 }, { header: 'Correo', key: 'e', width: 30 },
       { header: 'Origen', key: 'o', width: 16 }, { header: 'Red social', key: 'r', width: 12 }, { header: 'Referido por', key: 'ref', width: 22 },
       { header: 'Registrado', key: 'reg', width: 12 }, { header: 'Consultas', key: 'c', width: 10 }, { header: 'Última cita', key: 'u', width: 12 },
@@ -61,7 +61,7 @@ export function BaseDatos() {
 
   return (
     <>
-      <Encabezado titulo="Base de datos" subtitulo={`${filas.length} de ${pacientes.length} contactos · nombres, teléfonos, correos y origen`}>
+      <Encabezado titulo="Pacientes" subtitulo={`${filas.length} de ${pacientes.length} pacientes · toque uno para abrir su expediente`}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </Encabezado>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -75,7 +75,7 @@ export function BaseDatos() {
       <div style={{ marginBottom: 14, marginTop: -4 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
       <Tabla
         columnas={['Nombre', 'Teléfono', 'Correo', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Registrado', 'Consultas', 'Saldo']}
-        vacio={pacientes.length ? 'Ningún contacto coincide con los filtros' : 'Aún no hay pacientes registrados'}
+        vacio={pacientes.length ? 'Ningún paciente coincide con los filtros' : 'Aún no hay pacientes registrados'}
         onFila={(f) => ir('expedientes', f.key)}
         filas={filas.map(f => ({ key: f.p.id, celdas: [
           <span style={{ fontWeight: 500 }}>{f.p.nombre}</span>,

@@ -59,12 +59,24 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
     onGuardado()
   }
 
+  // Deletes the appointment with its charges and payments; a patient with no other history is deleted too
   const eliminar = async () => {
-    if (!confirm('¿Eliminar esta cita? Esta acción no se puede deshacer.')) return
-    const { error } = await supabase.from('citas').delete().eq('id', cita.id)
+    const susCobros = cobros.filter(c => c.cita_id === cita.id)
+    const pagado = susCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
+    const otrasCitas = citas.some(c => c.paciente_id === paciente?.id && c.id !== cita.id)
+    const otrosCobros = cobros.some(c => c.paciente_id === paciente?.id && c.cita_id !== cita.id)
+    const soloEsta = !otrasCitas && !otrosCobros
+    const partes = ['¿Eliminar esta cita?']
+    if (susCobros.length) partes.push(`También se eliminará su cobro de ${fmtQ(susCobros.reduce((n, c) => n + Number(c.precio || 0) - Number(c.descuento || 0), 0))}${pagado > 0 ? ` y los pagos registrados (${fmtQ(pagado)})` : ''}, para que no quede saldo pendiente.`)
+    if (soloEsta) partes.push(`${paciente?.nombre} no tiene otro historial, así que también se eliminará su expediente (si tiene fotos o productos usados, el expediente se conserva).`)
+    partes.push('Esta acción no se puede deshacer.')
+    if (!confirm(partes.join('\n\n'))) return
+    setBusy(true)
+    const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id })
+    setBusy(false)
     if (error) { toast.error('No se pudo eliminar'); return }
-    toast.success('Cita eliminada')
-    onGuardado()
+    toast.success(data?.paciente_eliminado ? 'Se eliminaron la cita, su cobro y el expediente' : data?.cobros ? 'Se eliminaron la cita y su cobro' : 'Cita eliminada')
+    onGuardado({ pacienteEliminado: !!data?.paciente_eliminado })
   }
 
   return (

@@ -33,7 +33,7 @@ const NAV = [
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera' },
-  { id: 'basedatos', label: 'Base de datos', icono: 'basedatos' },
+  { id: 'basedatos', label: 'Pacientes', icono: 'usuarios' },
   { id: 'inventario', label: 'Inventario', icono: 'caja' },
 ]
 const NAV_LIA = [
@@ -223,7 +223,7 @@ function SoloHealth({ ir }) {
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Esta sección es parte de Conception Health</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
-        Su plan incluye a Lía y la agenda de citas. Con el plan Ultra también tiene expedientes con fotos, cobros, inventario, base de datos y reportes, y cada paciente que agenda Lía llega con su expediente.
+        Su plan incluye a Lía y la agenda de citas. Con el plan Ultra también tiene expedientes con fotos, cobros, inventario, lista de pacientes y reportes, y cada paciente que agenda Lía llega con su expediente.
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         <Button variant="ghost" onClick={() => ir('lia')}>Ir a Lía</Button>

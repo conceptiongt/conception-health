@@ -132,7 +132,7 @@ function Expediente({ paciente, onVolver }) {
     onVolver()
   }
 
-  if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={() => { setCitaAbierta(undefined); recargar() }} />
+  if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={async (r) => { setCitaAbierta(undefined); if (r?.pacienteEliminado) { await recargar(); onVolver() } else recargar() }} />
 
   const totalPrecio = misCobros.reduce((n, c) => n + totalCobro(c), 0)
   const totalPagado = misCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)

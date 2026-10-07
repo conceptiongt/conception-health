@@ -47,7 +47,7 @@ export function Metodo() {
           </Card>
         ))}
         <button onClick={() => set('metodo.tipos', [...M.tipos, { id: 't' + Math.random().toString(36).slice(2, 7), nombre: 'Nuevo tipo de paciente', reconoce: '', hace: '' }])}
-          style={{ border: `1.5px dashed ${C.g300}`, borderRadius: 24, background: 'none', minHeight: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.g500, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ border: `1.5px dashed ${C.g300}`, borderRadius: 12, background: 'none', minHeight: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.g500, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
           <Icon name="mas" size={17} />Agregar tipo de paciente
         </button>
       </div>

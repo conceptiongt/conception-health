@@ -10,6 +10,7 @@ import { Modal } from './ui/Modal'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
 import { BuscadorProducto } from './inventario/Selectores'
+import { UsarPaqueteModal } from './inventario/Paquetes'
 
 // Products used on a patient: each one is taken out of a location's stock, only if there is enough
 export function ProductosPaciente({ paciente, citas }) {
@@ -17,6 +18,7 @@ export function ProductosPaciente({ paciente, citas }) {
   const { inv, recargar } = useInventario()
   const [usos, setUsos] = useState(null)
   const [nuevo, setNuevo] = useState(false)
+  const [paquete, setPaquete] = useState(false)
 
   const cargar = useCallback(async () => {
     const { data } = await supabase.from('inventario_movimientos').select('*').eq('paciente_id', paciente.id).eq('tipo', 'uso').order('fecha', { ascending: false })
@@ -43,7 +45,7 @@ export function ProductosPaciente({ paciente, citas }) {
   }
 
   return (
-    <Card title={`Productos usados (${usos.length})`} right={hayExistencia && <Button size="sm" icon="mas" onClick={() => setNuevo(true)}>Descargar producto</Button>}>
+    <Card title={`Productos usados (${usos.length})`} right={hayExistencia && <div style={{ display: 'flex', gap: 8 }}>{(inv.paquetes || []).some(p => p.activo) && <Button size="sm" variant="ghost" icon="caja" onClick={() => setPaquete(true)}>Usar paquete</Button>}<Button size="sm" icon="mas" onClick={() => setNuevo(true)}>Descargar producto</Button></div>}>
       {!hayExistencia && (
         <div style={{ padding: '12px 14px', borderRadius: 12, background: C.amberLight, color: C.amber, fontSize: 13.5, marginBottom: usos.length ? 14 : 0, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ flex: 1, minWidth: 200 }}>{!sedes.length || !productos.length ? 'Para descargar productos, primero cree sus sedes y productos en Inventario.' : 'No hay existencia en ninguna sede. Registre una entrada en Inventario para poder descargar productos.'}</span>
@@ -61,7 +63,9 @@ export function ProductosPaciente({ paciente, citas }) {
           }), ...(costo > 0 ? [{ key: 'costo', celdas: [<strong>Costo de insumos</strong>, '', <strong>{fmtQ(costo)}</strong>, '', '', '', ''] }] : [])]}
         />
       )}
-      {nuevo && <DescargaModal inv={inv} paciente={paciente} citas={citas} ultimaSede={usos[0]?.sede_id}
+      {paquete && <UsarPaqueteModal inv={inv} paciente={paciente} citas={citas} sedeInicial={paciente.sede_id || usos[0]?.sede_id}
+        onClose={() => setPaquete(false)} onGuardado={() => { setPaquete(false); cargar(); recargar() }} />}
+      {nuevo && <DescargaModal inv={inv} paciente={paciente} citas={citas} ultimaSede={paciente.sede_id || usos[0]?.sede_id}
         onClose={() => setNuevo(false)} onGuardado={() => { setNuevo(false); cargar(); recargar() }} />}
     </Card>
   )

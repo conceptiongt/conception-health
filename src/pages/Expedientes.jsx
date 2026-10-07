@@ -13,11 +13,14 @@ import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../components
 import { Exportar } from '../components/Documento'
 import { CitaModal } from '../components/CitaModal'
 import { ProductosPaciente } from '../components/ProductosPaciente'
+import { CobroDetalle, AbonoModal, estadoDeCuenta, ESTADOS_COBRO, estadoCobro, Progreso } from '../components/Pagos'
+import { FiltroSede, nombreSede } from '../components/Filtros'
 import { toast } from '../components/ui/Toast'
 
 export function Expedientes({ abrirId }) {
-  const { pacientes, citas, cobros, clinica, ir } = useDatos()
+  const { pacientes, citas, cobros, clinica, ir, sedes } = useDatos()
   const [abierto, setAbierto] = useState(abrirId || null)
+  const [sede, setSede] = useState('')
   const [buscar, setBuscar] = useState('')
   const [origen, setOrigen] = useState('')
 
@@ -28,7 +31,7 @@ export function Expedientes({ abrirId }) {
 
   const q = buscar.trim().toLowerCase()
   const lista = pacientes
-    .filter(p => (!q || p.nombre.toLowerCase().includes(q) || (p.telefono || '').includes(q)) && (!origen || p.origen === origen))
+    .filter(p => (!q || p.nombre.toLowerCase().includes(q) || (p.telefono || '').includes(q)) && (!origen || p.origen === origen) && (!sede || p.sede_id === sede))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   const hoy = hoyISO()
   const info = (p) => {
@@ -62,23 +65,24 @@ export function Expedientes({ abrirId }) {
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por nombre o teléfono…" style={{ ...sel, flex: '1 1 240px' }} />
         <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
       </div>
+      <div style={{ marginBottom: 14 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
       {pacientes.length === 0 ? (
         <Vacio icono="expedientes" titulo="Aún no hay pacientes" texto="Registre su primer paciente para crear su expediente.">
           <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
         </Vacio>
       ) : (
         <Tabla
-          columnas={['Paciente', 'Teléfono', 'Origen', 'Consultas', 'Última cita', 'Próxima cita', 'Saldo']}
+          columnas={['Paciente', 'Teléfono', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Consultas', 'Última cita', 'Próxima cita', 'Saldo']}
           onFila={(f) => setAbierto(f.key)}
           vacio="Ningún paciente coincide con la búsqueda"
           filas={lista.map(p => { const i = info(p); return { key: p.id, celdas: [
-            <strong>{p.nombre}</strong>, p.telefono || '—', p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
+            <span style={{ fontWeight: 500 }}>{p.nombre}</span>, p.telefono || '—', ...(sedes.length ? [nombreSede(sedes, p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []), p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
             i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—',
-            i.deuda > 0 ? <span style={{ color: C.red, fontWeight: 700 }}>{fmtQ(i.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>,
+            i.deuda > 0 ? <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(i.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>,
           ] } })}
         />
       )}
@@ -95,8 +99,9 @@ const TABS = [
 ]
 
 function Expediente({ paciente, onVolver }) {
-  const { citas, cobros, clinica, perfil, recargar, acc } = useDatos()
+  const { citas, cobros, clinica, perfil, recargar, acc, sedes } = useDatos()
   const [tab, setTab] = useState('datos')
+  const [citaAbierta, setCitaAbierta] = useState(undefined) // undefined: list, null: new, object: edit
   const [editando, setEditando] = useState(false)
   const [archivos, setArchivos] = useState(null)
   const misCitas = citas.filter(c => c.paciente_id === paciente.id).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
@@ -125,6 +130,8 @@ function Expediente({ paciente, onVolver }) {
     await recargar()
     onVolver()
   }
+
+  if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={() => { setCitaAbierta(undefined); recargar() }} />
 
   const totalPrecio = misCobros.reduce((n, c) => n + totalCobro(c), 0)
   const totalPagado = misCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
@@ -169,23 +176,23 @@ function Expediente({ paciente, onVolver }) {
   return (
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5 }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.email, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+      <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.email, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar datos</Button>
         <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar paciente</Button>
       </Encabezado>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
-        <Stat icono="citas" label="Consultas" valor={misCitas.length} color={C.blue} bg={C.blueLight} />
-        <Stat icono="cartera" label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} bg={C.greenLight} />
-        <Stat icono="reloj" label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={C.orange} bg={C.orangeLight} />
-        <Stat icono="camara" label="Fotos" valor={archivos ? archivos.length : '…'} />
+        <Stat label="Consultas" valor={misCitas.length} />
+        <Stat label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} />
+        <Stat label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={totalPrecio - totalPagado > 0 ? C.red : C.black} />
+        <Stat label="Fotos" valor={archivos ? archivos.length : '…'} />
       </div>
 
       <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => !t.inventario || acc.inventario)} valor={tab} onChange={setTab} /></div>
 
       {tab === 'datos' && <DatosMedicos paciente={paciente} onEditar={() => setEditando(true)} />}
-      {tab === 'consultas' && <Consultas paciente={paciente} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={recargar} />}
+      {tab === 'consultas' && <Consultas citas={misCitas} onAbrir={setCitaAbierta} />}
       {tab === 'fotos' && <Fotos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
       {tab === 'productos' && acc.inventario && <ProductosPaciente paciente={paciente} citas={misCitas} />}
       {tab === 'cobros' && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
@@ -218,6 +225,8 @@ function DatosMedicos({ paciente, onEditar }) {
 }
 
 function PacienteModal({ paciente, onClose, onGuardado }) {
+  const { sedes, acc } = useDatos()
+  const conSedes = acc?.inventario && sedes.length > 0
   const [f, setF] = useState({ ...paciente })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
@@ -229,7 +238,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
       nombre: f.nombre.trim(), telefono: limpio(f.telefono), email: limpio(f.email), origen: f.origen || null,
       red: f.origen === 'redes' ? f.red || null : null, referido_por: f.origen === 'referido' ? limpio(f.referido_por) : null,
       tipo_sangre: limpio(f.tipo_sangre), alergias: limpio(f.alergias), enfermedades: limpio(f.enfermedades),
-      medicamentos: limpio(f.medicamentos), contacto_emergencia: limpio(f.contacto_emergencia),
+      medicamentos: limpio(f.medicamentos), contacto_emergencia: limpio(f.contacto_emergencia), ...(conSedes ? { sede_id: f.sede_id || null } : {}),
       telefono_emergencia: limpio(f.telefono_emergencia), notas_medicas: limpio(f.notas_medicas),
     }).eq('id', paciente.id)
     setBusy(false)
@@ -246,6 +255,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
         <Campo label="Origen"><Select value={f.origen} onChange={set('origen')}><option value="">—</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></Campo>
         {f.origen === 'redes' && <Campo label="Red social"><Select value={f.red} onChange={set('red')}><option value="">—</option>{REDES.map(r => <option key={r}>{r}</option>)}</Select></Campo>}
         {f.origen === 'referido' && <Campo label="Referido por"><Input value={f.referido_por} onChange={set('referido_por')} /></Campo>}
+        {conSedes && <Campo label="Sede"><Select value={f.sede_id} onChange={set('sede_id')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
         <Campo label="Tipo de sangre"><Input value={f.tipo_sangre} onChange={set('tipo_sangre')} placeholder="Ej. O+" /></Campo>
         <Campo label="Alergias" full><Textarea value={f.alergias} onChange={set('alergias')} rows={2} /></Campo>
         <Campo label="Enfermedades crónicas" full><Textarea value={f.enfermedades} onChange={set('enfermedades')} rows={2} /></Campo>
@@ -262,35 +272,31 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
   )
 }
 
-function Consultas({ paciente, citas, clinicaId, onCambio }) {
-  const [editando, setEditando] = useState(undefined) // undefined closed, null new, object edit
+function Consultas({ citas, onAbrir }) {
+  const { sedes } = useDatos()
   return (
-    <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => setEditando(null)} icon="mas">Nueva cita</Button>}>
-      {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : citas.map(c => {
+    <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => onAbrir(null)} icon="mas">Nueva cita</Button>}>
+      {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : citas.map((c, i) => {
         const e = estadoCita(c.estado)
         return (
-          <div key={c.id} style={{ display: 'flex', gap: 12, padding: '12px 0', borderTop: `1px solid ${C.g100}`, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ width: 120, flexShrink: 0 }}>
-              <div style={{ fontWeight: 700 }}>{fmtFechaCorta(c.fecha)}</div>
-              <div style={{ fontSize: 12.5, color: C.g500 }}>{fmtHora(c.hora)}</div>
+          <div key={c.id} className="fila" onClick={() => onAbrir(c)} style={{ display: 'flex', gap: 14, padding: '12px 8px', borderTop: i ? `1px solid ${C.g100}` : 'none', flexWrap: 'wrap', alignItems: 'flex-start', cursor: 'pointer', borderRadius: 8 }}>
+            <div style={{ width: 110, flexShrink: 0 }}>
+              <div style={{ fontWeight: 500 }}>{fmtFechaCorta(c.fecha)}</div>
+              <div style={{ fontSize: 12.5, color: C.g500 }}>{fmtHora(c.hora)}{nombreSede(sedes, c.sede_id) ? ` · ${nombreSede(sedes, c.sede_id)}` : ''}</div>
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <strong>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</strong><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                <span style={{ fontWeight: 500 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
               </div>
-              <div style={{ fontSize: 13, color: C.g600, marginTop: 4 }}>
+              <div style={{ fontSize: 13, color: C.g600, marginTop: 3 }}>
                 {[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, c.procedimiento].filter(Boolean).join(' · ')}
               </div>
-              {c.notas && <div style={{ fontSize: 13, color: C.g700, marginTop: 4, whiteSpace: 'pre-wrap' }}>{c.notas}</div>}
+              {c.notas && <div style={{ fontSize: 13, color: C.g700, marginTop: 4, whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.notas}</div>}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setEditando(c)} icon="editar">Editar</Button>
+            <Icon name="flecha" size={15} style={{ color: C.g300, marginTop: 4 }} />
           </div>
         )
       })}
-      {editando !== undefined && (
-        <CitaModal cita={editando} paciente={paciente} clinicaId={clinicaId}
-          onClose={() => setEditando(undefined)} onGuardado={() => { setEditando(undefined); onCambio() }} />
-      )}
     </Card>
   )
 }
@@ -388,26 +394,40 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
 }
 
 function Cobros({ paciente, cobros, clinicaId, onCambio }) {
+  const { clinica } = useDatos()
   const [editando, setEditando] = useState(undefined)
+  const [abierto, setAbierto] = useState(null)
+  const [pagar, setPagar] = useState(null)
   const total = cobros.reduce((n, c) => n + totalCobro(c), 0)
   const pagado = cobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
-  const hoy = hoyISO()
   return (
-    <Card title={`Cobros (${cobros.length})`} right={<Button size="sm" onClick={() => setEditando(null)} icon="mas">Nuevo cobro</Button>}>
+    <Card title={`Cobros y pagos (${cobros.length})`} right={<>
+      {cobros.length > 0 && <Exportar clinica={clinica?.nombre} preparar={() => estadoDeCuenta(paciente, cobros)} />}
+      <Button size="sm" onClick={() => setEditando(null)} icon="mas">Nuevo cobro</Button>
+    </>}>
       {cobros.length === 0 ? <div style={{ color: C.g400 }}>Sin cobros registrados</div> : (
-        <Tabla
-          columnas={['Fecha', 'Concepto', 'Precio', 'Descuento', 'Total', 'Pagado', 'Saldo', 'Vence', '']}
-          filas={[...cobros.map(c => {
-            const s = saldo(c), vencido = c.vence && c.vence < hoy && s > 0
-            return { key: c.id, celdas: [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio),
-              Number(c.descuento) ? <span style={{ color: C.green }}>− {fmtQ(c.descuento)}</span> : '—', <strong>{fmtQ(totalCobro(c))}</strong>, fmtQ(c.pagado),
-              <strong style={{ color: s > 0 ? C.red : C.green }}>{s > 0 ? fmtQ(s) : 'Pagado'}</strong>,
-              c.vence ? <span style={{ color: vencido ? C.red : C.g600, fontWeight: vencido ? 700 : 400 }}>{fmtFechaCorta(c.vence)}{vencido ? ' · vencido' : ''}</span> : '—',
-              <Button variant="ghost" size="sm" onClick={() => setEditando(c)} icon="editar">Editar</Button>] }
-          }), { key: 'total', celdas: [<strong>Total</strong>, '', '', '', <strong>{fmtQ(total)}</strong>, <strong>{fmtQ(pagado)}</strong>, <strong>{fmtQ(total - pagado)}</strong>, '', ''] }]}
-        />
+        <>
+          <Tabla
+            columnas={['Fecha', 'Concepto', 'Total', 'Pagado', 'Saldo', 'Avance', 'Estado', '']}
+            onFila={(f) => f.cobro && setAbierto(f.cobro)}
+            filas={[...cobros.map(c => {
+              const e = ESTADOS_COBRO[estadoCobro(c)]
+              return { key: c.id, cobro: c, celdas: [fmtFechaCorta(c.fecha), <div><div>{c.concepto}</div>{Number(c.descuento) > 0 && <div style={{ fontSize: 12, color: C.green }}>Descuento {fmtQ(c.descuento)}</div>}</div>,
+                fmtQ(totalCobro(c)), <span style={{ color: C.green }}>{fmtQ(c.pagado)}</span>,
+                <span style={{ fontWeight: 500, color: saldo(c) > 0 ? C.red : C.g400 }}>{fmtQ(saldo(c))}</span>, <Progreso c={c} ancho={90} />,
+                <div><Badge color={e.color} bg={e.bg}>{e.label}</Badge>{c.vence && saldo(c) > 0 && <div style={{ fontSize: 11.5, color: C.g400, marginTop: 2 }}>límite {fmtFechaCorta(c.vence)}</div>}</div>,
+                <div style={{ display: 'flex', gap: 6 }} onClick={ev => ev.stopPropagation()}>
+                  {saldo(c) > 0 && <Button variant="ghost" size="sm" onClick={() => setPagar(c)}>Registrar pago</Button>}
+                  <Button variant="texto" size="sm" onClick={() => setEditando(c)} icon="editar" title="Editar cobro" />
+                </div>] }
+            }), { key: 'total', celdas: [<strong style={{ fontWeight: 500 }}>Total</strong>, '', <strong style={{ fontWeight: 500 }}>{fmtQ(total)}</strong>, <strong style={{ fontWeight: 500, color: C.green }}>{fmtQ(pagado)}</strong>, <strong style={{ fontWeight: 500, color: total - pagado > 0 ? C.red : C.black }}>{fmtQ(total - pagado)}</strong>, '', '', ''] }]}
+          />
+          <div style={{ fontSize: 12.5, color: C.g400, marginTop: 10 }}>Haga clic en un cobro para ver su historial de pagos y poner un plazo para pagar.</div>
+        </>
       )}
       {editando !== undefined && <CobroModal cobro={editando} paciente={paciente} clinicaId={clinicaId} onClose={() => setEditando(undefined)} onGuardado={() => { setEditando(undefined); onCambio() }} />}
+      {abierto && <CobroDetalle cobro={cobros.find(c => c.id === abierto.id) || abierto} paciente={paciente} onClose={() => setAbierto(null)} onCambio={onCambio} />}
+      {pagar && <AbonoModal cobro={pagar} paciente={paciente} onClose={() => setPagar(null)} onGuardado={() => { setPagar(null); onCambio() }} />}
     </Card>
   )
 }
@@ -416,7 +436,7 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
   const { servicios } = useDatos()
   const [f, setF] = useState({
     servicioId: cobro?.servicio_id || '', concepto: cobro?.concepto || '', precio: cobro?.precio ?? '', descuento: cobro?.descuento ? String(cobro.descuento) : '',
-    pagado: cobro?.pagado ?? '', metodo: cobro?.metodo || '', fecha: cobro?.fecha || hoyISO(), vence: cobro?.vence || '', observaciones: cobro?.observaciones || '',
+    pagado: '', metodo: cobro?.metodo || '', fecha: cobro?.fecha || hoyISO(), vence: cobro?.vence || '', observaciones: cobro?.observaciones || '',
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
@@ -432,15 +452,18 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
   const guardar = async () => {
     if (!f.concepto.trim()) { toast.error('Escriba el concepto o procedimiento'); return }
     if (descuento > precio) { toast.error('El descuento no puede ser mayor que el precio'); return }
-    if (pagado > total) { toast.error('Lo pagado no puede ser mayor que el total'); return }
+    if (!cobro && pagado > total) { toast.error('El anticipo no puede ser mayor que el total'); return }
+    if (cobro && total < Number(cobro.pagado || 0)) { toast.error(`Ya se pagaron ${fmtQ(cobro.pagado)}; el total no puede quedar por debajo`); return }
     const fila = {
-      concepto: f.concepto.trim(), servicio_id: f.servicioId || null, precio, descuento, pagado, metodo: f.metodo || null,
+      concepto: f.concepto.trim(), servicio_id: f.servicioId || null, precio, descuento, metodo: f.metodo || null,
       fecha: f.fecha, vence: f.vence || null, observaciones: f.observaciones.trim() || null,
     }
     setBusy(true)
-    const { error } = cobro
-      ? await supabase.from('cobros').update(fila).eq('id', cobro.id)
-      : await supabase.from('cobros').insert({ ...fila, clinica_id: clinicaId, paciente_id: paciente.id })
+    const { data: nuevo, error } = cobro
+      ? await supabase.from('cobros').update(fila).eq('id', cobro.id).select().single()
+      : await supabase.from('cobros').insert({ ...fila, clinica_id: clinicaId, paciente_id: paciente.id }).select().single()
+    // the down payment of a new charge is its first payment
+    if (!error && !cobro && pagado > 0) await supabase.from('abonos').insert({ cobro_id: nuevo.id, monto: pagado, fecha: f.fecha, metodo: f.metodo || null, nota: 'Anticipo' })
     setBusy(false)
     if (error) { toast.error('No se pudo guardar el cobro'); return }
     toast.success('Cobro guardado')
@@ -475,17 +498,17 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
         <Campo label="Concepto / procedimiento *" full><Input value={f.concepto} onChange={set('concepto')} placeholder="Ej. Consulta, Rinoplastía…" /></Campo>
         <Campo label="Precio (Q)"><Input type="number" min="0" step="0.01" value={f.precio} onChange={set('precio')} /></Campo>
         <Campo label="Descuento (Q)" ayuda="Ej. tarifa Q17,000 dejada en Q15,000 → Q2,000"><Input type="number" min="0" step="0.01" value={f.descuento} onChange={set('descuento')} placeholder="0.00" /></Campo>
-        <Campo label="Pagado (Q)" ayuda="Anticipo o total abonado"><Input type="number" min="0" step="0.01" value={f.pagado} onChange={set('pagado')} /></Campo>
+        {!cobro && <Campo label="Anticipo (Q)" ayuda="Si ya dejó un pago; los siguientes se registran en el historial"><Input type="number" min="0" step="0.01" value={f.pagado} onChange={set('pagado')} placeholder="0.00" /></Campo>}
         <Campo label="Método de pago"><Select value={f.metodo} onChange={set('metodo')}><option value="">—</option>{METODOS_PAGO.map(m => <option key={m}>{m}</option>)}</Select></Campo>
         <Campo label="Fecha"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>
-        <Campo label="Fecha límite de pago" ayuda="Opcional: avisa si vence"><Input type="date" value={f.vence} onChange={set('vence')} /></Campo>
+        <Campo label="Fecha límite de pago" ayuda={<span>Plazo: {[[30, 'días'], [3, 'meses'], [6, 'meses']].map(([n, u]) => <button key={n + u} type="button" onClick={() => { const d = new Date(`${f.fecha}T12:00`); u === 'meses' ? d.setMonth(d.getMonth() + n) : d.setDate(d.getDate() + n); set('vence')(d.toISOString().slice(0, 10)) }} style={{ border: 'none', background: 'none', color: C.purple, cursor: 'pointer', padding: '0 4px', fontFamily: 'inherit', fontSize: 12 }}>{n} {u}</button>)}</span>}><Input type="date" value={f.vence} onChange={set('vence')} /></Campo>
         <Campo label="Observaciones" full><Textarea value={f.observaciones} onChange={set('observaciones')} rows={2} /></Campo>
       </Grid>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 18, padding: '14px 16px', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 14 }}>
         {resumen('PRECIO', fmtQ(precio))}
         {resumen('DESCUENTO', descuento ? `− ${fmtQ(descuento)}` : '—', C.green)}
         {resumen('TOTAL', fmtQ(total), C.black, true)}
-        {resumen('SALDO', fmtQ(Math.max(0, total - pagado)), total - pagado > 0 ? C.red : C.green, true)}
+        {resumen('SALDO', fmtQ(Math.max(0, total - (cobro ? Number(cobro.pagado || 0) : pagado))), total - (cobro ? Number(cobro.pagado || 0) : pagado) > 0 ? C.red : C.green, true)}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
         {cobro && <Button variant="danger" icon="eliminar" onClick={eliminar}>Eliminar</Button>}

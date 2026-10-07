@@ -1,48 +1,41 @@
 import { useState } from 'react'
-import { C, SHADOW } from '../lib/theme'
+import { C } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, enMes, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
+import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
-import { Card, Badge } from '../components/ui/Varios'
-import { Button } from '../components/ui/Button'
+import { Card, Badge, Indicadores } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { Exportar } from '../components/Documento'
-import { filtroStyle } from '../components/ui/Campos'
+import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from '../components/Filtros'
+import { sedeCobro } from '../components/Pagos'
 
 const hoy = new Date()
-const COLOR_RED = { Instagram: '#7D0080', Facebook: '#534AB7', TikTok: '#1D9E75', WhatsApp: '#3B6D11', LinkedIn: '#0A66C2' }
-const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780' }
+const COLOR_ESTADO = { Pendiente: '#8A5A12', Confirmada: '#2F5D8C', 'Asistió': '#2E6B47', 'No asistió': '#B23A3A', Reagendada: '#9A4E1C', Cancelada: '#8F8C85' }
 const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
-
-function Metrica({ label, valor, sub }) {
-  return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 16, padding: '20px 22px', boxShadow: SHADOW, minWidth: 0 }}>
-      <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 700, color: C.black, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{valor}</div>
-      {sub && <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>{sub}</div>}
-    </div>
-  )
-}
-
-const Seccion = ({ children }) => (
-  <div style={{ fontSize: 11, fontWeight: 600, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
-)
+const saludo = () => { const h = hoy.getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
 
 export function Inicio() {
-  const { pacientes, citas, cobros, clinica, perfil, recargar, ir } = useDatos()
-  const [mes, setMes] = useState({ mes: hoy.getMonth(), year: hoy.getFullYear() })
-  const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
+  const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes } = useDatos()
+  const [periodo, setPeriodo] = useState({ mes: hoy.getMonth(), anio: hoy.getFullYear() })
+  const [sede, setSede] = useState('')
   const nombre = clinica?.nombre || perfil.nombre
 
-  const nuevos = pacientes.filter(p => enMes(p.created_at, mes))
+  // everything below follows the chosen location
+  const pacientes = sede ? todosP.filter(p => p.sede_id === sede) : todosP
+  const citas = sede ? todasC.filter(c => c.sede_id === sede) : todasC
+  const cobros = sede ? todosCo.filter(c => sedeCobro(c, todasC, todosP) === sede) : todosCo
+  const porId = Object.fromEntries(todosP.map(p => [p.id, p]))
+
+  const enMesSel = (iso) => enPeriodo(iso, periodo)
+  const nuevos = pacientes.filter(p => enMesSel(p.created_at))
   const deRedes = nuevos.filter(p => p.origen === 'redes').length
   const otros = nuevos.length - deRedes
   const pct = (n) => nuevos.length ? `${Math.round((n / nuevos.length) * 100)}% del total` : '—'
-  const citasMes = citas.filter(c => enMes(c.fecha, mes))
-  const cobrosMes = cobros.filter(c => enMes(c.fecha, mes))
+  const citasMes = citas.filter(c => enMesSel(c.fecha))
+  const cobrosMes = cobros.filter(c => enMesSel(c.fecha))
   const ventasMes = cobrosMes.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
-  const ventasAnio = cobros.filter(c => c.fecha?.startsWith(String(mes.year))).reduce((n, c) => n + (Number(c.pagado) || 0), 0)
+  const ventasAnio = cobros.filter(c => c.fecha?.startsWith(String(periodo.anio))).reduce((n, c) => n + (Number(c.pagado) || 0), 0)
   const facturadoMes = cobrosMes.reduce((n, c) => n + totalCobro(c), 0)
   const pendienteTotal = cobros.reduce((n, c) => n + saldo(c), 0)
   const vencidos = cobros.filter(c => c.vence && c.vence < hoyISO() && saldo(c) > 0)
@@ -53,15 +46,14 @@ export function Inicio() {
   const cirugias = citasMes.filter(c => c.tipo === 'Cirugía').length
   const procedimientos = citasMes.filter(c => c.tipo === 'Procedimiento').length
 
-  const cuatro = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(mes.year, mes.mes - 5 + i, 1)
-    const m = { mes: d.getMonth(), year: d.getFullYear() }
-    return { ...m, n: pacientes.filter(p => enMes(p.created_at, m)).length }
+  const seis = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(periodo.anio, periodo.mes - 5 + i, 1)
+    const m = { mes: d.getMonth(), anio: d.getFullYear() }
+    return { ...m, n: pacientes.filter(p => enPeriodo(p.created_at, m)).length }
   })
-  const maxMes = Math.max(1, ...cuatro.map(s => s.n))
+  const maxMes = Math.max(1, ...seis.map(s => s.n))
 
-  // latest patients with their most recent appointment
-  const ultimos = [...pacientes].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10).map(p => ({
+  const ultimos = [...pacientes].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8).map(p => ({
     p, c: citas.filter(c => c.paciente_id === p.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0],
   }))
   const proximas = citas
@@ -69,20 +61,20 @@ export function Inicio() {
     .sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')))
     .slice(0, 6)
 
-  const periodos = Array.from({ length: 15 }, (_, i) => { const d = new Date(hoy.getFullYear(), hoy.getMonth() + 2 - i, 1); return { mes: d.getMonth(), year: d.getFullYear() } })
-  const esActual = (m) => m.mes === hoy.getMonth() && m.year === hoy.getFullYear()
-  const titulo = `${MESES[mes.mes]} ${mes.year}`
+  const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
+  const titulo = `${MESES[periodo.mes]} ${periodo.anio}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
 
   const preparar = () => ({
     titulo: `Resumen de ${titulo}`,
     subtitulo: nombre,
     secciones: [
+      { resumen: [['Pacientes nuevos', fmtNum(nuevos.length)], ['Citas del mes', fmtNum(citasMes.length)], ['Cobrado del mes', fmtQ(ventasMes)], ['Saldo pendiente', fmtQ(pendienteTotal)]] },
       { titulo: 'Resumen', pares: [
         ['Pacientes del mes', fmtNum(nuevos.length)], ['Desde redes', `${deRedes} (${pct(deRedes)})`],
         ['Referidos / otros', `${otros} (${pct(otros)})`], ['Citas del mes', fmtNum(citasMes.length)],
         ['Cirugías', fmtNum(cirugias)], ['Procedimientos', fmtNum(procedimientos)],
-        ['Ventas del mes (cobrado)', fmtQ(ventasMes)], ['Facturado del mes', fmtQ(facturadoMes)],
-        [`Ventas del año ${mes.year}`, fmtQ(ventasAnio)], ['Saldo pendiente total', fmtQ(pendienteTotal)],
+        ['Cobrado del mes', fmtQ(ventasMes)], ['Facturado del mes', fmtQ(facturadoMes)],
+        [`Cobrado en ${periodo.anio}`, fmtQ(ventasAnio)], ['Saldo pendiente total', fmtQ(pendienteTotal)],
       ] },
       { titulo: 'Estado de citas', tabla: { headers: ['Estado', 'Citas'], filas: porEstado.map(e => [PLURAL[e.value], e.n]) } },
       { titulo: 'Origen de los pacientes', tabla: { headers: ['Origen', 'Pacientes'], filas: porOrigen.map(o => [o.label, o.valor]) } },
@@ -92,88 +84,105 @@ export function Inicio() {
       archivo: `resumen_${slug(titulo)}`,
       hojas: [{ nombre: 'Resumen', columnas: [{ header: 'Indicador', key: 'k', width: 32 }, { header: 'Valor', key: 'v', width: 18 }],
         filas: [['Pacientes del mes', nuevos.length], ['Desde redes', deRedes], ['Referidos / otros', otros], ['Citas del mes', citasMes.length],
-          ['Cirugías', cirugias], ['Procedimientos', procedimientos], ['Ventas del mes (Q)', ventasMes], ['Facturado del mes (Q)', facturadoMes],
-          [`Ventas del año ${mes.year} (Q)`, ventasAnio], ['Saldo pendiente total (Q)', pendienteTotal],
+          ['Cirugías', cirugias], ['Procedimientos', procedimientos], ['Cobrado del mes (Q)', ventasMes], ['Facturado del mes (Q)', facturadoMes],
+          [`Cobrado en ${periodo.anio} (Q)`, ventasAnio], ['Saldo pendiente total (Q)', pendienteTotal],
           ...porEstado.map(e => [`Citas ${PLURAL[e.value].toLowerCase()}`, e.n]), ...porRed.map(r => [`Red: ${r.red}`, r.n])]
           .map(([k, v]) => ({ k, v })) }],
     },
   })
 
+  const th = { padding: '10px 16px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }
+  const td = { padding: '11px 16px', whiteSpace: 'nowrap' }
+
   return (
     <>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
-        <div style={{ fontSize: 14, color: C.g400, fontStyle: 'italic', marginTop: 4 }}>No está aquí para encajar. Está para destacar.</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', paddingBottom: 18, marginBottom: 18, borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ fontSize: 13, color: C.g500 }}>{(t => t.charAt(0).toUpperCase() + t.slice(1))(hoy.toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+          <h1 style={{ fontSize: 26, fontWeight: 500, color: C.black, margin: '2px 0 0', letterSpacing: '-0.02em' }}>{saludo()}, {nombre}</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <SelectorPeriodo valor={periodo} onChange={(p) => setPeriodo({ mes: p.mes === '' ? 0 : p.mes, anio: p.anio })} todosMeses={false} />
+          <AgregarAnio />
+          <Exportar clinica={nombre} preparar={preparar} />
+        </div>
       </div>
+      {sedes.length > 0 && <div style={{ marginBottom: 16 }}><FiltroSede valor={sede} onChange={setSede} /></div>}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: C.g700 }}>Período:</span>
-        <select value={`${mes.year}-${mes.mes}`} onChange={e => { const [y, m] = e.target.value.split('-').map(Number); setMes({ year: y, mes: m }) }} style={filtroStyle}>
-          {periodos.map(m => <option key={`${m.year}-${m.mes}`} value={`${m.year}-${m.mes}`}>{MESES[m.mes].slice(0, 3)} {m.year}{esActual(m) ? ' (actual)' : ''}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        <Exportar clinica={nombre} preparar={preparar} />
-      </div>
+      <div style={{ fontSize: 13, color: C.g500, marginBottom: 8 }}>{esActual ? 'Este mes' : MESES[periodo.mes] + ' ' + periodo.anio}</div>
+      <Indicadores items={[
+        { label: 'Pacientes nuevos', valor: fmtNum(nuevos.length), sub: 'Registrados en el mes' },
+        { label: 'Desde redes', valor: fmtNum(deRedes), sub: pct(deRedes) },
+        { label: 'Referidos y otros', valor: fmtNum(otros), sub: pct(otros) },
+        { label: 'Citas', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
+        { label: 'Cobrado', valor: fmtQ(ventasMes), sub: `En ${periodo.anio}: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
+        { label: 'Saldo pendiente', valor: fmtQ(pendienteTotal), color: pendienteTotal > 0 ? C.red : C.black, sub: `${vencidos.length} vencidos`, onClick: () => ir('pagos') },
+      ]} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
-        <Metrica label="Pacientes del mes" valor={fmtNum(nuevos.length)} sub="Total registrados" />
-        <Metrica label="Desde redes" valor={fmtNum(deRedes)} sub={pct(deRedes)} />
-        <Metrica label="Referidos / otros" valor={fmtNum(otros)} sub={pct(otros)} />
-        <Metrica label="Ventas del mes" valor={fmtQ(ventasMes)} sub={`Anual: ${fmtQ(ventasAnio)}`} />
-      </div>
+      <div style={{ fontSize: 13, color: C.g500, margin: '22px 0 8px' }}>Estado de las citas</div>
+      <Indicadores items={porEstado.map(e => ({ label: PLURAL[e.value], valor: e.n, punto: COLOR_ESTADO[e.value] }))} />
 
-      <Seccion>Estado de citas — {esActual(mes) ? 'este mes' : titulo}</Seccion>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
-        {porEstado.map(e => (
-          <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center' }}>
-            <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
-            <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 14, marginTop: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 22 }}>
         <Card title="Pacientes por mes">
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 170, borderBottom: `2px solid ${C.purpleLight}` }}>
-            {cuatro.map(s => (
-              <div key={`${s.year}-${s.mes}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <strong style={{ fontSize: 12, marginBottom: 4 }}>{s.n}</strong>
-                <div style={{ width: '100%', height: `${(s.n / maxMes) * 130}px`, minHeight: s.n ? 4 : 0, background: 'linear-gradient(180deg, #A855F7 0%, #7D0080 100%)', borderRadius: '6px 6px 0 0' }} />
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 160, borderBottom: `1px solid ${C.line}` }}>
+            {seis.map((s, i) => (
+              <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                <span style={{ fontSize: 12, marginBottom: 4, color: C.g600 }}>{s.n}</span>
+                <div style={{ width: '62%', height: `${(s.n / maxMes) * 120}px`, minHeight: s.n ? 3 : 0, background: i === 5 ? C.purple : C.purpleLight, borderRadius: '4px 4px 0 0' }} />
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-            {cuatro.map(s => <div key={`${s.year}-${s.mes}`} style={{ flex: 1, textAlign: 'center', fontSize: 11.5, color: C.g400 }}>{MESES[s.mes].slice(0, 3)}</div>)}
+          <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+            {seis.map(s => <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: C.g400 }}>{MESES[s.mes].slice(0, 3)}</div>)}
           </div>
         </Card>
-        <Card title="Distribución por red social">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
+        <Card title="Pacientes por red social">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 13, paddingTop: 2 }}>
             {porRed.map(r => (
-              <div key={r.red} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 28px', gap: 12, alignItems: 'center' }}>
-                <span style={{ fontSize: 13.5, color: C.g600 }}>{r.red}</span>
-                <div style={{ height: 8, background: C.g100, borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.n / maxRed) * 100}%`, background: COLOR_RED[r.red], borderRadius: 4 }} />
+              <div key={r.red} style={{ display: 'grid', gridTemplateColumns: '84px 1fr 28px', gap: 12, alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: C.g600 }}>{r.red}</span>
+                <div style={{ height: 6, background: C.g100, borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(r.n / maxRed) * 100}%`, background: C.purple, borderRadius: 3 }} />
                 </div>
-                <span style={{ fontSize: 13, color: C.g400, textAlign: 'right' }}>{r.n}</span>
+                <span style={{ fontSize: 13, color: C.g500, textAlign: 'right' }}>{r.n}</span>
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: C.g400, marginTop: 16 }}>
+          <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14 }}>
             Otros orígenes: {porOrigen.filter(o => o.label !== 'Redes sociales').map(o => `${o.label} ${o.valor}`).join(' · ')}
           </div>
         </Card>
       </div>
 
-      <Card title="Últimos pacientes" style={{ marginTop: 18 }} right={<Button variant="soft" size="sm" onClick={recargar}>Actualizar</Button>}>
-        <div style={{ overflowX: 'auto', margin: '0 -22px -22px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: C.g50 }}>
-                {['Nombre', 'Fecha', 'Hora', 'Origen', 'Estado', 'Calendar'].map(h => (
-                  <th key={h} style={{ padding: '11px 22px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 16 }}>
+        <Card title="Próximas citas" right={<button onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: C.purple, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Ver todas</button>}>
+          {proximas.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay citas próximas</div> : proximas.map((c, i) => (
+            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 12, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>
+              <div style={{ width: 104, fontSize: 13, color: C.g500 }}>{fmtFecha(c.fecha).replace(/ de \d{4}$/, '')}<div>{fmtHora(c.hora)}</div></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
+                <div style={{ fontSize: 12.5, color: C.g500 }}>{[c.tipo, c.servicio, nombreSede(sedes, c.sede_id)].filter(Boolean).join(' · ') || 'Consulta'}</div>
+              </div>
+            </div>
+          ))}
+        </Card>
+        <Card title="Pagos vencidos" right={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 500 }}>{fmtQ(pendienteTotal)}</strong></span>}>
+          {vencidos.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay pagos vencidos</div> : vencidos.slice(0, 6).map((c, i) => (
+            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 10, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
+                <div style={{ fontSize: 12.5, color: C.g500 }}>{c.concepto} · venció {fmtFecha(c.vence)}</div>
+              </div>
+              <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(saldo(c))}</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <Card title="Últimos pacientes" style={{ marginTop: 16 }}>
+        <div style={{ overflowX: 'auto', margin: '-16px -20px -18px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+            <thead><tr>{['Nombre', 'Última cita', 'Hora', 'Origen', 'Estado', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {ultimos.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: C.g400 }}>Aún no hay pacientes registrados</td></tr>
@@ -182,13 +191,13 @@ export function Inicio() {
                 const cal = c ? linkCalendar(p, c) : null
                 return (
                   <tr key={p.id} className="fila" onClick={() => ir('expedientes', p.id)} style={{ borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
-                    <td style={{ padding: '13px 22px', fontWeight: 700 }}>{p.nombre}</td>
-                    <td style={{ padding: '13px 22px' }}>{c ? fmtFechaCorta(c.fecha) : '—'}</td>
-                    <td style={{ padding: '13px 22px' }}>{c ? fmtHora(c.hora) : '—'}</td>
-                    <td style={{ padding: '13px 22px' }}><Badge color={C.blue} bg={C.blueLight}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</Badge></td>
-                    <td style={{ padding: '13px 22px' }}>{e ? <Badge color={e.color} bg={e.bg}>{c.estado}</Badge> : '—'}</td>
-                    <td style={{ padding: '13px 22px' }} onClick={ev => ev.stopPropagation()}>
-                      {cal && <button onClick={() => window.open(cal, '_blank', 'noopener')} title="Agregar a Google Calendar" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.purpleLight}`, background: C.purpleMid, color: C.purple, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="calendarioMas" size={16} /></button>}
+                    <td style={{ ...td, fontWeight: 500 }}>{p.nombre}</td>
+                    <td style={td}>{c ? fmtFechaCorta(c.fecha) : '—'}</td>
+                    <td style={td}>{c ? fmtHora(c.hora) : '—'}</td>
+                    <td style={{ ...td, color: C.g600 }}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
+                    <td style={td}>{e ? <Badge color={e.color} bg={e.bg}>{c.estado}</Badge> : '—'}</td>
+                    <td style={td} onClick={ev => ev.stopPropagation()}>
+                      {cal && <button onClick={() => window.open(cal, '_blank', 'noopener')} title="Agregar a Google Calendar" className="btn-ghost" style={{ width: 30, height: 30, borderRadius: 7, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="calendarioMas" size={15} /></button>}
                     </td>
                   </tr>
                 )
@@ -197,31 +206,6 @@ export function Inicio() {
           </table>
         </div>
       </Card>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 14, marginTop: 18 }}>
-        <Card title="Próximas citas" right={<button onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 700, cursor: 'pointer', fontSize: 13.5 }}>Ver todas</button>}>
-          {proximas.length === 0 ? <div style={{ fontSize: 13, color: C.g400 }}>No hay citas próximas</div> : proximas.map(c => (
-            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} style={{ display: 'flex', gap: 12, padding: '10px 0', borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
-              <div style={{ width: 110, fontSize: 13, color: C.g500 }}>{fmtFecha(c.fecha).replace(/ de \d{4}$/, '')} · {fmtHora(c.hora)}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
-                <div style={{ fontSize: 12.5, color: C.g500 }}>{[c.tipo, c.servicio].filter(Boolean).join(' · ') || 'Consulta'}</div>
-              </div>
-            </div>
-          ))}
-        </Card>
-        <Card title="Cobros pendientes" right={<span style={{ fontSize: 13, color: C.g500 }}>Total: <strong style={{ color: C.black }}>{fmtQ(pendienteTotal)}</strong></span>}>
-          {vencidos.length === 0 ? <div style={{ fontSize: 13, color: C.g400 }}>No hay cobros vencidos</div> : vencidos.slice(0, 6).map(c => (
-            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} style={{ display: 'flex', gap: 10, padding: '10px 0', borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
-                <div style={{ fontSize: 12.5, color: C.g500 }}>{c.concepto} · venció {fmtFecha(c.vence)}</div>
-              </div>
-              <strong style={{ color: C.red }}>{fmtQ(saldo(c))}</strong>
-            </div>
-          ))}
-        </Card>
-      </div>
     </>
   )
 }

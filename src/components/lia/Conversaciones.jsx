@@ -75,7 +75,7 @@ export function Conversaciones({ irA }) {
 
   if (!convs.length) {
     return (
-      <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', color: C.g500 }}>
+      <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', color: C.g500 }}>
         <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="mensaje" size={26} /></div>
         <div style={{ fontSize: 18, fontWeight: 700, color: C.black, marginBottom: 6 }}>Todavía no hay conversaciones</div>
         <div style={{ fontSize: 14, maxWidth: 460, margin: '0 auto 18px', lineHeight: 1.6 }}>

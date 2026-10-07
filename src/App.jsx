@@ -14,6 +14,9 @@ import { Configuracion } from './pages/Configuracion'
 import { BaseDatos } from './pages/BaseDatos'
 import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
+import { Pagos } from './pages/Pagos'
+import { urlLogo, iniciales } from './lib/marca'
+import { aplicarMarca } from './lib/theme'
 import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
 import { Cargando, Logo } from './components/ui/Varios'
@@ -26,6 +29,7 @@ const NAV = [
   { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
+  { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera' },
   { id: 'basedatos', label: 'Base de datos', icono: 'basedatos' },
   { id: 'inventario', label: 'Inventario', icono: 'caja' },
 ]
@@ -33,13 +37,12 @@ const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'basedatos', 'inventario']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'basedatos', 'inventario']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion' },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes' },
 ]
 
-const iniciales = (t = '') => t.replace(/^(dr|dra)\.?\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'C'
 
 export default function App() {
   const s = useSesion()
@@ -60,6 +63,8 @@ function Aplicacion({ sesion }) {
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(null)
+
+  useEffect(() => { aplicarMarca(clinica?.color) }, [clinica?.color])
 
   // Conception Studio link: refresh its status and send this clinic's monthly totals when data changes
   const syncTimer = useRef(null)
@@ -84,60 +89,54 @@ function Aplicacion({ sesion }) {
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
+  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
   const enPrueba = !planActivo
   const usados = datos?.pacientes.length ?? 0
 
   const plan = planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba'
+
+  const logo = urlLogo(clinica)
+  const nombreClinica = clinica?.nombre || perfil.nombre
+  const grupos = [['', NAV.filter(n => n.id !== 'inventario' || acc.inventario || !planActivo || true)], ['Recepcionista', NAV_LIA], ['Cuenta', NAV_CUENTA]]
 
   return (
     <DatosContext.Provider value={ctx}>
       <div className="layout">
         <div className="topbar">
           <button onClick={() => setMenu(true)} aria-label="Menú" style={{ background: 'none', border: 'none', color: C.black, cursor: 'pointer', display: 'flex', padding: 4 }}><Icon name="menu" size={22} /></button>
-          <Logo variant="dark" height={28} />
-          <span style={{ color: C.purple, fontSize: 11, fontWeight: 600, letterSpacing: '0.22em' }}>HEALTH</span>
+          {logo ? <img src={logo} alt="" style={{ height: 28, maxWidth: 140, objectFit: 'contain' }} /> : <strong style={{ fontWeight: 500 }}>{nombreClinica}</strong>}
         </div>
-        {menu && <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(11,17,32,0.45)', zIndex: 140 }} />}
+        {menu && <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(28,28,30,0.32)', zIndex: 140 }} />}
 
         <aside className={`sidebar${menu ? ' abierta' : ''}`}>
-          <div style={{ padding: '28px 24px 22px' }}>
-            <Logo variant="dark" height={44} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-              <span style={{ height: 3, width: 22, borderRadius: 3, background: C.prism }} />
-              <span style={{ color: C.purple, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.32em' }}>HEALTH</span>
-            </div>
-          </div>
-
-          <div style={{ margin: '0 16px 18px', padding: 14, borderRadius: 16, background: C.bgApp, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 20, flexShrink: 0 }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: 20, background: C.purple, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SERIF, fontSize: 14, fontWeight: 600 }}>
-                {iniciales(clinica?.nombre || perfil.nombre)}
-              </div>
-            </div>
+          <div style={{ padding: '22px 18px 16px', display: 'flex', alignItems: 'center', gap: 11, borderBottom: `1px solid ${C.line}` }}>
+            {logo
+              ? <img src={logo} alt="" style={{ width: 38, height: 38, borderRadius: 9, objectFit: 'contain', background: '#fff', border: `1px solid ${C.line}`, flexShrink: 0 }} />
+              : <div style={{ width: 38, height: 38, borderRadius: 9, background: C.purple, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>{iniciales(nombreClinica)}</div>}
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: C.black, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clinica?.nombre || perfil.nombre}</div>
-              <div style={{ color: planActivo ? C.green : C.amber, fontSize: 12, fontWeight: 500, marginTop: 1 }}>{plan}</div>
+              <div style={{ color: C.black, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>{nombreClinica}</div>
+              <div style={{ color: planActivo ? C.g500 : C.amber, fontSize: 12 }}>{plan}</div>
             </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].map(([titulo, items]) => (
-              <div key={titulo} style={{ marginBottom: 18 }}>
-                <div style={{ padding: '0 26px 8px', color: C.g400, fontSize: 11, fontWeight: 500, letterSpacing: '0.16em' }}>{titulo}</div>
-                <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 10px' }}>
+            {grupos.map(([titulo, items]) => (
+              <div key={titulo || 'menu'} style={{ marginBottom: 14 }}>
+                {titulo && <div style={{ padding: '6px 12px 6px', color: C.g400, fontSize: 12 }}>{titulo}</div>}
+                <nav style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   {items.map(n => {
                     const activo = vista === n.id
+                    const bloqueado = (!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)
                     return (
                       <button key={n.id} className="nav-item" onClick={() => ir(n.id)} style={{
-                        position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                        textAlign: 'left', fontSize: 14, fontWeight: activo ? 600 : 400, letterSpacing: '-0.01em',
-                        background: activo ? C.sidebarActive : 'none', color: activo ? C.purple : C.g600,
+                        display: 'flex', alignItems: 'center', gap: 11, padding: '8px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                        textAlign: 'left', fontSize: 13.5, fontWeight: activo ? 500 : 400, fontFamily: 'inherit',
+                        background: activo ? C.sidebarActive : 'none', color: activo ? C.black : C.g600,
                       }}>
-                                                <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
-                        {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
-                        {n.id === 'lia' && !LIA_DISPONIBLE && <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 10, background: C.peach, color: C.orange, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.04em' }}>PRONTO</span>}
-                        {n.id === 'lia' && pendientesLia > 0 && <span title="Conversaciones que le necesitan" style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
+                        <Icon name={n.icono} size={17} style={{ color: activo ? C.purple : C.g400 }} />{n.label}
+                        {bloqueado && <Icon name="candado" size={13} style={{ marginLeft: 'auto', color: C.g300 }} />}
+                        {n.id === 'lia' && !LIA_DISPONIBLE && <span style={{ marginLeft: 'auto', padding: '1px 7px', borderRadius: 4, background: C.g100, color: C.g500, fontSize: 11 }}>Pronto</span>}
+                        {n.id === 'lia' && pendientesLia > 0 && <span style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
                       </button>
                     )
                   })}
@@ -146,26 +145,22 @@ function Aplicacion({ sesion }) {
             ))}
           </div>
 
-          <div style={{ margin: 16, padding: '12px 14px', borderRadius: 16, border: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: C.g400, fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em' }}>SESIÓN</div>
-              <div style={{ color: C.g600, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
-            </div>
-            <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ padding: '12px 16px', borderTop: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0, color: C.g500, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
+            <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" className="btn-ghost" style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'none', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
             </button>
           </div>
+          <div style={{ padding: '0 16px 14px', fontSize: 11, color: C.g300 }}>Conception Health</div>
         </aside>
 
         <main className="main">
           {enPrueba && (
-            <div style={{ background: C.lavender, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', boxShadow: SHADOW }}>
-              <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Versión de prueba · {usados} de {LIMITE_PRUEBA} pacientes</div>
-                <div style={{ fontSize: 13, color: C.g500 }}>Active su suscripción para registrar pacientes ilimitados.</div>
+            <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 10, padding: '12px 16px', marginBottom: 22, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 220, fontSize: 13.5 }}>
+                <strong style={{ fontWeight: 500 }}>Versión de prueba</strong> <span style={{ color: C.g500 }}>· {usados} de {LIMITE_PRUEBA} pacientes. Active su suscripción para registrar pacientes ilimitados.</span>
               </div>
-              <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>
+              <Button variant="ghost" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>
             </div>
           )}
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
@@ -177,6 +172,7 @@ function Aplicacion({ sesion }) {
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
+            : vista === 'pagos' ? <Pagos />
             : vista === 'basedatos' ? <BaseDatos />
             : vista === 'configuracion' ? <Configuracion />
             : <Suscripcion />}
@@ -190,7 +186,7 @@ function Aplicacion({ sesion }) {
 // Shown to "Lía" plan accounts when they open a Conception Health page
 function SoloHealth({ ir }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Esta sección es parte de Conception Health</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
@@ -207,7 +203,7 @@ function SoloHealth({ ir }) {
 // Lía is being finished on its own; shown instead of the receptionist until it is ready
 function LiaProximamente() {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '56px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '56px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="lia" size={26} /></div>
       <div style={{ fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em', marginBottom: 6 }}>PRÓXIMAMENTE</div>
       <div style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 700, color: C.black, marginBottom: 8 }}>Estamos trabajando en Lía</div>
@@ -221,7 +217,7 @@ function LiaProximamente() {
 // Shown to accounts whose plan does not include inventory
 function SoloMax({ ir }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="caja" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Inventario por sede</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>

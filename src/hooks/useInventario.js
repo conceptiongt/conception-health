@@ -5,15 +5,17 @@ import { supabase } from '../lib/supabase'
 export function useInventario() {
   const [inv, setInv] = useState(null)
   const recargar = useCallback(async () => {
-    const [s, p, e, pr, ca] = await Promise.all([
+    const [s, p, e, pr, ca, pq, pi] = await Promise.all([
       supabase.from('sedes').select('*').order('nombre'),
       supabase.from('productos').select('*').order('nombre'),
       supabase.from('existencias').select('*'),
       supabase.from('proveedores').select('*').order('nombre'),
       supabase.from('categorias_inventario').select('*').order('nombre'),
+      supabase.from('paquetes').select('*').order('nombre'),
+      supabase.from('paquete_items').select('*'),
     ])
-    const error = s.error || p.error || e.error || pr.error || ca.error
-    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data, proveedores: pr.data, categorias: ca.data })
+    const error = s.error || p.error || e.error || pr.error || ca.error || pq.error || pi.error
+    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data, proveedores: pr.data, categorias: ca.data, paquetes: pq.data, paqueteItems: pi.data })
   }, [])
   useEffect(() => { recargar() }, [recargar])
   return { inv, recargar }

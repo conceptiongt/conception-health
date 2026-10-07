@@ -14,6 +14,7 @@ import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
 import { CategoriasModal } from '../components/inventario/Selectores'
+import { Paquetes, ConteoModal } from '../components/inventario/Paquetes'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
@@ -33,6 +34,7 @@ export function Inventario() {
   const [ordenAbierta, setOrdenAbierta] = useState(null)
   const [proveedor, setProveedor] = useState(undefined) // supplier form, with optional callback
   const [categorias, setCategorias] = useState(false)
+  const [conteo, setConteo] = useState(null)
 
   const cargarMovs = useCallback(async () => {
     const { data } = await supabase.from('inventario_movimientos').select('*').order('created_at', { ascending: false }).limit(1000)
@@ -89,6 +91,7 @@ export function Inventario() {
     { value: 'resumen', label: 'Resumen', icono: 'inicio' },
     { value: 'productos', label: 'Productos', icono: 'caja' },
     { value: 'reabastecer', label: `Reabastecer${reabastecer.length ? ` (${reabastecer.length})` : ''}`, icono: 'alerta' },
+    { value: 'paquetes', label: 'Paquetes', icono: 'archivo' },
     { value: 'compras', label: `Compras${abiertas ? ` (${abiertas})` : ''}`, icono: 'cartera' },
     { value: 'proveedores', label: 'Proveedores', icono: 'usuarios' },
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
@@ -106,7 +109,7 @@ export function Inventario() {
       {/* Everyday operations, like a warehouse dashboard */}
       <div className="inv-ops" style={{ marginBottom: 22 }}>
         <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
-          display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderRadius: 24, border: 'none', background: C.lavender, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 12, border: `1px solid ${C.line}`, background: C.lavender, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
         }}>
           <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="cartera" size={21} /></div>
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -119,8 +122,8 @@ export function Inventario() {
           const n = movs.filter(m => m.tipo === o.tipo && m.fecha?.startsWith(mesActual()) && (o.tipo !== 'traslado' || m.delta > 0)).length
           const off = o.tipo === 'traslado' && sedes.length < 2
           return (
-            <button key={o.tipo} className="op-tile" onClick={() => off ? toast.error('Necesita al menos dos sedes para trasladar') : operar({ tipo: o.tipo })} style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderRadius: 24, border: 'none', background: o.superficie,
+            <button key={o.tipo} className="op-tile" onClick={() => off ? toast.error('Necesita al menos dos sedes para trasladar') : o.tipo === 'ajuste' ? (listo ? setConteo({}) : operar({ tipo: 'ajuste' })) : operar({ tipo: o.tipo })} style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 12, border: `1px solid ${C.line}`, background: o.superficie,
               cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: off ? 0.55 : 1,
             }}>
               <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: o.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name={o.icono} size={21} /></div>
@@ -141,6 +144,7 @@ export function Inventario() {
         : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
       {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={crearOrdenes} />}
+      {tab === 'paquetes' && <Paquetes inv={inv} onCambio={recargarInv} />}
       {tab === 'compras' && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
       {tab === 'proveedores' && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
       {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
@@ -156,6 +160,7 @@ export function Inventario() {
         onClose={() => setOrdenAbierta(null)} onCambio={recargar} onEditar={(o) => { setOrdenAbierta(null); setOrden({ orden: o }) }} />}
       {proveedor !== undefined && <ProveedorModal proveedor={proveedor.p} onClose={() => setProveedor(undefined)}
         onGuardado={(data) => { const cb = proveedor.cb; setProveedor(undefined); recargarInv(); if (data) cb?.(data.id) }} />}
+      {conteo && <ConteoModal inv={inv} sedeInicial={conteo.sede} onClose={() => setConteo(null)} onGuardado={() => { setConteo(null); recargar() }} />}
       {categorias && <CategoriasModal inv={inv} onClose={() => setCategorias(false)} onCambio={recargarInv} />}
       {producto !== undefined && <ProductoModal producto={producto} inv={inv} onCategorias={() => setCategorias(true)} onCategoriasCambio={recargarInv} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
       {sede !== undefined && <SedeModal sede={sede} onClose={() => setSede(undefined)} onGuardado={() => { setSede(undefined); recargar() }} />}
@@ -190,14 +195,12 @@ function Configurar({ sedes, productos, onSede, onProducto }) {
   )
 }
 
-function Kpi({ icono, label, valor, sub, color = C.purple, bg = C.purpleMid, onClick }) {
+function Kpi({ label, valor, sub, color, onClick }) {
   return (
-    <div onClick={onClick} className={onClick ? 'op-tile' : undefined} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '16px 18px', boxShadow: SHADOW, cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.g500, fontSize: 13, fontWeight: 600 }}>
-        <span style={{ width: 28, height: 28, borderRadius: 8, background: bg, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icono} size={15} /></span>{label}
-      </div>
-      <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 600, marginTop: 8, letterSpacing: '-0.02em' }}>{valor}</div>
-      {sub && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{sub}</div>}
+    <div onClick={onClick} className={onClick ? 'op-tile' : undefined} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '16px 18px', cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
+      <div style={{ fontSize: 12.5, color: C.g500 }}>{label}</div>
+      <div style={{ fontSize: 23, fontWeight: 500, marginTop: 4, letterSpacing: '-0.02em', color: color || C.black }}>{valor}</div>
+      {sub && <div style={{ fontSize: 12, color: C.g400, marginTop: 1 }}>{sub}</div>}
     </div>
   )
 }
@@ -216,10 +219,10 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
   return (
     <>
       <div className="inv-cuatro" style={{ marginBottom: 16 }}>
-        <Kpi icono="cartera" label="Valor del inventario" valor={fmtQ(valorInventario(inv))} sub="Según el costo de cada producto" />
-        <Kpi icono="caja" label="Con existencia" valor={`${conExistencia} de ${productos.length}`} sub="productos" color={C.green} bg={C.greenLight} onClick={() => irA('productos')} />
-        <Kpi icono="alerta" label="Por reabastecer" valor={reabastecer.length} sub={reabastecer.length ? 'Bajo el mínimo' : 'Todo en orden'} color={reabastecer.length ? C.amber : C.green} bg={reabastecer.length ? C.amberLight : C.greenLight} onClick={() => irA('reabastecer')} />
-        <Kpi icono="reloj" label="Por vencer" valor={vencen.length} sub="En los próximos 60 días" color={vencen.length ? C.red : C.green} bg={vencen.length ? C.redLight : C.greenLight} onClick={() => irA('reabastecer')} />
+        <Kpi label="Valor del inventario" valor={fmtQ(valorInventario(inv))} sub="Según el costo de cada producto" />
+        <Kpi label="Con existencia" valor={`${conExistencia} de ${productos.length}`} sub="productos" onClick={() => irA('productos')} />
+        <Kpi label="Por reabastecer" valor={reabastecer.length} sub={reabastecer.length ? 'Bajo el mínimo' : 'Todo en orden'} color={reabastecer.length ? C.amber : null} onClick={() => irA('reabastecer')} />
+        <Kpi label="Por vencer" valor={vencen.length} sub="En los próximos 60 días" color={vencen.length ? C.red : null} onClick={() => irA('reabastecer')} />
       </div>
 
       <div className="inv-dos">
@@ -360,7 +363,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
             {lista.map(({ p, e }) => {
               const filas = visibles.filter(s => inv.existencias.some(x => x.sede_id === s.id && x.producto_id === p.id))
               return (
-                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
+                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 15, color: C.black, lineHeight: 1.3 }}>{p.nombre}</div>

@@ -2,38 +2,41 @@
 html, body, #root { margin: 0; min-height: 100%; }
 body {
   font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #F5F6F8; color: #333333; font-size: 14px; line-height: 1.55; letter-spacing: -0.01em;
+  background: #F7F7F5; color: #1C1C1E; font-size: 14px; line-height: 1.55; letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased; font-feature-settings: 'tnum' 1;
 }
 button, input, select, textarea { font-family: inherit; }
-input:focus, select:focus, textarea:focus { border-color: #6161FF !important; box-shadow: 0 0 0 4px rgba(97,97,255,0.12); outline: none; }
-::selection { background: #DBDBFF; }
-button:focus-visible { outline: 2px solid #6161FF; outline-offset: 2px; }
+input:focus, select:focus, textarea:focus { border-color: var(--acento) !important; box-shadow: 0 0 0 3px var(--acento-anillo); outline: none; }
+::selection { background: var(--acento-claro); }
+button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+button { transition: background-color .15s, border-color .15s, color .15s; }
+.btn-ghost:hover { background: #F4F3F0 !important; }
+.btn-primary:hover { background: var(--acento-oscuro) !important; border-color: var(--acento-oscuro) !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes aparecer { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* Layout: sidebar on desktop, top bar + drawer on phones */
 .layout { display: flex; min-height: 100vh; }
 .sidebar {
-  width: 264px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
+  width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
   background: #FFFFFF;
-  border-right: 1px solid #E3E5EE;
+  border-right: 1px solid #E7E5E0;
 }
-.main { flex: 1; min-width: 0; padding: 32px 36px 72px; animation: aparecer 0.25s ease; }
+.main { flex: 1; min-width: 0; padding: 28px 40px 72px; max-width: 1440px; animation: aparecer 0.2s ease; }
 .nav-item { transition: background 0.15s, color 0.15s; }
-.nav-item:hover { background: #F5F6F8 !important; color: #333333 !important; }
-.fila:hover { background: #F8F9FB; }
+.nav-item:hover { background: #F4F3F0 !important; color: #1C1C1E !important; }
+.fila:hover { background: #FAFAF8; }
 .topbar { display: none; }
 @media (max-width: 860px) {
   .layout { display: block; }
   .sidebar { position: fixed; left: 0; top: 0; z-index: 150; transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 0 5px 45px rgba(0,0,0,0.15); }
   .sidebar.abierta { transform: none; }
-  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: #FFFFFF; border-bottom: 1px solid #E3E5EE; padding: 10px 14px; }
+  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: #FFFFFF; border-bottom: 1px solid #E7E5E0; padding: 10px 14px; }
   .main { padding: 20px 16px 64px; }
 }
 
 /* Lía: conversations inbox (list | chat | patient card), phone preview, typing dots */
-.lia-inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; height: calc(100vh - 230px); min-height: 520px; background: #fff; border: 1px solid #E3E5EE; border-radius: 24px; overflow: hidden; box-shadow: 0 2px 48px rgba(205,208,223,0.40); }
+.lia-inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; height: calc(100vh - 230px); min-height: 520px; background: #fff; border: 1px solid #E7E5E0; border-radius: 12px; overflow: hidden; }
 .lia-inbox > * { min-width: 0; min-height: 0; }
 .lia-ficha-btn, .lia-volver { display: none !important; }
 @media (max-width: 1240px) { .lia-inbox { grid-template-columns: 280px minmax(0, 1fr); } .lia-ficha { display: none !important; } .lia-ficha-btn { display: inline-flex !important; } }
@@ -67,7 +70,7 @@ button:focus-visible { outline: 2px solid #6161FF; outline-offset: 2px; }
 
 /* Inventory: clickable tiles and the two-column overview */
 .op-tile { transition: transform 0.12s, box-shadow 0.15s, border-color 0.15s; }
-.op-tile:hover { transform: translateY(-2px); box-shadow: 0 5px 45px rgba(0,0,0,0.12) !important; }
+.op-tile:hover { border-color: #C8C5BD !important; box-shadow: 0 6px 20px rgba(28,28,30,0.06) !important; }
 .inv-dos { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1280px) { .inv-dos { grid-template-columns: 1fr; } }
 .inv-cuatro { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -75,10 +78,32 @@ button:focus-visible { outline: 2px solid #6161FF; outline-offset: 2px; }
 @media (max-width: 520px) { .inv-cuatro { grid-template-columns: 1fr; } }
 
 /* Purchase order lines */
-.oc-fila { display: grid; grid-template-columns: minmax(0, 2fr) 100px 140px 110px 32px; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid #F0F1F5; }
-.oc-fila.oc-cab { border-top: none; font-size: 12px; color: #676879; background: #F8F9FB; border-radius: 16px 16px 0 0; }
+.oc-fila { display: grid; grid-template-columns: minmax(0, 2fr) 100px 140px 110px 32px; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid #F2F1EE; }
+.oc-fila.oc-cab { border-top: none; font-size: 12px; color: #6B6963; background: #FAFAF8; border-radius: 12px 12px 0 0; }
 @media (max-width: 640px) { .oc-fila { grid-template-columns: 1fr 1fr; } .oc-fila > :first-child { grid-column: 1 / -1; } .oc-fila.oc-cab { display: none; } }
 .inv-ops { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1380px) { .inv-ops { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .inv-ops { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 460px) { .inv-ops { grid-template-columns: 1fr; } }
+.indicadores { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); background: #fff; border: 1px solid #E7E5E0; border-radius: 12px; overflow: hidden; }
+.indicadores > * { background: #fff; box-shadow: 1px 0 0 #E7E5E0, 0 1px 0 #E7E5E0; }
+.indicadores > .fila:hover { background: #FAFAF8; }
+/* Full-screen forms (appointment) */
+.cita-pagina { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .cita-pagina { grid-template-columns: 1fr; } }
+.bloque { background: #fff; border: 1px solid #E7E5E0; border-radius: 12px; padding: 18px 20px 20px; }
+.bloque > h3 { margin: 0 0 14px; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+/* Payments by patient */
+.pago-fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 70px 1fr 1fr 1fr 110px; gap: 12px; align-items: center; padding: 12px 16px; font-size: 13.5px; }
+.pago-cab { font-size: 12px; color: #6B6963; background: #FAFAF8; border-bottom: 1px solid #E7E5E0; padding: 10px 16px; }
+@media (max-width: 760px) { .pago-fila { grid-template-columns: minmax(0, 1fr) 1fr 90px; } .pago-fila > :nth-child(2), .pago-fila > :nth-child(3), .pago-fila > :nth-child(4) { display: none; } }
+/* Hue slider of the color picker */
+input.tono { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 6px; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); outline: none; box-shadow: none !important; }
+input.tono::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid rgba(0,0,0,0.3); box-shadow: 0 1px 3px rgba(0,0,0,0.25); cursor: pointer; }
+input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid rgba(0,0,0,0.3); cursor: pointer; }
+.config-marca { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 32px; }
+@media (max-width: 980px) { .config-marca { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .tarifa-nueva { grid-template-columns: 1fr 1fr !important; } }
+/* Physical count */
+.conteo-fila { display: grid; grid-template-columns: minmax(0, 2fr) 90px 110px 100px; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #F2F1EE; font-size: 13.5px; }
+.conteo-cab { position: sticky; top: 0; background: #FAFAF8; border-top: none; border-bottom: 1px solid #E7E5E0; font-size: 12px; color: #6B6963; z-index: 1; }

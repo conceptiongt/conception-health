@@ -11,11 +11,12 @@ import { Icon } from '../components/ui/Icon'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../components/ServicioCampos'
 import { toast } from '../components/ui/Toast'
 
-const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '' }
+const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
 
 export function Registrar() {
-  const { citas, pacientes, servicios, perfil, clinica, recargar, ir } = useDatos()
-  const [f, setF] = useState(vacio)
+  const { citas, pacientes, servicios, perfil, clinica, recargar, ir, sedes, acc } = useDatos()
+  const conSedes = acc?.inventario && sedes.length > 0
+  const [f, setF] = useState(() => ({ ...vacio, sede: sedes.length === 1 ? sedes[0].id : '' }))
   const [serv, setServ] = useState(() => servicioInicial(vacio.tipo, servicios))
   const [busy, setBusy] = useState(false)
   const [listo, setListo] = useState(null) // { paciente, cita, cobro } after saving
@@ -30,17 +31,19 @@ export function Registrar() {
   const guardar = async (e) => {
     e.preventDefault()
     if (!f.nombre.trim() || !f.fecha || !f.origen) { toast.error('Complete nombre, fecha y cómo nos encontró'); return }
+    if (conSedes && !f.sede) { toast.error('Elija la sede de la cita'); return }
+    const sede = conSedes ? { sede_id: f.sede } : {}
     const s = servicioParaGuardar(serv)
     setBusy(true)
     const { data: paciente, error } = await supabase.from('pacientes').insert({
       clinica_id: perfil.clinica_id, nombre: f.nombre.trim(), telefono: f.telefono.trim() || null, email: f.email.trim() || null,
       origen: f.origen, red: f.origen === 'redes' ? f.red || null : null,
-      referido_por: f.origen === 'referido' ? f.referido_por.trim() || null : null, created_by: perfil.user_id,
+      referido_por: f.origen === 'referido' ? f.referido_por.trim() || null : null, created_by: perfil.user_id, ...sede,
     }).select().single()
     if (error) { setBusy(false); toast.error(mensajeError(error)); return }
     const { data: cita, error: e2 } = await supabase.from('citas').insert({
       clinica_id: perfil.clinica_id, paciente_id: paciente.id, fecha: f.fecha, hora: f.hora || null,
-      tipo: f.tipo || null, estado: f.estado, notas: f.notas.trim() || null, servicio_id: s.servicio_id, servicio: s.servicio,
+      tipo: f.tipo || null, estado: f.estado, notas: f.notas.trim() || null, servicio_id: s.servicio_id, servicio: s.servicio, ...sede,
     }).select().single()
     if (e2) {
       await supabase.from('pacientes').delete().eq('id', paciente.id) // keep data consistent
@@ -58,7 +61,7 @@ export function Registrar() {
     setBusy(false)
     toast.success('Paciente registrado')
     setListo({ paciente, cita, cobro })
-    setF({ ...vacio, fecha: f.fecha })
+    setF({ ...vacio, fecha: f.fecha, sede: f.sede })
     setServ(servicioInicial(vacio.tipo, servicios))
     recargar()
   }
@@ -71,13 +74,12 @@ export function Registrar() {
       <>
         <Encabezado titulo="Paciente registrado" subtitulo={`${listo.paciente.nombre} · ${fmtFecha(listo.cita.fecha)} · ${fmtHora(listo.cita.hora)}`} />
         {listo.cobro && (
-          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 16, padding: '14px 18px', marginBottom: 16, boxShadow: SHADOW, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.greenLight, color: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="cartera" size={17} /></div>
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.green}`, borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 14 }}>Se registró el cobro <strong>{listo.cobro.concepto}</strong> por <strong>{fmtQ(listo.cobro.precio)}</strong>. Puede aplicar un descuento o registrar pagos en su expediente.</div>
           </div>
         )}
         <Card title="Mensaje de confirmación">
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, margin: 0, fontSize: 14, lineHeight: 1.6 }}>{msg}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, margin: 0, fontSize: 14, lineHeight: 1.6 }}>{msg}</pre>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
             <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
             {wa && <Button variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
@@ -105,6 +107,7 @@ export function Registrar() {
         </Card>
         <Card title="Cita">
           <Grid>
+            {conSedes && <Campo label="Sede *"><Select value={f.sede} onChange={set('sede')}><option value="">Seleccione…</option>{sedes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}</Select></Campo>}
             <Campo label="Fecha *"><Input type="date" value={f.fecha} onChange={set('fecha')} required /></Campo>
             <Campo label="Hora" ayuda="Cada cita dura 1 hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
             <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></Campo>

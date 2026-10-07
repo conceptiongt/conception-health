@@ -6,10 +6,12 @@ import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla } from '../components/ui/Varios'
 import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
+import { FiltroSede, nombreSede } from '../components/Filtros'
 
 // Every patient's contact details in one list, exportable to Excel / PDF
 export function BaseDatos() {
-  const { pacientes, citas, cobros, clinica, ir } = useDatos()
+  const { pacientes, citas, cobros, clinica, ir, sedes } = useDatos()
+  const [sede, setSede] = useState('')
   const [buscar, setBuscar] = useState('')
   const [origen, setOrigen] = useState('')
   const [red, setRed] = useState('')
@@ -21,6 +23,7 @@ export function BaseDatos() {
     .filter(p => {
       if (q && ![p.nombre, p.telefono, p.email].some(v => (v || '').toLowerCase().includes(q))) return false
       if (origen && p.origen !== origen) return false
+      if (sede && p.sede_id !== sede) return false
       if (red && p.red !== red) return false
       if (contacto === 'telefono' && !p.telefono) return false
       if (contacto === 'email' && !p.email) return false
@@ -42,8 +45,8 @@ export function BaseDatos() {
     titulo: 'Base de datos de pacientes',
     subtitulo: `${filas.length} contactos`,
     secciones: [{ tabla: {
-      headers: ['Nombre', 'Teléfono', 'Correo', 'Origen', 'Registrado', 'Consultas'],
-      filas: filas.map(f => [f.p.nombre, f.p.telefono || '—', f.p.email || '—', origenTexto(f.p), fmtFechaCorta(f.p.created_at), f.consultas]),
+      headers: ['Nombre', 'Teléfono', 'Correo', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Registrado', 'Consultas'],
+      filas: filas.map(f => [f.p.nombre, f.p.telefono || '—', f.p.email || '—', ...(sedes.length ? [nombreSede(sedes, f.p.sede_id) || '—'] : []), origenTexto(f.p), fmtFechaCorta(f.p.created_at), f.consultas]),
     } }],
     excel: { archivo: 'base-de-datos-pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
       { header: 'Nombre', key: 'n', width: 32 }, { header: 'Teléfono', key: 't', width: 15 }, { header: 'Correo', key: 'e', width: 30 },
@@ -69,16 +72,18 @@ export function BaseDatos() {
           <option value="">Con o sin contacto</option><option value="telefono">Con teléfono</option><option value="email">Con correo</option>
         </select>
       </div>
+      <div style={{ marginBottom: 14, marginTop: -4 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
       <Tabla
-        columnas={['Nombre', 'Teléfono', 'Correo', 'Origen', 'Registrado', 'Consultas', 'Saldo']}
+        columnas={['Nombre', 'Teléfono', 'Correo', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Registrado', 'Consultas', 'Saldo']}
         vacio={pacientes.length ? 'Ningún contacto coincide con los filtros' : 'Aún no hay pacientes registrados'}
         onFila={(f) => ir('expedientes', f.key)}
         filas={filas.map(f => ({ key: f.p.id, celdas: [
-          <strong>{f.p.nombre}</strong>,
+          <span style={{ fontWeight: 500 }}>{f.p.nombre}</span>,
           f.p.telefono ? <a href={`tel:${f.p.telefono}`} onClick={e => e.stopPropagation()} style={{ color: C.black }}>{f.p.telefono}</a> : <span style={{ color: C.g300 }}>—</span>,
           f.p.email ? <a href={`mailto:${f.p.email}`} onClick={e => e.stopPropagation()} style={{ color: C.purple }}>{f.p.email}</a> : <span style={{ color: C.g300 }}>—</span>,
+          ...(sedes.length ? [nombreSede(sedes, f.p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []),
           origenTexto(f.p), fmtFechaCorta(f.p.created_at), f.consultas,
-          f.deuda > 0 ? <span style={{ color: C.red, fontWeight: 700 }}>{fmtQ(f.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>,
+          f.deuda > 0 ? <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(f.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>,
         ] }))}
       />
     </>

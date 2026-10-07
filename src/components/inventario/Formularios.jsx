@@ -29,7 +29,7 @@ export const OPERACIONES = [
   { tipo: 'entrada', titulo: 'Recibir', texto: 'Llegó mercadería o una compra', icono: 'descargar', color: C.green, bg: C.greenLight, superficie: C.mint },
   { tipo: 'salida', titulo: 'Sacar', texto: 'Vencido, dañado o regalado', icono: 'subir', color: C.red, bg: C.redLight, superficie: C.peony },
   { tipo: 'traslado', titulo: 'Trasladar', texto: 'Mover de una sede a otra', icono: 'repetir', color: C.blue, bg: C.blueLight, superficie: C.sky },
-  { tipo: 'ajuste', titulo: 'Contar', texto: 'Corregir con lo que hay en físico', icono: 'check', color: C.amber, bg: C.amberLight, superficie: C.peach },
+  { tipo: 'ajuste', titulo: 'Contar', texto: 'Conteo físico de toda una sede', icono: 'check', color: C.amber, bg: C.amberLight, superficie: C.peach },
 ]
 export const operacion = (tipo) => OPERACIONES.find(o => o.tipo === tipo)
 

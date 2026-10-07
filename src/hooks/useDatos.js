@@ -23,10 +23,10 @@ export function useCargarDatos(clinicaId) {
   const recargar = useCallback(async () => {
     if (!clinicaId) return
     try {
-      const [pacientes, citas, cobros, servicios] = await Promise.all([
-        todo('pacientes', 'created_at'), todo('citas', 'fecha'), todo('cobros', 'fecha'), todo('servicios', 'created_at'),
+      const [pacientes, citas, cobros, servicios, sedes] = await Promise.all([
+        todo('pacientes', 'created_at'), todo('citas', 'fecha'), todo('cobros', 'fecha'), todo('servicios', 'created_at'), todo('sedes', 'created_at'),
       ])
-      setDatos({ pacientes, citas, cobros, servicios })
+      setDatos({ pacientes, citas, cobros, servicios, sedes: sedes.filter(s => s.activa).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')) })
       setError(null)
     } catch (e) { setError(e.message || 'Error al cargar') }
   }, [clinicaId])

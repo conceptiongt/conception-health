@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { MESES, TIPOS_CITA, ESTADOS_CITA, ORIGENES, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtFechaCorta, fmtHora, enMes, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
+import { TIPOS_CITA, ESTADOS_CITA, ORIGENES, estadoCita, origenLabel } from '../lib/constantes'
+import { fmtFechaCorta, fmtHora, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
+import { SelectorPeriodo, RangoFechas, AgregarAnio, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla } from '../components/ui/Varios'
@@ -13,12 +14,11 @@ import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
 
-const hoy = new Date()
-
 export function Citas() {
-  const { citas, pacientes, clinica, perfil, recargar, ir } = useDatos()
+  const { citas, pacientes, clinica, perfil, recargar, ir, sedes } = useDatos()
   const [buscar, setBuscar] = useState('')
-  const [mes, setMes] = useState('todos') // 'todos' | 'YYYY-M'
+  const [periodo, setPeriodo] = useState({ mes: '', anio: '', desde: '', hasta: '' })
+  const [sede, setSede] = useState('')
   const [estado, setEstado] = useState('')
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
@@ -30,7 +30,8 @@ export function Citas() {
     const p = porId[c.paciente_id]
     if (!p) return false
     if (q && !p.nombre.toLowerCase().includes(q) && !(p.telefono || '').includes(q)) return false
-    if (mes !== 'todos') { const [y, m] = mes.split('-').map(Number); if (!enMes(c.fecha, { year: y, mes: m })) return false }
+    if (!enPeriodo(c.fecha, periodo)) return false
+    if (sede && c.sede_id !== sede) return false
     if (estado && c.estado !== estado) return false
     if (tipo && c.tipo !== tipo) return false
     if (origen && p.origen !== origen) return false
@@ -43,50 +44,55 @@ export function Citas() {
     recargar()
   }
 
-  const meses = Array.from({ length: 18 }, (_, i) => { const d = new Date(hoy.getFullYear(), hoy.getMonth() + 3 - i, 1); return { mes: d.getMonth(), year: d.getFullYear() } })
-  const filtroTexto = [mes !== 'todos' && (() => { const [y, m] = mes.split('-').map(Number); return `${MESES[m]} ${y}` })(), estado, tipo, origen && origenLabel(origen), q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
+  const conPeriodo = periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta
+  const filtroTexto = [conPeriodo && textoPeriodo(periodo), sede && nombreSede(sedes, sede), estado, tipo, origen && origenLabel(origen), q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
+  const deSede = (id) => citas.filter(c => (!id || c.sede_id === id) && enPeriodo(c.fecha, periodo)).length
 
   const preparar = () => ({
     titulo: 'Citas',
     subtitulo: filtroTexto,
     secciones: [{ tabla: {
-      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', 'Origen'],
-      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', c.tipo || '—', c.estado, p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen)] }),
+      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen'],
+      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen)] }),
     } }],
     excel: { archivo: `citas_${slug(filtroTexto)}`, hojas: [{ nombre: 'Citas', columnas: [
       { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'Hora', key: 'hora', width: 8 }, { header: 'Paciente', key: 'paciente', width: 30 },
       { header: 'Teléfono', key: 'tel', width: 14 }, { header: 'Tipo', key: 'tipo', width: 18 }, { header: 'Estado', key: 'estado', width: 13 },
       { header: 'Origen', key: 'origen', width: 16 }, { header: 'Red social', key: 'red', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 },
-      { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Notas', key: 'notas', width: 40 },
+      { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Sede', key: 'sede', width: 16 }, { header: 'Notas', key: 'notas', width: 40 },
     ], filas: visibles.map(c => { const p = porId[c.paciente_id]; return {
-      fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, estado: c.estado,
+      sede: nombreSede(sedes, c.sede_id), fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, estado: c.estado,
       origen: origenLabel(p.origen), red: p.red, ref: p.referido_por, proc: c.procedimiento, notas: c.notas,
     } }) }] },
   })
 
   const sel = filtroStyle
-  const btnMini = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 9, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: C.g700 }
+  const btnMini = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px', height: 30, borderRadius: 7, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 400, color: C.g700, fontFamily: 'inherit' }
+
+  if (editando) return <CitaModal cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
 
   return (
     <>
       <Encabezado titulo="Citas" subtitulo={`${visibles.length} ${visibles.length === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
+        <AgregarAnio />
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente o teléfono…" style={{ ...sel, flex: '1 1 220px' }} />
-        <select value={mes} onChange={e => setMes(e.target.value)} style={sel}>
-          <option value="todos">Todos los meses</option>
-          {meses.map(m => <option key={`${m.year}-${m.mes}`} value={`${m.year}-${m.mes}`}>{MESES[m.mes]} {m.year}</option>)}
-        </select>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente o teléfono…" style={{ ...sel, flex: '1 1 260px' }} />
+      </div>
+      <div style={{ marginBottom: 10 }}><FiltroSede valor={sede} onChange={setSede} contar={deSede} /></div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+        <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios />
         <select value={estado} onChange={e => setEstado(e.target.value)} style={sel}><option value="">Todo estado</option>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</select>
         <select value={tipo} onChange={e => setTipo(e.target.value)} style={sel}><option value="">Todo tipo</option>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</select>
         <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        <RangoFechas valor={periodo} onChange={setPeriodo} />
       </div>
 
       <Tabla
-        columnas={['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', 'Origen', '']}
+        columnas={['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', '']}
         vacio="No hay citas con estos filtros"
         filas={visibles.map(c => {
           const p = porId[c.paciente_id]
@@ -95,11 +101,12 @@ export function Citas() {
           const cal = linkCalendar(p, c)
           return { key: c.id, celdas: [
             fmtFechaCorta(c.fecha), fmtHora(c.hora),
-            <button onClick={() => ir('expedientes', p.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, color: C.black, fontSize: 13.5 }}>{p.nombre}</button>,
+            <button onClick={() => ir('expedientes', p.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, color: C.black, fontSize: 13.5, fontFamily: 'inherit' }}>{p.nombre}</button>,
             [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—',
-            <select value={c.estado} onChange={ev => cambiarEstado(c, ev.target.value)} style={{ padding: '5px 8px', borderRadius: 20, border: 'none', fontWeight: 700, fontSize: 12.5, color: e.color, background: e.bg, cursor: 'pointer' }}>
+            <select value={c.estado} onChange={ev => cambiarEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
               {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
             </select>,
+            ...(sedes.length ? [nombreSede(sedes, c.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []),
             p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen),
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={btnMini} onClick={() => setEditando(c)}><Icon name="editar" size={14} />Editar</button>
@@ -110,10 +117,6 @@ export function Citas() {
         })}
       />
 
-      {editando && (
-        <CitaModal cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id}
-          onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
-      )}
     </>
   )
 }

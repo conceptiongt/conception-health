@@ -77,7 +77,7 @@ export function Tabla({ columnas, filas, onFila, vacio = 'Sin registros' }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr>
-            {columnas.map(c => <th key={c} style={{ padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }}>{c}</th>)}
+            {columnas.map((c, i) => <th key={i} style={{ padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>

@@ -11,6 +11,19 @@ import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto, ElegirCategoria } from './Selectores'
 
+// Delete a product, location or supplier. The database refuses when it has history (then: deactivate).
+export async function eliminarRegistro(tabla, registro, nombre, onListo) {
+  if (!confirm(`¿Eliminar «${nombre}»? Esta acción no se puede deshacer.`)) return
+  if (tabla === 'proveedores') {
+    const { count } = await supabase.from('ordenes_compra').select('id', { count: 'exact', head: true }).eq('proveedor_id', registro.id)
+    if (count) { toast.error('Este proveedor tiene órdenes de compra, por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'); return }
+  }
+  const { error } = await supabase.from(tabla).delete().eq('id', registro.id)
+  if (error) { toast.error(errorInventario(error, 'No se pudo eliminar')); return }
+  toast.success('Eliminado')
+  onListo()
+}
+
 // The four everyday operations, in plain words
 export const OPERACIONES = [
   { tipo: 'entrada', titulo: 'Recibir', texto: 'Llegó mercadería o una compra', icono: 'descargar', color: C.green, bg: C.greenLight, superficie: C.mint },
@@ -119,7 +132,8 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
   )
 }
 
-export function ProductoModal({ producto, categorias = [], proveedores = [], onClose, onGuardado }) {
+export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio, onClose, onGuardado }) {
+  const proveedores = inv?.proveedores || []
   const [f, setF] = useState({ nombre: producto?.nombre || '', codigo: producto?.codigo || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', stock_maximo: producto?.stock_maximo ?? '', costo: producto?.costo ?? '', proveedor_id: producto?.proveedor_id || '', activo: producto?.activo ?? true })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
@@ -139,7 +153,7 @@ export function ProductoModal({ producto, categorias = [], proveedores = [], onC
       <Grid min={200}>
         <Campo label="Nombre *"><Input value={f.nombre} onChange={set('nombre')} placeholder="Ej. Toxina botulínica 100U" /></Campo>
         <Campo label="Código o referencia (opcional)"><Input value={f.codigo} onChange={set('codigo')} placeholder="Ej. BTX-100" /></Campo>
-        <Campo label="Categoría" full ayuda="Elija una o cree la suya; sirve para encontrar el producto más rápido"><ElegirCategoria valor={f.categoria} onChange={set('categoria')} categorias={categorias} /></Campo>
+        <Campo label="Categoría" full ayuda="Elija una o cree la suya; sirve para encontrar el producto más rápido"><ElegirCategoria valor={f.categoria} onChange={set('categoria')} inv={inv} onCreada={onCategoriasCambio} onAdministrar={onCategorias} /></Campo>
         <Campo label="Se cuenta por"><Input value={f.unidad} onChange={set('unidad')} list="unidades" /><datalist id="unidades">{UNIDADES.map(u => <option key={u} value={u} />)}</datalist></Campo>
         <Campo label="Mínimo por sede" ayuda="Si una sede baja de aquí, le avisamos para reabastecer"><Input type="number" min="0" step="any" value={f.stock_minimo} onChange={set('stock_minimo')} placeholder="0" /></Campo>
         <Campo label="Máximo por sede (opcional)" ayuda="Al reabastecer, se sugiere pedir hasta llegar aquí"><Input type="number" min="0" step="any" value={f.stock_maximo} onChange={set('stock_maximo')} placeholder="Doble del mínimo" /></Campo>
@@ -147,7 +161,9 @@ export function ProductoModal({ producto, categorias = [], proveedores = [], onC
         <Campo label="Proveedor habitual" ayuda="Para armar las órdenes de compra automáticamente"><Select value={f.proveedor_id} onChange={set('proveedor_id')}><option value="">—</option>{proveedores.filter(p => p.activo || p.id === f.proveedor_id).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</Select></Campo>
         {producto && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activo} onChange={e => set('activo')(e.target.checked)} />Producto activo (desactívelo si ya no lo usa; su historial se conserva)</label></Campo>}
       </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
+        {producto && <Button variant="danger" icon="eliminar" onClick={() => eliminarRegistro('productos', producto, producto?.nombre, onGuardado)}>Eliminar</Button>}
+        <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
       </div>
@@ -179,7 +195,9 @@ export function SedeModal({ sede, onClose, onGuardado }) {
         <Campo label="Dirección (opcional)" full><Input value={f.direccion} onChange={set('direccion')} /></Campo>
         {sede && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activa} onChange={e => set('activa')(e.target.checked)} />Sede activa (desactívela si cerró; su historial se conserva)</label></Campo>}
       </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
+        {sede && <Button variant="danger" icon="eliminar" onClick={() => eliminarRegistro('sedes', sede, sede?.nombre, onGuardado)}>Eliminar</Button>}
+        <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
       </div>

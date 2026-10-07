@@ -5,14 +5,15 @@ import { supabase } from '../lib/supabase'
 export function useInventario() {
   const [inv, setInv] = useState(null)
   const recargar = useCallback(async () => {
-    const [s, p, e, pr] = await Promise.all([
+    const [s, p, e, pr, ca] = await Promise.all([
       supabase.from('sedes').select('*').order('nombre'),
       supabase.from('productos').select('*').order('nombre'),
       supabase.from('existencias').select('*'),
       supabase.from('proveedores').select('*').order('nombre'),
+      supabase.from('categorias_inventario').select('*').order('nombre'),
     ])
-    const error = s.error || p.error || e.error || pr.error
-    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data, proveedores: pr.data })
+    const error = s.error || p.error || e.error || pr.error || ca.error
+    setInv(error ? { error: error.message } : { sedes: s.data, productos: p.data, existencias: e.data, proveedores: pr.data, categorias: ca.data })
   }, [])
   useEffect(() => { recargar() }, [recargar])
   return { inv, recargar }
@@ -39,6 +40,7 @@ export function errorInventario(error, porDefecto = 'No se pudo guardar') {
     return `No hay suficiente existencia en esa sede${disp != null ? ` (disponible: ${fmtCant(disp)})` : ''}`
   }
   if (t.includes('duplicate key') || t.includes('unique')) return 'Ya existe uno con ese nombre'
+  if (error?.code === '23503' || t.includes('foreign key')) return 'Tiene historial (movimientos u órdenes), por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'
   if (t.includes('row-level security')) return 'Su plan no incluye inventario'
   return porDefecto
 }

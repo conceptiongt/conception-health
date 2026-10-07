@@ -12,6 +12,7 @@ import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../ui/Campos'
 import { Exportar } from '../Documento'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
+import { eliminarRegistro } from './Formularios'
 
 // Purchase order life cycle (like Odoo: request → sent → confirmed → received)
 export const ESTADOS_OC = {
@@ -434,7 +435,9 @@ export function ProveedorModal({ proveedor, onClose, onGuardado }) {
         <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Días de entrega, condiciones de pago…" /></Campo>
         {proveedor && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activo} onChange={e => set('activo')(e.target.checked)} />Proveedor activo</label></Campo>}
       </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
+        {proveedor && <Button variant="danger" icon="eliminar" onClick={() => eliminarRegistro('proveedores', proveedor, proveedor?.nombre, () => onGuardado(null))}>Eliminar</Button>}
+        <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
       </div>

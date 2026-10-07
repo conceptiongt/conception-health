@@ -13,7 +13,7 @@ import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
-import { categoriasDe } from '../components/inventario/Selectores'
+import { CategoriasModal } from '../components/inventario/Selectores'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
@@ -32,6 +32,7 @@ export function Inventario() {
   const [orden, setOrden] = useState(undefined) // order form: undefined closed, { orden?, inicial? }
   const [ordenAbierta, setOrdenAbierta] = useState(null)
   const [proveedor, setProveedor] = useState(undefined) // supplier form, with optional callback
+  const [categorias, setCategorias] = useState(false)
 
   const cargarMovs = useCallback(async () => {
     const { data } = await supabase.from('inventario_movimientos').select('*').order('created_at', { ascending: false }).limit(1000)
@@ -138,7 +139,7 @@ export function Inventario() {
       {tab === 'resumen' && (listo
         ? <Resumen inv={inv} movs={movs} sedes={sedes} productos={productos} reabastecer={reabastecer} vencen={vencen} operar={operar} verSede={verSede} irA={setTab} abrir={setDetalle} />
         : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
-      {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} />}
+      {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
       {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={crearOrdenes} />}
       {tab === 'compras' && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
       {tab === 'proveedores' && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
@@ -154,8 +155,9 @@ export function Inventario() {
       {ordenAbierta && compras.ordenes.find(o => o.id === ordenAbierta) && <OrdenDetalle inv={inv} orden={compras.ordenes.find(o => o.id === ordenAbierta)} lineas={compras.lineas.filter(l => l.orden_id === ordenAbierta)}
         onClose={() => setOrdenAbierta(null)} onCambio={recargar} onEditar={(o) => { setOrdenAbierta(null); setOrden({ orden: o }) }} />}
       {proveedor !== undefined && <ProveedorModal proveedor={proveedor.p} onClose={() => setProveedor(undefined)}
-        onGuardado={(data) => { const cb = proveedor.cb; setProveedor(undefined); recargarInv(); cb?.(data.id) }} />}
-      {producto !== undefined && <ProductoModal producto={producto} categorias={categoriasDe(inv.productos)} proveedores={inv.proveedores} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
+        onGuardado={(data) => { const cb = proveedor.cb; setProveedor(undefined); recargarInv(); if (data) cb?.(data.id) }} />}
+      {categorias && <CategoriasModal inv={inv} onClose={() => setCategorias(false)} onCambio={recargarInv} />}
+      {producto !== undefined && <ProductoModal producto={producto} inv={inv} onCategorias={() => setCategorias(true)} onCategoriasCambio={recargarInv} onClose={() => setProducto(undefined)} onGuardado={() => { setProducto(undefined); recargar() }} />}
       {sede !== undefined && <SedeModal sede={sede} onClose={() => setSede(undefined)} onGuardado={() => { setSede(undefined); recargar() }} />}
     </>
   )
@@ -287,7 +289,7 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
 }
 
 // ─── Products: cards (or list) with status and stock per location ───
-function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo }) {
+function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCategorias }) {
   const { clinica } = useDatos()
   const [buscar, setBuscar] = useState('')
   const [estado, setEstado] = useState('')
@@ -335,6 +337,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo }) {
         <div style={{ display: 'inline-flex', border: `1px solid ${C.g200}`, borderRadius: 10, overflow: 'hidden' }}>
           {[['tarjetas', 'Tarjetas'], ['lista', 'Lista']].map(([v, l]) => <button key={v} onClick={() => cambiarVista(v)} style={{ padding: '9px 12px', border: 'none', background: vista === v ? C.g100 : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: vista === v ? C.black : C.g500, fontFamily: 'inherit' }}>{l}</button>)}
         </div>
+        <Button variant="ghost" size="sm" icon="editar" onClick={onCategorias}>Categorías</Button>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>

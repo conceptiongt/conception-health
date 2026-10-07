@@ -13,9 +13,20 @@ export function tokenDeLink(texto) {
   return m ? m[0].toLowerCase() : null
 }
 
+// Short link (studio.conception-gt.com/<cliente>/reportes-<código>) → the portal code, via Studio's public resolver
+async function tokenDeEnlaceCorto(texto) {
+  const limpio = String(texto || '').trim().replace(/^https?:\/\//i, '').split(/[?#]/)[0].replace(/\/+$/, '')
+  const partes = limpio.split('/').filter(Boolean)
+  if (partes.length < 2) return null
+  const [slug, resto] = partes.slice(-2).map(t => decodeURIComponent(t).toLowerCase())
+  if (!/^reportes/.test(resto)) return null
+  const { data } = await studio.rpc('enlace_resolver', { p_slug: slug, p_resto: resto })
+  return data?.tipo === 'portal' && data.token ? String(data.token).toLowerCase() : null
+}
+
 export async function solicitarVinculo(link, clinica, email) {
-  const token = tokenDeLink(link)
-  if (!token) return { error: 'Pegue el link completo que le envió Conception.' }
+  const token = tokenDeLink(link) || await tokenDeEnlaceCorto(link)
+  if (!token) return { error: 'No reconocemos ese link. Pegue el link de reportes que le envió Conception (por ejemplo …/dr-nombre/reportes-abc123).' }
   const { data, error } = await studio.rpc('health_solicitar_vinculo', {
     p_portal_token: token, p_health_clinica_id: clinica.id, p_nombre: clinica.nombre, p_email: email,
   })

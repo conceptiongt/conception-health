@@ -457,7 +457,7 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
   const resumen = (label, valor, color = C.black, grande) => (
     <div style={{ flex: 1, minWidth: 110 }}>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>{label}</div>
-      <div style={{ fontSize: grande ? 20 : 16, fontWeight: 800, color, marginTop: 2 }}>{valor}</div>
+      <div style={{ fontSize: grande ? 20 : 16, fontWeight: 600, color, marginTop: 2 }}>{valor}</div>
     </div>
   )
 

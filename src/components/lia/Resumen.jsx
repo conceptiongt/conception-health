@@ -78,7 +78,7 @@ export function Resumen({ irA }) {
                       {fecha
                         ? <span style={{ width: 52, flexShrink: 0, textAlign: 'center', borderRadius: 10, background: C.purpleMid, color: C.purpleDark, padding: '6px 0' }}>
                             <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{DIAS_C[fecha.getDay()]}</span>
-                            <span style={{ display: 'block', fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>{fecha.getDate()}</span>
+                            <span style={{ display: 'block', fontSize: 20, fontWeight: 600, lineHeight: 1.1 }}>{fecha.getDate()}</span>
                             <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{MESES_C[fecha.getMonth()]}</span>
                           </span>
                         : <span style={{ width: 52, height: 52, flexShrink: 0, borderRadius: 10, background: tipo[2], color: tipo[1], display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={tipo[3]} size={20} /></span>}

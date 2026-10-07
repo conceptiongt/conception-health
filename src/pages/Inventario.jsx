@@ -71,13 +71,13 @@ export function Inventario() {
           const off = o.tipo === 'traslado' && sedes.length < 2
           return (
             <button key={o.tipo} className="op-tile" onClick={() => off ? toast.error('Necesita al menos dos sedes para trasladar') : operar({ tipo: o.tipo })} style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 18, border: `1px solid ${C.line}`, background: '#fff',
-              boxShadow: SHADOW, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: off ? 0.55 : 1,
+              display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderRadius: 24, border: 'none', background: o.superficie,
+              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: off ? 0.55 : 1,
             }}>
-              <div style={{ width: 44, height: 44, borderRadius: 13, background: o.bg, color: o.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name={o.icono} size={21} /></div>
+              <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: o.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name={o.icono} size={21} /></div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: C.black }}>{o.titulo}</div>
-                <div style={{ fontSize: 12.5, color: C.g500, lineHeight: 1.35 }}>{o.texto}</div>
+                <div style={{ fontSize: 17, fontWeight: 500, color: C.black, letterSpacing: '-0.015em' }}>{o.titulo}</div>
+                <div style={{ fontSize: 12.5, color: C.g600, lineHeight: 1.35 }}>{o.texto}</div>
                 {n > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: o.color, marginTop: 3 }}>{n} este mes</div>}
               </div>
             </button>
@@ -116,7 +116,7 @@ function Configurar({ sedes, productos, onSede, onProducto }) {
     <Card title="Configure su inventario en 3 pasos">
       {pasos.map((p, i) => (
         <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderTop: i ? `1px solid ${C.g100}` : 'none', alignItems: 'center', opacity: i > actual ? 0.5 : 1 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800,
+          <div style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600,
             background: p.hecho ? C.greenLight : i === actual ? C.purple : C.g100, color: p.hecho ? C.green : i === actual ? '#fff' : C.g400 }}>
             {p.hecho ? <Icon name="check" size={16} stroke={2.6} /> : i + 1}
           </div>
@@ -133,11 +133,11 @@ function Configurar({ sedes, productos, onSede, onProducto }) {
 
 function Kpi({ icono, label, valor, sub, color = C.purple, bg = C.purpleMid, onClick }) {
   return (
-    <div onClick={onClick} className={onClick ? 'op-tile' : undefined} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '16px 18px', boxShadow: SHADOW, cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
+    <div onClick={onClick} className={onClick ? 'op-tile' : undefined} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '16px 18px', boxShadow: SHADOW, cursor: onClick ? 'pointer' : 'default', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.g500, fontSize: 13, fontWeight: 600 }}>
         <span style={{ width: 28, height: 28, borderRadius: 8, background: bg, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icono} size={15} /></span>{label}
       </div>
-      <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 800, marginTop: 8, letterSpacing: '-0.02em' }}>{valor}</div>
+      <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 600, marginTop: 8, letterSpacing: '-0.02em' }}>{valor}</div>
       {sub && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{sub}</div>}
     </div>
   )
@@ -300,16 +300,16 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo }) {
             {lista.map(({ p, e }) => {
               const filas = visibles.filter(s => inv.existencias.some(x => x.sede_id === s.id && x.producto_id === p.id))
               return (
-                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
+                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, color: C.black, lineHeight: 1.3 }}>{p.nombre}</div>
+                      <div style={{ fontWeight: 600, fontSize: 15, color: C.black, lineHeight: 1.3 }}>{p.nombre}</div>
                       <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{p.categoria || 'Sin categoría'}</div>
                     </div>
                     <Badge color={e.color} bg={e.bg}>{e.label}</Badge>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '14px 0 10px' }}>
-                    <span style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 800, color: C.black, letterSpacing: '-0.02em', lineHeight: 1 }}>{fmtCant(e.total)}</span>
+                    <span style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 600, color: C.black, letterSpacing: '-0.02em', lineHeight: 1 }}>{fmtCant(e.total)}</span>
                     <span style={{ fontSize: 13, color: C.g500 }}>{p.unidad}{visibles.length > 1 ? ' en total' : ''}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 'auto' }}>
@@ -349,7 +349,7 @@ function ProductoDetalle({ inv, movs, sedes, producto: p, onClose, operar, edita
   const dato = (label, valor) => (
     <div style={{ flex: '1 1 120px', padding: '12px 14px', borderRadius: 14, background: C.g50, border: `1px solid ${C.line}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>{label}</div>
-      <div style={{ fontSize: 19, fontWeight: 800, marginTop: 2 }}>{valor}</div>
+      <div style={{ fontSize: 19, fontWeight: 600, marginTop: 2 }}>{valor}</div>
     </div>
   )
   return (
@@ -458,15 +458,15 @@ function Sedes({ inv, verSede, onEditar }) {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, background: dep ? C.blueLight : C.purpleMid, color: dep ? C.blue : C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="sede" size={20} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 800 }}>{s.nombre}</div>
+                <div style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 600 }}>{s.nombre}</div>
                 <div style={{ fontSize: 13, color: C.g500 }}>{dep ? 'Sede departamental' : 'Sede ciudad'}{lugarSede(s) ? ` · ${lugarSede(s)}` : ''}</div>
               </div>
             </div>
             {s.direccion && <div style={{ fontSize: 13, color: C.g600, marginTop: 10 }}>{s.direccion}</div>}
             <div style={{ display: 'flex', gap: 18, margin: '16px 0 14px' }}>
-              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>VALOR</div><div style={{ fontWeight: 800, fontSize: 16 }}>{fmtQ(valorInventario(inv, s.id))}</div></div>
-              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>PRODUCTOS</div><div style={{ fontWeight: 800, fontSize: 16 }}>{items}</div></div>
-              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>REABASTECER</div><div style={{ fontWeight: 800, fontSize: 16, color: bajos ? C.amber : C.green }}>{bajos}</div></div>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>VALOR</div><div style={{ fontWeight: 600, fontSize: 16 }}>{fmtQ(valorInventario(inv, s.id))}</div></div>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>PRODUCTOS</div><div style={{ fontWeight: 600, fontSize: 16 }}>{items}</div></div>
+              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>REABASTECER</div><div style={{ fontWeight: 600, fontSize: 16, color: bajos ? C.amber : C.green }}>{bajos}</div></div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
               {s.activa && <Button size="sm" onClick={() => verSede(s.id)} style={{ flex: 1 }}>Ver productos</Button>}

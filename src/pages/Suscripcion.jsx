@@ -37,7 +37,7 @@ export function Suscripcion() {
     <>
       <Encabezado titulo="Suscripción" subtitulo="Elija el plan para su consultorio" />
 
-      <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '20px 22px', boxShadow: SHADOW, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '20px 22px', boxShadow: SHADOW, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.14em' }}>PLAN ACTUAL</div>
           <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 700, color: C.black, marginTop: 2 }}>
@@ -71,8 +71,8 @@ export function Suscripcion() {
                 <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Inventario por sede', ultra: 'Max + Lía, su recepcionista virtual', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
                   {p.precio
-                    ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 800, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
-                    : <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 800, color: C.g400, lineHeight: '46px' }}>Precio por anunciar</span>}
+                    ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 600, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
+                    : <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.g400, lineHeight: '46px' }}>Precio por anunciar</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
                   {p.incluye.map(i => (

@@ -1,26 +1,32 @@
-// Conception Health design tokens — calm, premium, medical
+// Conception Health design tokens — light workspace in the style of monday.com:
+// white cards on a soft gray canvas, one violet action color, pastel surfaces, pill buttons.
 export const C = {
-  // brand (from the logo: violet → cyan)
-  purple: '#6D3FE0', purpleDark: '#4C1D95', purpleLight: '#EFEAFD', purpleMid: '#F7F4FE',
-  cyan: '#0FB8E6',
-  grad: 'linear-gradient(135deg, #8B5CF6 0%, #0FB8E6 100%)',
+  // brand: a single violet for actions and active states
+  purple: '#6161FF', purpleDark: '#4B4BD6', purpleLight: '#DBDBFF', purpleMid: '#EEF0FF',
+  cyan: '#3AC9FF',
+  grad: 'linear-gradient(135deg, #8181FF 0%, #3AC9FF 100%)',
+  prism: 'conic-gradient(from 270deg, #8181FF 15%, #33DBDB 40%, #33D58E 55%, #FFD633 65%, #FC527D 85%, #8181FF 100%)',
 
-  // navy sidebar
-  sidebar: '#0B1120', sidebar2: '#111A2E',
-  sidebarActive: 'rgba(255,255,255,0.07)', sidebarHover: 'rgba(255,255,255,0.04)',
+  // sidebar (light, like the product UI)
+  sidebar: '#FFFFFF', sidebar2: '#FFFFFF',
+  sidebarActive: '#EEF0FF', sidebarHover: '#F5F6F8',
 
-  // ink & neutrals (slightly warm)
-  black: '#0F172A', bgApp: '#F6F6F9', line: '#E8E6EF',
-  g50: '#FAFAFC', g100: '#F1F0F5', g200: '#E4E2EB', g300: '#C9C6D4', g400: '#8E8A9E',
-  g500: '#6B6780', g600: '#4E4A61', g700: '#2F2B40',
+  // ink & neutrals
+  black: '#333333', bgApp: '#F5F6F8', line: '#E3E5EE',
+  g50: '#F8F9FB', g100: '#F0F1F5', g200: '#DDDFEB', g300: '#C3C6D4', g400: '#8A8D9C',
+  g500: '#676879', g600: '#535768', g700: '#3B3E4C',
 
-  // status (muted, not neon)
-  green: '#1F7A4D', greenLight: '#E9F6EF', amber: '#9A6200', amberLight: '#FDF5E4',
-  red: '#C23B3B', redLight: '#FCEDED', blue: '#2458B8', blueLight: '#EAF1FC',
-  orange: '#B45309', orangeLight: '#FDF1E6',
+  // status pills: soft pastel fill, dark readable text
+  green: '#1E7B45', greenLight: '#DDF7CE', amber: '#9A5B00', amberLight: '#FFEACC',
+  red: '#C8304A', redLight: '#FFE0E5', blue: '#1F63C6', blueLight: '#DCF4FF',
+  orange: '#B4500F', orangeLight: '#FFE6D5',
+
+  // pastel surfaces for feature tiles (never for text)
+  mint: '#E3FBD3', sky: '#DCF7FF', peach: '#FFEBDD', lavender: '#EFE3F8', periwinkle: '#E7ECFF', peony: '#FDE3FA',
 }
 
-// System font (San Francisco on Apple devices), like the original PatientTrack
-export const SANS = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif"
-export const SERIF = SANS // headings use the same family, heavier weight
-export const SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)'
+export const SANS = "'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+export const SERIF = SANS // headings use the same family
+export const SHADOW = '0 2px 48px rgba(205, 208, 223, 0.40)'
+export const SHADOW_HOVER = '0 5px 45px rgba(0, 0, 0, 0.12)'
+export const RADIO = { card: 24, input: 6, badge: 6, boton: 160, imagen: 12 }

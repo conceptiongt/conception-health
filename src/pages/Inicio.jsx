@@ -26,7 +26,7 @@ function Metrica({ label, valor, sub }) {
 }
 
 const Seccion = ({ children }) => (
-  <div style={{ fontSize: 11, fontWeight: 800, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
+  <div style={{ fontSize: 11, fontWeight: 600, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
 )
 
 export function Inicio() {
@@ -102,7 +102,7 @@ export function Inicio() {
   return (
     <>
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
         <div style={{ fontSize: 14, color: C.g400, fontStyle: 'italic', marginTop: 4 }}>No está aquí para encajar. Está para destacar.</div>
       </div>
 
@@ -127,7 +127,7 @@ export function Inicio() {
         {porEstado.map(e => (
           <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center' }}>
             <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
+            <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
           </div>
         ))}
       </div>

@@ -1,13 +1,14 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
-  background: #F6F6F9; color: #0F172A; font-size: 14px; line-height: 1.55;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #F5F6F8; color: #333333; font-size: 14px; line-height: 1.55; letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased; font-feature-settings: 'tnum' 1;
 }
 button, input, select, textarea { font-family: inherit; }
-input:focus, select:focus, textarea:focus { border-color: #6D3FE0 !important; box-shadow: 0 0 0 4px rgba(109,63,224,0.10); outline: none; }
-::selection { background: #EFEAFD; }
+input:focus, select:focus, textarea:focus { border-color: #6161FF !important; box-shadow: 0 0 0 4px rgba(97,97,255,0.12); outline: none; }
+::selection { background: #DBDBFF; }
+button:focus-visible { outline: 2px solid #6161FF; outline-offset: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes aparecer { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
@@ -15,24 +16,24 @@ input:focus, select:focus, textarea:focus { border-color: #6D3FE0 !important; bo
 .layout { display: flex; min-height: 100vh; }
 .sidebar {
   width: 264px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
-  background: radial-gradient(120% 60% at 0% 0%, rgba(139,92,246,0.16) 0%, rgba(139,92,246,0) 60%), linear-gradient(180deg, #0B1120 0%, #111A2E 100%);
-  border-right: 1px solid rgba(255,255,255,0.04);
+  background: #FFFFFF;
+  border-right: 1px solid #E3E5EE;
 }
 .main { flex: 1; min-width: 0; padding: 32px 36px 72px; animation: aparecer 0.25s ease; }
 .nav-item { transition: background 0.15s, color 0.15s; }
-.nav-item:hover { background: rgba(255,255,255,0.04) !important; color: rgba(255,255,255,0.92) !important; }
-.fila:hover { background: #FAFAFC; }
+.nav-item:hover { background: #F5F6F8 !important; color: #333333 !important; }
+.fila:hover { background: #F8F9FB; }
 .topbar { display: none; }
 @media (max-width: 860px) {
   .layout { display: block; }
-  .sidebar { position: fixed; left: 0; top: 0; z-index: 150; transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 0 0 40px rgba(0,0,0,0.35); }
+  .sidebar { position: fixed; left: 0; top: 0; z-index: 150; transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 0 5px 45px rgba(0,0,0,0.15); }
   .sidebar.abierta { transform: none; }
-  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: #0B1120; padding: 10px 14px; }
+  .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; background: #FFFFFF; border-bottom: 1px solid #E3E5EE; padding: 10px 14px; }
   .main { padding: 20px 16px 64px; }
 }
 
 /* Lía: conversations inbox (list | chat | patient card), phone preview, typing dots */
-.lia-inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; height: calc(100vh - 230px); min-height: 520px; background: #fff; border: 1px solid #E8E6EF; border-radius: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04); }
+.lia-inbox { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; height: calc(100vh - 230px); min-height: 520px; background: #fff; border: 1px solid #E3E5EE; border-radius: 24px; overflow: hidden; box-shadow: 0 2px 48px rgba(205,208,223,0.40); }
 .lia-inbox > * { min-width: 0; min-height: 0; }
 .lia-ficha-btn, .lia-volver { display: none !important; }
 @media (max-width: 1240px) { .lia-inbox { grid-template-columns: 280px minmax(0, 1fr); } .lia-ficha { display: none !important; } .lia-ficha-btn { display: inline-flex !important; } }
@@ -66,7 +67,7 @@ input:focus, select:focus, textarea:focus { border-color: #6D3FE0 !important; bo
 
 /* Inventory: clickable tiles and the two-column overview */
 .op-tile { transition: transform 0.12s, box-shadow 0.15s, border-color 0.15s; }
-.op-tile:hover { transform: translateY(-1px); border-color: #D9D4E8 !important; box-shadow: 0 2px 4px rgba(15,23,42,0.05), 0 10px 24px rgba(15,23,42,0.07) !important; }
+.op-tile:hover { transform: translateY(-2px); box-shadow: 0 5px 45px rgba(0,0,0,0.12) !important; }
 .inv-dos { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1280px) { .inv-dos { grid-template-columns: 1fr; } }
 .inv-cuatro { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

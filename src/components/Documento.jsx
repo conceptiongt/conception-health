@@ -16,13 +16,13 @@ function Documento({ titulo, subtitulo, clinica, secciones, onReady }) {
         <img src="/logo-dark.png" alt="Conception" onLoad={onReady} onError={onReady} style={{ height: 44, width: 'auto' }} />
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 9.5, letterSpacing: '0.14em', color: MUTED, fontWeight: 700 }}>{clinica?.toUpperCase()}</div>
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 2 }}>{titulo}</div>
+          <div style={{ fontSize: 17, fontWeight: 600, marginTop: 2 }}>{titulo}</div>
           {subtitulo && <div style={{ fontSize: 12, color: MUTED }}>{subtitulo}</div>}
         </div>
       </div>
       {secciones.filter(Boolean).map((s, i) => (
         <div key={i} style={{ breakInside: s.tabla ? 'auto' : 'avoid', pageBreakInside: s.tabla ? 'auto' : 'avoid' }}>
-          {s.titulo && <div style={{ fontSize: 13, fontWeight: 800, color: BRAND, margin: '18px 0 8px' }}>{s.titulo}</div>}
+          {s.titulo && <div style={{ fontSize: 13, fontWeight: 600, color: BRAND, margin: '18px 0 8px' }}>{s.titulo}</div>}
           {s.pares && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px' }}>
               {s.pares.map(([k, v]) => (

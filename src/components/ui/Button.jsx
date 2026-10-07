@@ -1,11 +1,12 @@
 import { C } from '../../lib/theme'
 import { Icon } from './Icon'
 
+// Pill buttons: violet is the single action color; secondary actions are outlined
 const VARIANTS = {
-  primary: { background: C.black, color: '#fff', border: `1px solid ${C.black}`, boxShadow: '0 1px 2px rgba(15,23,42,0.18)' },
-  brand: { background: C.purple, color: '#fff', border: `1px solid ${C.purple}`, boxShadow: '0 1px 2px rgba(109,63,224,0.3)' },
-  ghost: { background: '#fff', color: C.g700, border: `1px solid ${C.g200}` },
-  danger: { background: '#fff', color: C.red, border: '1px solid #F1CFCF' },
+  primary: { background: C.purple, color: '#fff', border: `1px solid ${C.purple}` },
+  brand: { background: C.purple, color: '#fff', border: `1px solid ${C.purple}` },
+  ghost: { background: '#fff', color: C.black, border: `1px solid ${C.g300}` },
+  danger: { background: '#fff', color: C.red, border: '1px solid #F4C4CD' },
   soft: { background: C.purpleMid, color: C.purple, border: `1px solid ${C.purpleLight}` },
 }
 
@@ -19,9 +20,9 @@ export function Button({ children, variant = 'primary', size = 'md', icon, disab
       title={title}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-        borderRadius: 10, fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.1, letterSpacing: '0.005em',
+        borderRadius: 160, fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap', lineHeight: 1.1, letterSpacing: '0.005em',
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'transform 0.08s, box-shadow 0.15s',
-        padding: sm ? '8px 12px' : lg ? '13px 22px' : '10px 16px',
+        padding: sm ? '7px 14px' : lg ? '13px 26px' : '10px 20px',
         fontSize: sm ? 13 : lg ? 15 : 14,
         ...VARIANTS[variant], ...style,
       }}

@@ -131,7 +131,7 @@ export function CrearPassword({ perfil, onListo }) {
 
   return (
     <Marco>
-      <div style={{ fontSize: 18, fontWeight: 800, color: C.black, marginBottom: 6 }}>Cree su contraseña</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: C.black, marginBottom: 6 }}>Cree su contraseña</div>
       <div style={{ fontSize: 13.5, color: C.g600, marginBottom: 16 }}>
         {perfil ? <>Hola, <strong>{perfil.nombre}</strong>. </> : null}La usará junto con su correo para entrar desde cualquier computadora o teléfono.
       </div>

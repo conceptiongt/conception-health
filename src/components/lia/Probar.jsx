@@ -150,7 +150,7 @@ export function Probar({ nombreLia = 'Lía', medico, servicios = [], onCambio })
     <div className="lia-probar">
       <div style={{ width: '100%', maxWidth: 390, margin: '0 auto', height: 'min(680px, calc(100vh - 210px))', minHeight: 520, display: 'flex', flexDirection: 'column', borderRadius: 36, border: '10px solid #0B1120', background: '#EFEAE2', overflow: 'hidden', boxShadow: '0 40px 70px -40px rgba(11,17,32,0.55)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 14px 12px', background: '#075E54', color: '#fff' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 18, background: '#fff', color: '#075E54', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="lia" size={19} stroke={2} /></div>
+          <div style={{ width: 36, height: 36, borderRadius: 24, background: '#fff', color: '#075E54', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="lia" size={19} stroke={2} /></div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{medico}</div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>{pensando ? 'escribiendo…' : 'en línea'}</div>

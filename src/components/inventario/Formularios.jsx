@@ -13,10 +13,10 @@ import { BuscadorProducto, ElegirCategoria } from './Selectores'
 
 // The four everyday operations, in plain words
 export const OPERACIONES = [
-  { tipo: 'entrada', titulo: 'Recibir', texto: 'Llegó mercadería o una compra', icono: 'descargar', color: C.green, bg: C.greenLight },
-  { tipo: 'salida', titulo: 'Sacar', texto: 'Vencido, dañado o regalado', icono: 'subir', color: C.red, bg: C.redLight },
-  { tipo: 'traslado', titulo: 'Trasladar', texto: 'Mover de una sede a otra', icono: 'repetir', color: C.blue, bg: C.blueLight },
-  { tipo: 'ajuste', titulo: 'Contar', texto: 'Corregir con lo que hay en físico', icono: 'check', color: C.amber, bg: C.amberLight },
+  { tipo: 'entrada', titulo: 'Recibir', texto: 'Llegó mercadería o una compra', icono: 'descargar', color: C.green, bg: C.greenLight, superficie: C.mint },
+  { tipo: 'salida', titulo: 'Sacar', texto: 'Vencido, dañado o regalado', icono: 'subir', color: C.red, bg: C.redLight, superficie: C.peony },
+  { tipo: 'traslado', titulo: 'Trasladar', texto: 'Mover de una sede a otra', icono: 'repetir', color: C.blue, bg: C.blueLight, superficie: C.sky },
+  { tipo: 'ajuste', titulo: 'Contar', texto: 'Corregir con lo que hay en físico', icono: 'check', color: C.amber, bg: C.amberLight, superficie: C.peach },
 ]
 export const operacion = (tipo) => OPERACIONES.find(o => o.tipo === tipo)
 
@@ -68,8 +68,8 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
           const activo = o.tipo === f.tipo
           return (
             <button key={o.tipo} onClick={() => set('tipo')(o.tipo)} style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 6px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-              border: `1.5px solid ${activo ? o.color : C.g200}`, background: activo ? o.bg : '#fff', color: activo ? o.color : C.g500, fontWeight: 700, fontSize: 13,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 6px', borderRadius: 16, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1.5px solid ${activo ? o.color : C.g200}`, background: activo ? o.superficie : '#fff', color: activo ? C.black : C.g500, fontWeight: 500, fontSize: 13,
             }}><Icon name={o.icono} size={18} />{o.titulo}</button>
           )
         })}
@@ -85,7 +85,7 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 150px', padding: '12px 16px', borderRadius: 14, background: C.g50, border: `1px solid ${C.line}` }}>
           <div style={{ fontSize: 11.5, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>HAY AHORA EN ESTA SEDE</div>
-          <div style={{ fontSize: 24, fontWeight: 800, marginTop: 2 }}>{prod ? fmtCant(disponible) : '—'} <span style={{ fontSize: 14, fontWeight: 600, color: C.g500 }}>{prod?.unidad}</span></div>
+          <div style={{ fontSize: 24, fontWeight: 600, marginTop: 2 }}>{prod ? fmtCant(disponible) : '—'} <span style={{ fontSize: 14, fontWeight: 600, color: C.g500 }}>{prod?.unidad}</span></div>
         </div>
         <div style={{ flex: '1 1 150px' }}>
           <Campo label={f.tipo === 'ajuste' ? '¿Cuántos contó en físico?' : f.tipo === 'entrada' ? '¿Cuántos llegaron?' : f.tipo === 'traslado' ? '¿Cuántos va a mover?' : '¿Cuántos va a sacar?'}>

@@ -26,15 +26,17 @@ import { Cargando, Logo } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
+import { esAdmin, puede } from './lib/permisos'
+import { PaginaPublica, rutaPublica } from './pages/Publico'
 
 const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
   { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
-  { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera' },
+  { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
   { id: 'basedatos', label: 'Pacientes', icono: 'usuarios' },
-  { id: 'inventario', label: 'Inventario', icono: 'caja' },
+  { id: 'inventario', label: 'Inventario', icono: 'caja', permiso: 'inventario' },
 ]
 const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
@@ -42,16 +44,26 @@ const NAV_LIA = [
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
 const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'basedatos', 'inventario']
 const NAV_CUENTA = [
-  { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion' },
-  { id: 'configuracion', label: 'Configuración', icono: 'ajustes' },
+  { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion', soloAdmin: true },
+  { id: 'configuracion', label: 'Configuración', icono: 'ajustes', permiso: 'configuracion' },
 ]
+// what each user can open (the administrator decides for assistants in Configuración)
+const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
+const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
 
 
 export default function App() {
+  const publica = rutaPublica()
+  if (publica) return <><PaginaPublica {...publica} /><ToastContainer /></>
+  return <AppPrivada />
+}
+
+function AppPrivada() {
   const s = useSesion()
   let contenido
   if (s.cargando) contenido = <div style={{ minHeight: '100vh' }}><Cargando /></div>
   else if (!s.session) contenido = <Acceso />
+  else if (!s.perfil) contenido = <SinAcceso />
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
@@ -72,7 +84,7 @@ function Aplicacion({ sesion }) {
   // first entry with a specialty: fill Tarifas with its suggested services (once)
   const sugiriendo = useRef(false)
   useEffect(() => {
-    if (!datos || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
+    if (!datos || !puede(perfil, 'configuracion') || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
     sugiriendo.current = true
     cargarSugeridos(clinica, datos.servicios).then(() => { recargar(); recargarSesion() })
   }, [datos, clinica, recargar, recargarSesion])
@@ -81,7 +93,7 @@ function Aplicacion({ sesion }) {
   // Conception Studio link: refresh its status and send this clinic's monthly totals when data changes
   const syncTimer = useRef(null)
   useEffect(() => {
-    if (!datos || !clinica?.studio_clave || !['pendiente', 'aprobado'].includes(clinica.studio_estado)) return
+    if (!datos || !esAdmin(perfil) || !clinica?.studio_clave || !['pendiente', 'aprobado'].includes(clinica.studio_estado)) return
     clearTimeout(syncTimer.current)
     syncTimer.current = setTimeout(async () => {
       const e = await estadoVinculo(clinica.studio_clave)
@@ -105,7 +117,7 @@ function Aplicacion({ sesion }) {
   const enPrueba = !planActivo
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba'
+  const plan = (esAdmin(perfil) ? '' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
@@ -149,11 +161,11 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].map(([titulo, items]) => (
+            {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {items.map(n => {
+                  {items.filter(n => permitido(perfil, n)).map(n => {
                     const activo = vista === n.id
                     return (
                       <button key={n.id} className="nav-item" onClick={() => ir(n.id)} style={{
@@ -185,7 +197,7 @@ function Aplicacion({ sesion }) {
         </aside>
 
         <main className="main">
-          {datos && clinica && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
+          {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
           {enPrueba && (
             <div style={{ background: C.lavender, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
@@ -193,11 +205,12 @@ function Aplicacion({ sesion }) {
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Versión de prueba · {usados} de {LIMITE_PRUEBA} pacientes</div>
                 <div style={{ fontSize: 13, color: C.g500 }}>Active su suscripción para registrar pacientes ilimitados.</div>
               </div>
-              <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>
+              {esAdmin(perfil) && <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>}
             </div>
           )}
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
+            : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
             : vista === 'lia' ? (LIA_DISPONIBLE ? <Lia /> : <LiaProximamente />)
             : vista === 'inventario' ? (acc.inventario ? <Inventario /> : <SoloMax ir={ir} />)
@@ -215,6 +228,30 @@ function Aplicacion({ sesion }) {
   )
 }
 
+
+// An assistant opening a page the administrator has not allowed
+function SinPermiso() {
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
+      <div style={{ fontSize: 20, fontWeight: 600, color: C.black, marginBottom: 6 }}>Esta sección necesita permiso</div>
+      <div style={{ fontSize: 14, color: C.g500, maxWidth: 440, margin: '0 auto', lineHeight: 1.6 }}>Pida al administrador de su clínica que se la habilite en Configuración → Usuarios y permisos.</div>
+    </div>
+  )
+}
+
+// The account exists but is not linked to a clinic (e.g. the administrator removed the user)
+function SinAcceso() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: C.bgApp }}>
+      <div style={{ background: '#fff', borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
+        <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario no tiene acceso</div>
+        <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Este correo no está vinculado a ninguna clínica. Si trabaja en un consultorio, pida al administrador que le invite de nuevo.</div>
+        <Button variant="ghost" icon="salir" onClick={() => supabase.auth.signOut()}>Cerrar sesión</Button>
+      </div>
+    </div>
+  )
+}
 
 // Shown to "Lía" plan accounts when they open a Conception Health page
 function SoloHealth({ ir }) {

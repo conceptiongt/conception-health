@@ -3,7 +3,10 @@ import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
-import { hoyISO, fmtFecha, fmtHora, fmtQ, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
+import { puede } from '../lib/permisos'
+import { urlRegistro } from '../lib/ficha'
+import { MensajePaciente } from '../components/MensajePaciente'
+import { hoyISO, fmtFecha, fmtHora, fmtQ } from '../lib/formato'
 import { useDatos, mensajeError } from '../hooks/useDatos'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
@@ -16,6 +19,7 @@ const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', 
 
 export function Registrar() {
   const { citas, pacientes, servicios, perfil, clinica, recargar, ir, sedes, acc } = useDatos()
+  const finanzas = puede(perfil, 'finanzas')
   const conSedes = acc?.inventario && sedes.length > 0
   const [f, setF] = useState(() => ({ ...vacio, sede: sedes.length === 1 ? sedes[0].id : '' }))
   const [serv, setServ] = useState(() => servicioInicial(vacio.tipo, servicios))
@@ -53,24 +57,20 @@ export function Registrar() {
     // the service price becomes a pending charge (discounts can be applied later in the file)
     let cobro = null
     if (s.precio > 0) {
-      const { data } = await supabase.from('cobros').insert({
-        clinica_id: perfil.clinica_id, paciente_id: paciente.id, cita_id: cita.id, servicio_id: s.servicio_id,
-        concepto: s.servicio || f.tipo, precio: s.precio, fecha: f.fecha,
-      }).select().single()
-      cobro = data
+      const fila = { clinica_id: perfil.clinica_id, paciente_id: paciente.id, cita_id: cita.id, servicio_id: s.servicio_id, concepto: s.servicio || f.tipo, precio: s.precio, fecha: f.fecha }
+      // assistants without access to finances can create the charge but not read it back
+      if (finanzas) cobro = (await supabase.from('cobros').insert(fila).select().single()).data
+      else await supabase.from('cobros').insert(fila)
     }
     setBusy(false)
     toast.success('Paciente registrado')
-    setListo({ paciente, cita, cobro })
+    setListo({ paciente, cita, cobro, precio: s.precio })
     setF({ ...vacio, fecha: f.fecha, sede: f.sede })
     setServ(servicioInicial(vacio.tipo, servicios))
     recargar()
   }
 
   if (listo) {
-    const msg = mensajeConfirmacion(listo.paciente, listo.cita, clinica?.nombre || perfil.nombre)
-    const wa = linkWhatsApp(listo.paciente.telefono, msg)
-    const cal = linkCalendar(listo.paciente, listo.cita)
     return (
       <>
         <Encabezado titulo="Paciente registrado" subtitulo={`${listo.paciente.nombre} · ${fmtFecha(listo.cita.fecha)} · ${fmtHora(listo.cita.hora)}`} />
@@ -79,13 +79,8 @@ export function Registrar() {
             <div style={{ fontSize: 14 }}>Se registró el cobro <strong>{listo.cobro.concepto}</strong> por <strong>{fmtQ(listo.cobro.precio)}</strong>. Puede aplicar un descuento o registrar pagos en su expediente.</div>
           </div>
         )}
-        <Card title="Mensaje de confirmación">
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.g50, border: `1px solid ${C.line}`, borderRadius: 16, padding: 16, margin: 0, fontSize: 14, lineHeight: 1.6 }}>{msg}</pre>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-            <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
-            {wa && <Button variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
-            {cal && <Button variant="ghost" icon="calendarioMas" onClick={() => window.open(cal, '_blank', 'noopener')}>Agregar a Google Calendar</Button>}
-          </div>
+        <Card title="Mensaje de confirmación por WhatsApp">
+          <MensajePaciente paciente={listo.paciente} cita={listo.cita} precio={listo.precio} />
         </Card>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
           <Button icon="mas" onClick={() => setListo(null)}>Registrar otro paciente</Button>
@@ -98,6 +93,7 @@ export function Registrar() {
   return (
     <form onSubmit={guardar}>
       <Encabezado titulo="Registrar paciente" subtitulo="Datos del paciente y su primera cita" />
+      <EnlaceRegistro token={clinica?.registro_token} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card title="Datos del paciente">
           <Grid>
@@ -137,5 +133,23 @@ export function Registrar() {
         <div><Button type="submit" size="lg" variant="brand" icon="check" disabled={busy}>{busy ? 'Guardando…' : 'Registrar paciente'}</Button></div>
       </div>
     </form>
+  )
+}
+
+// The other way to register: the patient fills in their own data from a link
+function EnlaceRegistro({ token }) {
+  if (!token) return null
+  const link = urlRegistro(token)
+  const msg = `¡Hola! 👋 Para agendar su cita, por favor llene sus datos en este enlace (toma 3 minutos):\n${link}`
+  return (
+    <div style={{ background: C.purpleMid, borderRadius: 18, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <Icon name="enlace" size={18} style={{ color: C.purple }} />
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>¿Prefiere que el paciente llene sus datos?</div>
+        <div style={{ fontSize: 12.5, color: C.g600 }}>Envíele el enlace de registro; aparecerá en su lista de pacientes con sus antecedentes.</div>
+      </div>
+      <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(link); toast.success('Enlace copiado') }}>Copiar enlace</Button>
+      <Button size="sm" icon="mensaje" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener')}>Enviar por WhatsApp</Button>
+    </div>
   )
 }

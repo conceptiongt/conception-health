@@ -6,7 +6,7 @@ const OTRO = '__otro__'
 
 // Service picker for a consultation type: choose from the clinic's price list or type a new one; fills the price
 // valor = { servicioId, servicio, precio }
-export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = true }) {
+export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = true, conPrecios = true }) {
   const opciones = servicios.filter(s => s.activo && s.categoria === tipo)
   const detalle = tipo === 'Cirugía' ? 'Tipo de cirugía' : tipo === 'Procedimiento' ? 'Tipo de procedimiento' : 'Servicio'
   const escribiendo = valor.servicioId === OTRO || (!valor.servicioId && !!valor.servicio)
@@ -24,7 +24,7 @@ export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = t
         {opciones.length > 0 ? (
           <Select value={seleccion} onChange={elegir}>
             <option value="">Seleccione…</option>
-            {opciones.map(o => <option key={o.id} value={o.id}>{o.nombre}{Number(o.precio) ? ` — ${fmtQ(o.precio)}` : ''}</option>)}
+            {opciones.map(o => <option key={o.id} value={o.id}>{o.nombre}{conPrecios && Number(o.precio) ? ` — ${fmtQ(o.precio)}` : ''}</option>)}
             <option value={OTRO}>Otro (escribir)…</option>
           </Select>
         ) : (

@@ -4,6 +4,7 @@ import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '.
 import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { especialidad } from '../lib/especialidades'
+import { puede } from '../lib/permisos'
 import { useDatos } from '../hooks/useDatos'
 import { Card, Badge, Indicadores } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -23,6 +24,7 @@ export function Inicio() {
   const [periodo, setPeriodo] = useState({ mes: hoy.getMonth(), anio: hoy.getFullYear() })
   const [sede, setSede] = useState('')
   const nombre = clinica?.nombre || perfil.nombre
+  const finanzas = puede(perfil, 'finanzas')
 
   // everything below follows the chosen location
   const pacientes = sede ? todosP.filter(p => p.sede_id === sede) : todosP
@@ -71,13 +73,13 @@ export function Inicio() {
     titulo: `Resumen de ${titulo}`,
     subtitulo: nombre,
     secciones: [
-      { resumen: [['Pacientes nuevos', fmtNum(nuevos.length)], ['Citas del mes', fmtNum(citasMes.length)], ['Cobrado del mes', fmtQ(ventasMes)], ['Saldo pendiente', fmtQ(pendienteTotal)]] },
+      { resumen: [['Pacientes nuevos', fmtNum(nuevos.length)], ['Citas del mes', fmtNum(citasMes.length)], ...(finanzas ? [['Cobrado del mes', fmtQ(ventasMes)], ['Saldo pendiente', fmtQ(pendienteTotal)]] : [])] },
       { titulo: 'Resumen', pares: [
         ['Pacientes del mes', fmtNum(nuevos.length)], ['Desde redes', `${deRedes} (${pct(deRedes)})`],
         ['Referidos / otros', `${otros} (${pct(otros)})`], ['Citas del mes', fmtNum(citasMes.length)],
         ['Cirugías', fmtNum(cirugias)], ['Procedimientos', fmtNum(procedimientos)],
-        ['Cobrado del mes', fmtQ(ventasMes)], ['Facturado del mes', fmtQ(facturadoMes)],
-        [`Cobrado en ${periodo.anio}`, fmtQ(ventasAnio)], ['Saldo pendiente total', fmtQ(pendienteTotal)],
+        ...(finanzas ? [['Cobrado del mes', fmtQ(ventasMes)], ['Facturado del mes', fmtQ(facturadoMes)],
+          [`Cobrado en ${periodo.anio}`, fmtQ(ventasAnio)], ['Saldo pendiente total', fmtQ(pendienteTotal)]] : []),
       ] },
       { titulo: 'Estado de citas', tabla: { headers: ['Estado', 'Citas'], filas: porEstado.map(e => [PLURAL[e.value], e.n]) } },
       { titulo: 'Origen de los pacientes', tabla: { headers: ['Origen', 'Pacientes'], filas: porOrigen.map(o => [o.label, o.valor]) } },
@@ -87,8 +89,8 @@ export function Inicio() {
       archivo: `resumen_${slug(titulo)}`,
       hojas: [{ nombre: 'Resumen', columnas: [{ header: 'Indicador', key: 'k', width: 32 }, { header: 'Valor', key: 'v', width: 18 }],
         filas: [['Pacientes del mes', nuevos.length], ['Desde redes', deRedes], ['Referidos / otros', otros], ['Citas del mes', citasMes.length],
-          ['Cirugías', cirugias], ['Procedimientos', procedimientos], ['Cobrado del mes (Q)', ventasMes], ['Facturado del mes (Q)', facturadoMes],
-          [`Cobrado en ${periodo.anio} (Q)`, ventasAnio], ['Saldo pendiente total (Q)', pendienteTotal],
+          ['Cirugías', cirugias], ['Procedimientos', procedimientos], ...(finanzas ? [['Cobrado del mes (Q)', ventasMes], ['Facturado del mes (Q)', facturadoMes],
+          [`Cobrado en ${periodo.anio} (Q)`, ventasAnio], ['Saldo pendiente total (Q)', pendienteTotal]] : []),
           ...porEstado.map(e => [`Citas ${PLURAL[e.value].toLowerCase()}`, e.n]), ...porRed.map(r => [`Red: ${r.red}`, r.n])]
           .map(([k, v]) => ({ k, v })) }],
     },
@@ -118,8 +120,8 @@ export function Inicio() {
         { label: 'Desde redes', valor: fmtNum(deRedes), sub: pct(deRedes) },
         { label: 'Referidos / otros', valor: fmtNum(otros), sub: pct(otros) },
         { label: 'Citas del mes', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
-        { label: 'Ventas del mes', valor: fmtQ(ventasMes), sub: `Anual: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
-        { label: 'Saldo pendiente', valor: fmtQ(pendienteTotal), color: pendienteTotal > 0 ? C.red : C.black, sub: `${vencidos.length} vencidos`, onClick: () => ir('pagos') },
+        finanzas && { label: 'Ventas del mes', valor: fmtQ(ventasMes), sub: `Anual: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
+        finanzas && { label: 'Saldo pendiente', valor: fmtQ(pendienteTotal), color: pendienteTotal > 0 ? C.red : C.black, sub: `${vencidos.length} vencidos`, onClick: () => ir('pagos') },
       ]} />
 
       <Seccion>Estado de citas — {esActual ? 'este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</Seccion>
@@ -176,7 +178,7 @@ export function Inicio() {
             </div>
           ))}
         </Card>
-        <Card title="Pagos vencidos" right={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 500 }}>{fmtQ(pendienteTotal)}</strong></span>}>
+        {finanzas && <Card title="Pagos vencidos" right={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 500 }}>{fmtQ(pendienteTotal)}</strong></span>}>
           {vencidos.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay pagos vencidos</div> : vencidos.slice(0, 6).map((c, i) => (
             <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 10, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -186,7 +188,7 @@ export function Inicio() {
               <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(saldo(c))}</span>
             </div>
           ))}
-        </Card>
+        </Card>}
       </div>
 
       <Card title="Últimos pacientes" style={{ marginTop: 16 }}>

@@ -15,14 +15,18 @@ import { SelectorColor } from '../components/SelectorColor'
 import { SedeModal } from '../components/inventario/Formularios'
 import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
 import { cargarSugeridos } from '../lib/sugeridos'
+import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
   return (
     <>
-      <Encabezado titulo="Configuración" subtitulo="Marca de su consultorio, sedes y tarifas" />
+      <Encabezado titulo="Configuración" subtitulo="Marca, usuarios, ficha clínica, pagos, sedes y tarifas" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Marca />
+        <Usuarios />
+        <FichaClinica />
+        <PagosYRegistro />
         {acc?.inventario && <Sedes />}
         <Tarifas servicios={servicios} clinicaId={perfil.clinica_id} onCambio={recargar} />
         <VinculoStudio />

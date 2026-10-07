@@ -27,6 +27,7 @@ export const REDES = ['Instagram', 'Facebook', 'TikTok', 'WhatsApp', 'LinkedIn']
 export const METODOS_PAGO = ['Efectivo', 'Tarjeta', 'Transferencia', 'Depósito', 'Otro']
 
 export const ETAPAS_FOTO = [
+  { value: 'estudio', label: 'Estudios y documentos' },
   { value: 'antes', label: 'Antes' },
   { value: 'proceso', label: 'Proceso' },
   { value: 'resultado', label: 'Resultado' },

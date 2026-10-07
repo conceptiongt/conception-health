@@ -4,6 +4,7 @@ import { C } from '../lib/theme'
 import { MESES } from '../lib/constantes'
 import { fmtFechaCorta } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
+import { puede } from '../lib/permisos'
 import { Segmentos } from './ui/Varios'
 import { Button } from './ui/Button'
 import { Modal } from './ui/Modal'
@@ -72,7 +73,7 @@ export function RangoFechas({ valor, onChange }) {
 
 // "+ Agregar año": adds a year by hand to every period picker
 export function AgregarAnio() {
-  const { clinica, recargarSesion } = useDatos()
+  const { clinica, recargarSesion, perfil } = useDatos()
   const anios = useAnios()
   const [abierto, setAbierto] = useState(false)
   const [anio, setAnio] = useState('')
@@ -89,6 +90,7 @@ export function AgregarAnio() {
     toast.success(`Se agregó ${n}`)
     setAbierto(false); recargarSesion()
   }
+  if (!puede(perfil, 'configuracion')) return null
   return (
     <>
       <Button variant="ghost" size="sm" icon="mas" onClick={abrir}>Agregar año</Button>

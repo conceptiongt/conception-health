@@ -39,8 +39,13 @@ export function linkCalendar(paciente, cita) {
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(texto)}&dates=${inicio}/${fin}&ctz=America/Guatemala`
 }
 
-export function mensajeConfirmacion(paciente, cita, clinica) {
-  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}\n⏰ Hora: ${fmtHora(cita.hora)}${cita.tipo ? `\n🩺 ${cita.tipo}` : ''}\n\nSi necesita reprogramar, por favor avísenos con anticipación. ¡Le esperamos!`
+// extras: { pago: { monto, pct, link }, formulario: url }
+export function mensajeConfirmacion(paciente, cita, clinica, extras = {}) {
+  const { pago, formulario } = extras
+  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}\n⏰ Hora: ${fmtHora(cita.hora)}${cita.tipo ? `\n🩺 ${cita.tipo}` : ''}`
+    + (pago ? `\n\n💳 Para reservar su cita, realice el anticipo de ${fmtQ(pago.monto)} (${pago.pct}%) en este enlace:\n${pago.link}` : '')
+    + (formulario ? `\n\n📝 Antes de su cita, por favor llene sus datos aquí (toma 3 minutos):\n${formulario}` : '')
+    + `\n\nSi necesita reprogramar, por favor avísenos con anticipación. ¡Le esperamos!`
 }
 
 // wa.me link; Guatemala numbers without country code get +502

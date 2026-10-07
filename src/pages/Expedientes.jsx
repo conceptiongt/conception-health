@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro } from '../lib/formato'
+import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { resumenDatos } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
@@ -17,9 +17,15 @@ import { ProductosPaciente } from '../components/ProductosPaciente'
 import { CobroDetalle, AbonoModal, estadoDeCuenta, ESTADOS_COBRO, estadoCobro, Progreso } from '../components/Pagos'
 import { FiltroSede, nombreSede } from '../components/Filtros'
 import { toast } from '../components/ui/Toast'
+import { CompartirExpediente } from '../components/CompartirExpediente'
+import { Interruptor } from '../components/MensajePaciente'
+import { TextoFormateado } from '../components/EditorTexto'
+import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro } from '../lib/ficha'
+import { puede } from '../lib/permisos'
 
 export function Expedientes({ abrirId }) {
-  const { pacientes, citas, cobros, clinica, ir, sedes } = useDatos()
+  const { pacientes, citas, cobros, clinica, ir, sedes, perfil } = useDatos()
+  const finanzas = puede(perfil, 'finanzas')
   const [abierto, setAbierto] = useState(abrirId || null)
   const [sede, setSede] = useState('')
   const [buscar, setBuscar] = useState('')
@@ -77,13 +83,13 @@ export function Expedientes({ abrirId }) {
         </Vacio>
       ) : (
         <Tabla
-          columnas={['Paciente', 'Teléfono', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Consultas', 'Última cita', 'Próxima cita', 'Saldo']}
+          columnas={['Paciente', 'Teléfono', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Consultas', 'Última cita', 'Próxima cita', ...(finanzas ? ['Saldo'] : [])]}
           onFila={(f) => setAbierto(f.key)}
           vacio="Ningún paciente coincide con la búsqueda"
           filas={lista.map(p => { const i = info(p); return { key: p.id, celdas: [
             <span style={{ fontWeight: 500 }}>{p.nombre}</span>, p.telefono || '—', ...(sedes.length ? [nombreSede(sedes, p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []), p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
             i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—',
-            i.deuda > 0 ? <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(i.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>,
+            ...(finanzas ? [i.deuda > 0 ? <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(i.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>] : []),
           ] } })}
         />
       )}
@@ -92,18 +98,21 @@ export function Expedientes({ abrirId }) {
 }
 
 const TABS = [
-  { value: 'datos', label: 'Datos médicos', icono: 'estetoscopio' },
+  { value: 'ficha', label: 'Ficha del paciente', icono: 'estetoscopio' },
   { value: 'consultas', label: 'Consultas', icono: 'citas' },
-  { value: 'fotos', label: 'Fotos', icono: 'camara' },
-  { value: 'cobros', label: 'Cobros', icono: 'cartera' },
+  { value: 'archivos', label: 'Fotos y documentos', icono: 'camara' },
+  { value: 'cobros', label: 'Cobros', icono: 'cartera', permiso: 'finanzas' },
   { value: 'productos', label: 'Productos usados', icono: 'caja', inventario: true },
 ]
 
 function Expediente({ paciente, onVolver }) {
   const { citas, cobros, clinica, perfil, recargar, acc, sedes } = useDatos()
-  const [tab, setTab] = useState('datos')
+  const clinico = puede(perfil, 'expedientes')
+  const finanzas = puede(perfil, 'finanzas')
+  const [tab, setTab] = useState(clinico ? 'ficha' : 'consultas')
   const [citaAbierta, setCitaAbierta] = useState(undefined) // undefined: list, null: new, object: edit
   const [editando, setEditando] = useState(false)
+  const [compartir, setCompartir] = useState(undefined) // undefined: closed, null: whole file, cita: one consultation
   const [archivos, setArchivos] = useState(null)
   const misCitas = citas.filter(c => c.paciente_id === paciente.id).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
   const misCobros = cobros.filter(c => c.paciente_id === paciente.id).sort((a, b) => b.fecha.localeCompare(a.fecha))
@@ -122,7 +131,7 @@ function Expediente({ paciente, onVolver }) {
   useEffect(() => { cargarArchivos() }, [cargarArchivos])
 
   const eliminar = async () => {
-    if (!confirm(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos y cobros)? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos, documentos y cobros)? Esta acción no se puede deshacer.`)) return
     const paths = (archivos || []).map(a => a.path)
     if (paths.length) await supabase.storage.from('expedientes').remove(paths)
     const { error } = await supabase.from('pacientes').delete().eq('id', paciente.id)
@@ -136,136 +145,207 @@ function Expediente({ paciente, onVolver }) {
 
   const totalPrecio = misCobros.reduce((n, c) => n + totalCobro(c), 0)
   const totalPagado = misCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
-
-  const preparar = async () => {
-    const actuales = await cargarArchivos() // fresh signed links for the printed photos
-    const fotos = actuales.filter(a => a.url && (a.mime || '').startsWith('image/'))
-    return {
-      titulo: 'Expediente clínico', subtitulo: paciente.nombre,
-      secciones: [
-        { titulo: 'Datos del paciente', pares: [
-          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Correo', paciente.email], ['Origen', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : origenLabel(paciente.origen)],
-          ['Referido por', paciente.referido_por], ['Tipo de sangre', paciente.tipo_sangre], ['Registrado', fmtFecha(paciente.created_at)],
-          ['Contacto de emergencia', paciente.contacto_emergencia], ['Teléfono de emergencia', paciente.telefono_emergencia],
-        ] },
-        { titulo: 'Antecedentes', pares: [['Alergias', paciente.alergias], ['Enfermedades crónicas', paciente.enfermedades], ['Medicamentos actuales', paciente.medicamentos]] },
-        paciente.notas_medicas && { titulo: 'Notas médicas generales', texto: paciente.notas_medicas },
-        { titulo: 'Consultas', tabla: { headers: ['Fecha', 'Hora', 'Tipo', 'Estado', 'Peso', 'Talla', 'Datos clínicos', 'Procedimiento', 'Notas'],
-          filas: misCitas.map(c => [fmtFechaCorta(c.fecha), fmtHora(c.hora), [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, c.peso ? `${c.peso} kg` : '—', c.talla ? `${c.talla} cm` : '—', resumenDatos(c.datos, clinica?.especialidad) || '—', c.procedimiento || '—', c.notas || '—']) } },
-        { titulo: 'Cobros', tabla: { headers: ['Fecha', 'Concepto', 'Precio', 'Descuento', 'Total', 'Pagado', 'Saldo', 'Método', 'Vence'],
-          filas: [...misCobros.map(c => [fmtFechaCorta(c.fecha), c.concepto, fmtQ(c.precio), Number(c.descuento) ? fmtQ(c.descuento) : '—', fmtQ(totalCobro(c)), fmtQ(c.pagado), fmtQ(saldo(c)), c.metodo || '—', c.vence ? fmtFechaCorta(c.vence) : '—']),
-            ...(misCobros.length ? [{ _total: true, celdas: ['', 'Total', '', '', fmtQ(totalPrecio), fmtQ(totalPagado), fmtQ(totalPrecio - totalPagado), '', ''] }] : [])] } },
-        fotos.length > 0 && { titulo: 'Fotos', imagenes: fotos.map(a => ({ src: a.url, pie: `${ETAPAS_FOTO.find(e => e.value === a.etapa)?.label} · ${fmtFechaCorta(a.fecha)}${a.notas ? ' · ' + a.notas : ''}` })) },
-      ],
-      excel: { archivo: `expediente_${slug(paciente.nombre)}`, hojas: [
-        { nombre: 'Datos', columnas: [{ header: 'Campo', key: 'k', width: 26 }, { header: 'Valor', key: 'v', width: 50 }], filas: [
-          ['Nombre', paciente.nombre], ['Teléfono', paciente.telefono], ['Correo', paciente.email], ['Origen', origenLabel(paciente.origen)], ['Red social', paciente.red], ['Referido por', paciente.referido_por],
-          ['Tipo de sangre', paciente.tipo_sangre], ['Alergias', paciente.alergias], ['Enfermedades crónicas', paciente.enfermedades], ['Medicamentos', paciente.medicamentos],
-          ['Contacto de emergencia', paciente.contacto_emergencia], ['Teléfono de emergencia', paciente.telefono_emergencia], ['Notas médicas', paciente.notas_medicas],
-        ].map(([k, v]) => ({ k, v })) },
-        { nombre: 'Consultas', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Hora', key: 'h', width: 8 }, { header: 'Tipo', key: 't', width: 18 }, { header: 'Estado', key: 'e', width: 12 },
-          { header: 'Peso (kg)', key: 'p', width: 10 }, { header: 'Talla (cm)', key: 'ta', width: 10 }, { header: 'Datos clínicos', key: 'dc', width: 40 }, { header: 'Procedimiento', key: 'pr', width: 28 }, { header: 'Notas', key: 'n', width: 50 }],
-          filas: misCitas.map(c => ({ f: c.fecha, h: fmtHora(c.hora), t: c.tipo, e: c.estado, p: c.peso, ta: c.talla, dc: resumenDatos(c.datos, clinica?.especialidad), pr: c.procedimiento, n: c.notas })) },
-        { nombre: 'Cobros', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Concepto', key: 'c', width: 30 }, { header: 'Precio', key: 'p', width: 12, moneda: true },
-          { header: 'Descuento', key: 'd', width: 12, moneda: true }, { header: 'Total', key: 't', width: 12, moneda: true }, { header: 'Pagado', key: 'pa', width: 12, moneda: true }, { header: 'Saldo', key: 's', width: 12, moneda: true }, { header: 'Método', key: 'm', width: 14 },
-          { header: 'Vence', key: 'v', width: 12 }, { header: 'Observaciones', key: 'o', width: 40 }],
-          filas: misCobros.map(c => ({ f: c.fecha, c: c.concepto, p: Number(c.precio), d: Number(c.descuento) || 0, t: totalCobro(c), pa: Number(c.pagado), s: saldo(c), m: c.metodo, v: c.vence, o: c.observaciones })) },
-      ] },
-    }
-  }
+  const anios = edad(paciente.fecha_nacimiento)
 
   return (
     <>
-      <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5 }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={paciente.nombre} subtitulo={[paciente.telefono, paciente.email, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, paciente.origen === 'redes' && paciente.red ? `Llegó por ${paciente.red}` : origenLabel(paciente.origen), `registrado el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
-        <Exportar clinica={clinica?.nombre} preparar={preparar} />
-        <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar datos</Button>
-        <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar paciente</Button>
+      <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
+      <Encabezado titulo={paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+        {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
+        <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar ficha</Button>
+        {puede(perfil, 'eliminar') && <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar</Button>}
       </Encabezado>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
+      {clinico && <PortalBarra paciente={paciente} citas={misCitas} archivos={archivos || []} finanzas={finanzas} onCambio={recargar} />}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 16 }}>
         <Stat label="Consultas" valor={misCitas.length} />
-        <Stat label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} />
-        <Stat label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={totalPrecio - totalPagado > 0 ? C.red : C.black} />
-        <Stat label="Fotos" valor={archivos ? archivos.length : '…'} />
+        {finanzas && <Stat label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} />}
+        {finanzas && <Stat label="Saldo pendiente" valor={fmtQ(totalPrecio - totalPagado)} color={totalPrecio - totalPagado > 0 ? C.red : C.black} />}
+        <Stat label="Fotos y documentos" valor={archivos ? archivos.length : '…'} />
       </div>
 
-      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => !t.inventario || acc.inventario)} valor={tab} onChange={setTab} /></div>
+      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => (!t.inventario || (acc.inventario && puede(perfil, 'inventario'))) && (!t.permiso || puede(perfil, t.permiso)) && (clinico || ['consultas', 'cobros'].includes(t.value)))} valor={tab} onChange={setTab} /></div>
 
-      {tab === 'datos' && <DatosMedicos paciente={paciente} onEditar={() => setEditando(true)} />}
-      {tab === 'consultas' && <Consultas citas={misCitas} onAbrir={setCitaAbierta} />}
-      {tab === 'fotos' && <Fotos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
+      {tab === 'ficha' && clinico && <FichaPaciente paciente={paciente} onEditar={() => setEditando(true)} />}
+      {tab === 'consultas' && <Consultas citas={misCitas} clinico={clinico} onAbrir={setCitaAbierta} onCompartir={(c) => setCompartir(c)} onCambio={recargar} />}
+      {tab === 'archivos' && clinico && <Archivos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
       {tab === 'productos' && acc.inventario && <ProductosPaciente paciente={paciente} citas={misCitas} />}
-      {tab === 'cobros' && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
+      {tab === 'cobros' && finanzas && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
 
       {editando && <PacienteModal paciente={paciente} onClose={() => setEditando(false)} onGuardado={() => { setEditando(false); recargar() }} />}
+      {compartir !== undefined && archivos && <CompartirExpediente paciente={paciente} citas={misCitas} cobros={misCobros} archivos={archivos} citaInicial={compartir} onClose={() => setCompartir(undefined)} />}
     </>
   )
 }
 
-function DatosMedicos({ paciente, onEditar }) {
-  const par = (k, v) => (
-    <div style={{ padding: '10px 0', borderBottom: `1px solid ${C.g100}` }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k}</div>
-      <div style={{ fontSize: 14.5, color: v ? C.black : C.g300, marginTop: 2, whiteSpace: 'pre-wrap' }}>{v || 'Sin registrar'}</div>
-    </div>
+// ─── Patient portal: publish switch, link and what the patient can see ───
+function PortalBarra({ paciente, citas, archivos, finanzas, onCambio }) {
+  const [abierto, setAbierto] = useState(false)
+  const enPortal = citas.filter(c => c.portal).length, archivosPortal = archivos.filter(a => a.portal).length
+  const cambiar = async (campos, aviso) => {
+    const { error } = await supabase.from('pacientes').update(campos).eq('id', paciente.id)
+    if (error) { toast.error('No se pudo guardar'); return }
+    if (aviso) toast.success(aviso)
+    onCambio()
+  }
+  const link = urlPortal(paciente)
+  const wa = linkWhatsApp(paciente.telefono, `Hola ${paciente.nombre.split(' ')[0]} 👋\n\nEn este enlace puede ver su expediente, sus indicaciones y documentos cuando lo necesite:\n${link}`)
+  const chip = (activo, campo, texto) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+      <Interruptor activo={activo} onChange={(v) => cambiar({ [campo]: v })} />{texto}
+    </label>
   )
   return (
-    <Card title="Datos médicos" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '0 24px' }}>
-        {par('Tipo de sangre', paciente.tipo_sangre)}
-        {par('Alergias', paciente.alergias)}
-        {par('Enfermedades crónicas', paciente.enfermedades)}
-        {par('Medicamentos actuales', paciente.medicamentos)}
-        {par('Contacto de emergencia', paciente.contacto_emergencia)}
-        {par('Teléfono de emergencia', paciente.telefono_emergencia)}
+    <div style={{ background: paciente.portal_activo ? C.purpleMid : '#fff', border: `1px solid ${paciente.portal_activo ? 'transparent' : C.line}`, borderRadius: 18, padding: '12px 16px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <Icon name="ojo" size={18} style={{ color: C.purple }} />
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>Portal del paciente {paciente.portal_activo ? '· publicado' : '· sin publicar'}</div>
+          <div style={{ fontSize: 12.5, color: C.g500 }}>Ve {enPortal} {enPortal === 1 ? 'consulta' : 'consultas'} y {archivosPortal} {archivosPortal === 1 ? 'archivo' : 'archivos'} marcados con «Portal»{paciente.portal_datos ? ', sus datos' : ''}{paciente.portal_costos ? ' y sus costos' : ''}.</div>
+        </div>
+        <Button size="sm" variant="texto" onClick={() => setAbierto(!abierto)}>{abierto ? 'Ocultar opciones' : 'Opciones'}</Button>
+        <Button size="sm" variant={paciente.portal_activo ? 'ghost' : undefined} icon={paciente.portal_activo ? 'cerrar' : 'check'}
+          onClick={() => cambiar({ portal_activo: !paciente.portal_activo }, paciente.portal_activo ? 'El portal ya no es visible para el paciente' : 'Portal publicado: el paciente ya puede verlo')}>
+          {paciente.portal_activo ? 'Dejar de mostrar' : 'Mostrar en portal del paciente'}
+        </Button>
       </div>
-      {par('Notas médicas generales', paciente.notas_medicas)}
-    </Card>
+      {abierto && (
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+          {chip(paciente.portal_datos, 'portal_datos', 'Datos y antecedentes')}
+          {finanzas && chip(paciente.portal_costos, 'portal_costos', 'Costos y saldos')}
+          <span style={{ fontSize: 12.5, color: C.g400 }}>Cada consulta, foto y documento tiene su propio botón «Portal».</span>
+          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(link); toast.success('Enlace copiado') }}>Copiar enlace</Button>
+            {wa && <Button size="sm" variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
+            <Button size="sm" variant="ghost" icon="ojo" onClick={() => window.open(link, '_blank', 'noopener')}>Ver como paciente</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Patient record: personal data, medical history and the clinic's own extra fields ───
+function FichaPaciente({ paciente, onEditar }) {
+  const { clinica, sedes } = useDatos()
+  const extra = camposPaciente(clinica)
+  const par = (k, v, alerta) => (
+    <div style={{ padding: '12px 0', borderBottom: `1px solid ${C.g100}`, minWidth: 0 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 500, color: C.g500 }}>{k}</div>
+      <div style={{ fontSize: 15.5, color: v ? (alerta ? C.red : C.black) : C.g300, marginTop: 3, whiteSpace: 'pre-wrap', fontWeight: alerta && v ? 500 : 400 }}>{v || 'Sin registrar'}</div>
+    </div>
+  )
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))', gap: '0 28px' }
+  const formulario = paciente.registro_token && !paciente.registro_completado_at
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {(formulario || paciente.registro_completado_at) && (
+        <div style={{ background: formulario ? C.amberLight : C.greenLight, color: formulario ? C.amber : C.green, borderRadius: 16, padding: '11px 16px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Icon name={formulario ? 'reloj' : 'check'} size={17} />
+          <span style={{ flex: 1 }}>{formulario ? 'Se le envió el formulario al paciente; sus datos aparecerán aquí cuando lo llene.' : `El paciente llenó su formulario el ${fmtFecha(paciente.registro_completado_at)}.`}</span>
+          {formulario && <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(urlRegistro(paciente.registro_token)); toast.success('Enlace copiado') }}>Copiar enlace del formulario</Button>}
+        </div>
+      )}
+      <Card title="Datos personales" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
+        <div style={grid}>
+          {par('Fecha de nacimiento', paciente.fecha_nacimiento && `${fmtFecha(paciente.fecha_nacimiento)}${edad(paciente.fecha_nacimiento) != null ? ` (${edad(paciente.fecha_nacimiento)} años)` : ''}`)}
+          {par('Sexo', paciente.sexo)}
+          {par('DPI', paciente.dpi)}
+          {par('Teléfono', paciente.telefono)}
+          {par('Correo electrónico', paciente.email)}
+          {par('Dirección', paciente.direccion)}
+          {par('Ocupación', paciente.ocupacion)}
+          {par('Estado civil', paciente.estado_civil)}
+          {par('Cómo nos encontró', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : origenLabel(paciente.origen))}
+          {nombreSede(sedes, paciente.sede_id) && par('Sede', nombreSede(sedes, paciente.sede_id))}
+          {par('Contacto de emergencia', [paciente.contacto_emergencia, paciente.telefono_emergencia].filter(Boolean).join(' · '))}
+          {paciente.extra?.motivo_registro && par('Motivo (lo escribió el paciente)', paciente.extra.motivo_registro)}
+        </div>
+      </Card>
+      <Card title="Antecedentes médicos" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
+        <div style={grid}>
+          {par('Alergias', paciente.alergias, true)}
+          {par('Tipo de sangre', paciente.tipo_sangre)}
+          {par('Enfermedades crónicas', paciente.enfermedades)}
+          {par('Medicamentos actuales', paciente.medicamentos)}
+          {par('Antecedentes quirúrgicos', paciente.antecedentes_quirurgicos)}
+          {par('Antecedentes familiares', paciente.antecedentes_familiares)}
+          {par('Hábitos', paciente.habitos)}
+        </div>
+        {par('Notas médicas generales', paciente.notas_medicas)}
+      </Card>
+      {extra.length > 0 && (
+        <Card title="Información adicional" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
+          <div style={grid}>{extra.map(c => <div key={c.id}>{par(c.label, paciente.extra?.[c.id])}</div>)}</div>
+        </Card>
+      )}
+    </div>
   )
 }
 
 function PacienteModal({ paciente, onClose, onGuardado }) {
-  const { sedes, acc } = useDatos()
+  const { sedes, acc, clinica } = useDatos()
   const conSedes = acc?.inventario && sedes.length > 0
-  const [f, setF] = useState({ ...paciente })
+  const extra = camposPaciente(clinica)
+  const [f, setF] = useState({ ...paciente, extra: { ...(paciente.extra || {}) } })
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
+  const setExtra = (k) => (v) => setF(p => ({ ...p, extra: { ...p.extra, [k]: v } }))
   const guardar = async () => {
     if (!f.nombre?.trim()) { toast.error('El nombre es requerido'); return }
     setBusy(true)
     const limpio = (v) => (typeof v === 'string' ? v.trim() : v) || null
+    const campos = ['telefono', 'email', 'tipo_sangre', 'alergias', 'enfermedades', 'medicamentos', 'contacto_emergencia', 'telefono_emergencia', 'notas_medicas',
+      'fecha_nacimiento', 'sexo', 'dpi', 'direccion', 'ocupacion', 'estado_civil', 'antecedentes_quirurgicos', 'antecedentes_familiares', 'habitos']
     const { error } = await supabase.from('pacientes').update({
-      nombre: f.nombre.trim(), telefono: limpio(f.telefono), email: limpio(f.email), origen: f.origen || null,
+      nombre: f.nombre.trim(), origen: f.origen || null,
       red: f.origen === 'redes' ? f.red || null : null, referido_por: f.origen === 'referido' ? limpio(f.referido_por) : null,
-      tipo_sangre: limpio(f.tipo_sangre), alergias: limpio(f.alergias), enfermedades: limpio(f.enfermedades),
-      medicamentos: limpio(f.medicamentos), contacto_emergencia: limpio(f.contacto_emergencia), ...(conSedes ? { sede_id: f.sede_id || null } : {}),
-      telefono_emergencia: limpio(f.telefono_emergencia), notas_medicas: limpio(f.notas_medicas),
+      ...Object.fromEntries(campos.map(k => [k, limpio(f[k])])),
+      extra: Object.fromEntries(Object.entries(f.extra || {}).filter(([, v]) => v != null && String(v).trim()).map(([k, v]) => [k, String(v).trim()])),
+      ...(conSedes ? { sede_id: f.sede_id || null } : {}),
     }).eq('id', paciente.id)
     setBusy(false)
     if (error) { toast.error('No se pudo guardar'); return }
-    toast.success('Datos actualizados')
+    toast.success('Ficha actualizada')
     onGuardado()
   }
+  const titulo = (t) => <div style={{ gridColumn: '1 / -1', fontSize: 14, fontWeight: 600, color: C.g700, marginTop: 8, paddingBottom: 6, borderBottom: `1px solid ${C.g100}` }}>{t}</div>
   return (
-    <Modal title="Editar datos del paciente" subtitle={paciente.nombre} onClose={onClose} maxWidth={720}>
-      <Grid min={200}>
-        <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} /></Campo>
-        <Campo label="Teléfono"><Input value={f.telefono} onChange={set('telefono')} /></Campo>
-        <Campo label="Correo electrónico"><Input type="email" value={f.email} onChange={set('email')} /></Campo>
-        <Campo label="Origen"><Select value={f.origen} onChange={set('origen')}><option value="">—</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></Campo>
+    <Modal title="Ficha del paciente" subtitle={paciente.nombre} onClose={onClose} maxWidth={820}>
+      <Grid min={210}>
+        {titulo('Datos personales')}
+        <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} maxLength={120} /></Campo>
+        <Campo label="Fecha de nacimiento"><Input type="date" value={f.fecha_nacimiento} onChange={set('fecha_nacimiento')} /></Campo>
+        <Campo label="Sexo"><Select value={f.sexo} onChange={set('sexo')}><option value="">—</option>{['Femenino', 'Masculino', 'Otro'].map(s => <option key={s}>{s}</option>)}</Select></Campo>
+        <Campo label="DPI"><Input value={f.dpi} onChange={set('dpi')} maxLength={30} /></Campo>
+        <Campo label="Teléfono"><Input value={f.telefono} onChange={set('telefono')} maxLength={30} /></Campo>
+        <Campo label="Correo electrónico"><Input type="email" value={f.email} onChange={set('email')} maxLength={120} /></Campo>
+        <Campo label="Ocupación"><Input value={f.ocupacion} onChange={set('ocupacion')} maxLength={120} /></Campo>
+        <Campo label="Estado civil"><Select value={f.estado_civil} onChange={set('estado_civil')}><option value="">—</option>{['Soltero(a)', 'Casado(a)', 'Unido(a)', 'Divorciado(a)', 'Viudo(a)'].map(s => <option key={s}>{s}</option>)}</Select></Campo>
+        <Campo label="Dirección" full><Input value={f.direccion} onChange={set('direccion')} maxLength={300} /></Campo>
+        <Campo label="Cómo nos encontró"><Select value={f.origen} onChange={set('origen')}><option value="">—</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></Campo>
         {f.origen === 'redes' && <Campo label="Red social"><Select value={f.red} onChange={set('red')}><option value="">—</option>{REDES.map(r => <option key={r}>{r}</option>)}</Select></Campo>}
-        {f.origen === 'referido' && <Campo label="Referido por"><Input value={f.referido_por} onChange={set('referido_por')} /></Campo>}
+        {f.origen === 'referido' && <Campo label="Referido por"><Input value={f.referido_por} onChange={set('referido_por')} maxLength={120} /></Campo>}
         {conSedes && <Campo label="Sede"><Select value={f.sede_id} onChange={set('sede_id')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
-        <Campo label="Tipo de sangre"><Input value={f.tipo_sangre} onChange={set('tipo_sangre')} placeholder="Ej. O+" /></Campo>
-        <Campo label="Alergias" full><Textarea value={f.alergias} onChange={set('alergias')} rows={2} /></Campo>
-        <Campo label="Enfermedades crónicas" full><Textarea value={f.enfermedades} onChange={set('enfermedades')} rows={2} /></Campo>
-        <Campo label="Medicamentos actuales" full><Textarea value={f.medicamentos} onChange={set('medicamentos')} rows={2} /></Campo>
-        <Campo label="Contacto de emergencia"><Input value={f.contacto_emergencia} onChange={set('contacto_emergencia')} /></Campo>
-        <Campo label="Teléfono de emergencia"><Input value={f.telefono_emergencia} onChange={set('telefono_emergencia')} /></Campo>
-        <Campo label="Notas médicas generales" full><Textarea value={f.notas_medicas} onChange={set('notas_medicas')} rows={4} /></Campo>
+        <Campo label="Contacto de emergencia"><Input value={f.contacto_emergencia} onChange={set('contacto_emergencia')} maxLength={120} /></Campo>
+        <Campo label="Teléfono de emergencia"><Input value={f.telefono_emergencia} onChange={set('telefono_emergencia')} maxLength={30} /></Campo>
+
+        {titulo('Antecedentes médicos')}
+        <Campo label="Tipo de sangre"><Input value={f.tipo_sangre} onChange={set('tipo_sangre')} placeholder="Ej. O+" maxLength={10} /></Campo>
+        <Campo label="Alergias" full><Textarea value={f.alergias} onChange={set('alergias')} rows={2} maxLength={1000} /></Campo>
+        <Campo label="Enfermedades crónicas" full><Textarea value={f.enfermedades} onChange={set('enfermedades')} rows={2} maxLength={1000} /></Campo>
+        <Campo label="Medicamentos actuales" full><Textarea value={f.medicamentos} onChange={set('medicamentos')} rows={2} maxLength={1000} /></Campo>
+        <Campo label="Antecedentes quirúrgicos" full><Textarea value={f.antecedentes_quirurgicos} onChange={set('antecedentes_quirurgicos')} rows={2} maxLength={1000} /></Campo>
+        <Campo label="Antecedentes familiares" full><Textarea value={f.antecedentes_familiares} onChange={set('antecedentes_familiares')} rows={2} maxLength={1000} /></Campo>
+        <Campo label="Hábitos" full><Textarea value={f.habitos} onChange={set('habitos')} rows={2} placeholder="Ej. fuma, ejercicio, alimentación…" maxLength={1000} /></Campo>
+        <Campo label="Notas médicas generales" full><Textarea value={f.notas_medicas} onChange={set('notas_medicas')} rows={3} maxLength={4000} /></Campo>
+
+        {extra.length > 0 && titulo('Información adicional')}
+        {extra.map(c => <Campo key={c.id} label={c.label} full={c.largo}><Input value={f.extra?.[c.id]} onChange={setExtra(c.id)} maxLength={500} /></Campo>)}
       </Grid>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14 }}>Puede agregar sus propios campos en Configuración → Ficha clínica.</div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
       </div>
@@ -273,38 +353,70 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
   )
 }
 
-function Consultas({ citas, onAbrir }) {
+// ─── Consultations: each one readable on its own, with its clinical file sections ───
+function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
   const { sedes, clinica } = useDatos()
+  const [abiertas, setAbiertas] = useState(() => new Set(citas.slice(0, 1).map(c => c.id)))
+  const alternar = (id) => setAbiertas(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const portal = async (c, v) => {
+    const { error } = await supabase.from('citas').update({ portal: v }).eq('id', c.id)
+    if (error) toast.error('No se pudo guardar'); else onCambio()
+  }
   return (
     <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => onAbrir(null)} icon="mas">Nueva cita</Button>}>
-      {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : citas.map((c, i) => {
-        const e = estadoCita(c.estado)
-        return (
-          <div key={c.id} className="fila" onClick={() => onAbrir(c)} style={{ display: 'flex', gap: 14, padding: '12px 8px', borderTop: i ? `1px solid ${C.g100}` : 'none', flexWrap: 'wrap', alignItems: 'flex-start', cursor: 'pointer', borderRadius: 8 }}>
-            <div style={{ width: 110, flexShrink: 0 }}>
-              <div style={{ fontWeight: 500 }}>{fmtFechaCorta(c.fecha)}</div>
-              <div style={{ fontSize: 12.5, color: C.g500 }}>{fmtHora(c.hora)}{nombreSede(sedes, c.sede_id) ? ` · ${nombreSede(sedes, c.sede_id)}` : ''}</div>
-            </div>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 500 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span><Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+      {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {citas.map(c => {
+            const e = estadoCita(c.estado)
+            const secciones = clinico ? seccionesDe(c, clinica) : []
+            const dc = clinico ? resumenDatos(c.datos, clinica?.especialidad) : ''
+            const abierta = abiertas.has(c.id)
+            const contenido = secciones.length || dc || c.procedimiento || (clinico && c.notas)
+            return (
+              <div key={c.id} style={{ border: `1px solid ${C.line}`, borderRadius: 18, overflow: 'hidden' }}>
+                <div onClick={() => contenido ? alternar(c.id) : onAbrir(c)} className="fila" style={{ display: 'flex', gap: 14, padding: '14px 16px', alignItems: 'center', flexWrap: 'wrap', cursor: 'pointer' }}>
+                  <div style={{ width: 120, flexShrink: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{fmtFechaCorta(c.fecha)}</div>
+                    <div style={{ fontSize: 12.5, color: C.g500 }}>{fmtHora(c.hora)}{nombreSede(sedes, c.sede_id) ? ` · ${nombreSede(sedes, c.sede_id)}` : ''}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 180, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 500, fontSize: 15 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span>
+                    <Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                    {secciones.length > 0 && <span style={{ fontSize: 12, color: C.g400 }}>{secciones.map(s => s.titulo).slice(0, 3).join(' · ')}{secciones.length > 3 ? '…' : ''}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={ev => ev.stopPropagation()}>
+                    {clinico && <label title="Mostrar en el portal del paciente" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, cursor: 'pointer', marginRight: 4 }}><Interruptor activo={c.portal} onChange={(v) => portal(c, v)} />Portal</label>}
+                    {clinico && <Button size="sm" variant="texto" icon="compartir" title="Imprimir o compartir esta consulta" onClick={() => onCompartir(c)} />}
+                    <Button size="sm" variant="ghost" icon="editar" onClick={() => onAbrir(c)}>Abrir</Button>
+                    {contenido && <Icon name={abierta ? 'arriba' : 'abajo'} size={17} style={{ color: C.g400, cursor: 'pointer' }} />}
+                  </div>
+                </div>
+                {abierta && contenido && (
+                  <div style={{ padding: '4px 18px 18px', borderTop: `1px solid ${C.g100}`, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {(dc || c.peso || c.talla) && <div style={{ fontSize: 13.5, color: C.g600, marginTop: 10 }}>{[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, dc].filter(Boolean).join(' · ')}</div>}
+                    {secciones.map(s => (
+                      <div key={s.id}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.purpleDark, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{s.titulo}</div>
+                        <TextoFormateado html={s.html} />
+                      </div>
+                    ))}
+                    {c.procedimiento && <div><div style={{ fontSize: 12, fontWeight: 600, color: C.purpleDark, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Procedimiento</div><div style={{ fontSize: 15, whiteSpace: 'pre-wrap' }}>{c.procedimiento}</div></div>}
+                    {clinico && c.notas && <div style={{ background: C.g50, borderRadius: 12, padding: '10px 12px' }}><div style={{ fontSize: 12, fontWeight: 600, color: C.g500, marginBottom: 3 }}>NOTAS INTERNAS</div><div style={{ fontSize: 14, whiteSpace: 'pre-wrap', color: C.g700 }}>{c.notas}</div></div>}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: 13, color: C.g600, marginTop: 3 }}>
-                {[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, resumenDatos(c.datos, clinica?.especialidad), c.procedimiento].filter(Boolean).join(' · ')}
-              </div>
-              {c.notas && <div style={{ fontSize: 13, color: C.g700, marginTop: 4, whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.notas}</div>}
-            </div>
-            <Icon name="flecha" size={15} style={{ color: C.g300, marginTop: 4 }} />
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
     </Card>
   )
 }
 
-function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
+// ─── Photos and documents (studies, x-rays, lab results in PDF…) ───
+function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
   const [subiendo, setSubiendo] = useState(0)
-  const [etapa, setEtapa] = useState('antes')
+  const [etapa, setEtapa] = useState('estudio')
   const [fecha, setFecha] = useState(hoyISO())
   const [notas, setNotas] = useState('')
   const [citaId, setCitaId] = useState('')
@@ -314,49 +426,58 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
     if (!files.length) return
+    const malos = files.filter(f => !(f.type.startsWith('image/') || f.type === 'application/pdf'))
+    if (malos.length) { toast.error('Solo se aceptan fotos o archivos PDF'); return }
+    if (files.some(f => f.size > 25 * 1024 * 1024)) { toast.error('Cada archivo debe pesar menos de 25 MB'); return }
     setSubiendo(files.length)
     let errores = 0
     for (const file of files) {
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const ext = file.type === 'application/pdf' ? 'pdf' : ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg')
       const path = `${clinicaId}/${paciente.id}/${crypto.randomUUID()}.${ext}`
       const { error } = await supabase.storage.from('expedientes').upload(path, file, { contentType: file.type })
       if (!error) {
         const { error: e2 } = await supabase.from('archivos').insert({
           clinica_id: clinicaId, paciente_id: paciente.id, cita_id: citaId || null, etapa, fecha, notas: notas.trim() || null, path, mime: file.type,
+          nombre: file.name.replace(/[<>]/g, '').slice(0, 200),
         })
         if (e2) { errores++; await supabase.storage.from('expedientes').remove([path]) }
       } else errores++
       setSubiendo(n => n - 1)
     }
     if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`)
-    else toast.success('Fotos guardadas')
+    else toast.success(files.length === 1 ? 'Archivo guardado' : 'Archivos guardados')
     setNotas('')
     onCambio()
   }
 
   const borrar = async (a) => {
-    if (!confirm('¿Eliminar esta foto?')) return
+    if (!confirm('¿Eliminar este archivo?')) return
     await supabase.storage.from('expedientes').remove([a.path])
     const { error } = await supabase.from('archivos').delete().eq('id', a.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     setVer(null)
     onCambio()
   }
+  const portal = async (a, v) => {
+    const { error } = await supabase.from('archivos').update({ portal: v }).eq('id', a.id)
+    if (error) toast.error('No se pudo guardar'); else onCambio()
+  }
+  const esImagen = (a) => (a.mime || '').startsWith('image/')
 
   return (
     <>
-      <Card title="Agregar fotos o archivos">
+      <Card title="Agregar fotos o documentos">
         <Grid min={180}>
-          <Campo label="Etapa"><Select value={etapa} onChange={setEtapa}>{ETAPAS_FOTO.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select></Campo>
+          <Campo label="Tipo"><Select value={etapa} onChange={setEtapa}>{ETAPAS_FOTO.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select></Campo>
           <Campo label="Fecha"><Input type="date" value={fecha} onChange={setFecha} /></Campo>
           <Campo label="Consulta (opcional)"><Select value={citaId} onChange={setCitaId}><option value="">—</option>{citas.map(c => <option key={c.id} value={c.id}>{fmtFechaCorta(c.fecha)} · {c.tipo || 'Consulta'}</option>)}</Select></Campo>
-          <Campo label="Notas (opcional)"><Input value={notas} onChange={setNotas} /></Campo>
+          <Campo label="Descripción (opcional)"><Input value={notas} onChange={setNotas} placeholder="Ej. Radiografía de tórax" maxLength={200} /></Campo>
         </Grid>
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 16, borderRadius: 16, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600 }}>
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 18, borderRadius: 16, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600, textAlign: 'center' }}>
           <input type="file" accept="image/*,application/pdf" multiple onChange={subir} disabled={!!subiendo} style={{ display: 'none' }} />
-          {subiendo ? `Subiendo ${subiendo} archivo(s)…` : 'Elegir fotos o tomar foto'}
+          <Icon name="subir" size={18} />{subiendo ? `Subiendo ${subiendo} archivo(s)…` : 'Elegir fotos o PDF (estudios, radiografías, laboratorios…)'}
         </label>
-        <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>Las fotos se guardan en la nube de forma privada: solo su consultorio puede verlas, desde cualquier dispositivo.</div>
+        <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>Se guardan en la nube de forma privada: solo su consultorio puede verlos, desde cualquier dispositivo. El paciente solo ve los que usted marque con «Portal».</div>
       </Card>
 
       {!archivos ? <Cargando /> : ETAPAS_FOTO.map(et => {
@@ -364,28 +485,34 @@ function Fotos({ paciente, archivos, citas, clinicaId, onCambio }) {
         if (!lista.length) return null
         return (
           <Card key={et.value} title={`${et.label} (${lista.length})`} style={{ marginTop: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 12 }}>
               {lista.map(a => (
-                <button key={a.id} onClick={() => setVer(a)} style={{ padding: 0, border: `1px solid ${C.g200}`, borderRadius: 16, overflow: 'hidden', background: C.g50, cursor: 'pointer', textAlign: 'left' }}>
-                  {(a.mime || '').startsWith('image/')
-                    ? <img src={a.url} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
-                    : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}><Icon name="archivo" size={30} /></div>}
-                  <div style={{ padding: '6px 8px', fontSize: 12, color: C.g600 }}>{fmtFechaCorta(a.fecha)}{a.notas ? ` · ${a.notas}` : ''}</div>
-                </button>
+                <div key={a.id} style={{ border: `1px solid ${C.g200}`, borderRadius: 16, overflow: 'hidden', background: C.g50 }}>
+                  <button onClick={() => setVer(a)} style={{ padding: 0, border: 'none', width: '100%', background: 'none', cursor: 'pointer', textAlign: 'left', display: 'block' }}>
+                    {esImagen(a)
+                      ? <img src={a.url} alt={a.notas || a.nombre || 'Foto del expediente'} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
+                      : <div style={{ height: 130, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: C.red, background: '#fff' }}><Icon name="pdf" size={36} /><span style={{ fontSize: 11.5, color: C.g600, padding: '0 8px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{a.nombre || 'Documento PDF'}</span></div>}
+                  </button>
+                  <div style={{ padding: '7px 9px', fontSize: 12, color: C.g600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtFechaCorta(a.fecha)}{a.notas ? ` · ${a.notas}` : ''}</span>
+                    <label title="Mostrar en el portal del paciente" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}><Interruptor activo={a.portal} onChange={(v) => portal(a, v)} /></label>
+                  </div>
+                </div>
               ))}
             </div>
           </Card>
         )
       })}
-      {archivos && archivos.length === 0 && <Vacio icono="camara" titulo="Sin fotos todavía" texto="Agregue fotos de antes, proceso y resultado." />}
+      {archivos && archivos.length === 0 && <Vacio icono="camara" titulo="Sin fotos ni documentos todavía" texto="Agregue fotos de antes, proceso y resultado, o estudios en PDF." />}
 
       {ver && (
-        <Modal title={ETAPAS_FOTO.find(e => e.value === ver.etapa)?.label} subtitle={`${fmtFecha(ver.fecha)}${ver.notas ? ' · ' + ver.notas : ''}`} onClose={() => setVer(null)} maxWidth={820}>
-          {(ver.mime || '').startsWith('image/')
-            ? <img src={ver.url} alt="" style={{ width: '100%', borderRadius: 16 }} />
-            : <a href={ver.url} target="_blank" rel="noopener noreferrer">Abrir archivo</a>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')} icon="descargar">Descargar</Button>
+        <Modal title={ver.nombre && !esImagen(ver) ? ver.nombre : ETAPAS_FOTO.find(e => e.value === ver.etapa)?.label} subtitle={`${fmtFecha(ver.fecha)}${ver.notas ? ' · ' + ver.notas : ''}`} onClose={() => setVer(null)} maxWidth={900}>
+          {esImagen(ver)
+            ? <img src={ver.url} alt={ver.notas || 'Foto del expediente'} style={{ width: '100%', borderRadius: 16 }} />
+            : <iframe src={ver.url} title={ver.nombre || 'Documento'} style={{ width: '100%', height: '70vh', border: `1px solid ${C.line}`, borderRadius: 12 }} />}
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, marginRight: 'auto', cursor: 'pointer' }}><Interruptor activo={ver.portal} onChange={(v) => { portal(ver, v); setVer({ ...ver, portal: v }) }} />Mostrar en el portal del paciente</label>
+            <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')} icon="descargar">Abrir / descargar</Button>
             <Button variant="danger" onClick={() => borrar(ver)} icon="eliminar">Eliminar</Button>
           </div>
         </Modal>

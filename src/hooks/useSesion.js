@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 // `recuperando` is true after opening a "restablecer contraseña" email link.
 export function useSesion() {
   const [session, setSession] = useState(undefined)
-  const [perfil, setPerfil] = useState(null)
+  const [perfil, setPerfil] = useState(undefined) // undefined: loading, null: the account has no clinic access
   const [clinica, setClinica] = useState(null)
   const [recuperando, setRecuperando] = useState(false)
 
@@ -19,7 +19,7 @@ export function useSesion() {
   }, [])
 
   const cargar = useCallback(async () => {
-    if (!session) { setPerfil(null); setClinica(null); return }
+    if (!session) { setPerfil(undefined); setClinica(null); return }
     const { data: p } = await supabase.from('perfiles').select('*').eq('user_id', session.user.id).maybeSingle()
     setPerfil(p || null)
     if (p) {
@@ -30,7 +30,7 @@ export function useSesion() {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const cargando = session === undefined || (session && !perfil)
+  const cargando = session === undefined || (session && perfil === undefined)
   const planActivo = !!clinica?.plan_activo && (!clinica.plan_hasta || new Date(clinica.plan_hasta) > new Date())
   return { session, perfil, clinica, cargando, recuperando, setRecuperando, recargar: cargar, planActivo }
 }

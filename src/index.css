@@ -119,7 +119,7 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .editor-texto p, .editor-texto div, .texto-ficha p, .texto-ficha div { margin: 0; }
 .editor-texto ul, .editor-texto ol, .texto-ficha ul, .texto-ficha ol { margin: 4px 0; padding-left: 22px; }
 .editor-texto h3, .texto-ficha h3 { font-size: 17px; margin: 6px 0 2px; }
-.texto-ficha font[size="2"] { font-size: 12.5px; } .texto-ficha font[size="5"] { font-size: 20px; } .texto-ficha font[size="6"] { font-size: 26px; }
+.texto-ficha font[size="2"], .editor-texto font[size="2"] { font-size: 12.5px; } .texto-ficha font[size="5"], .editor-texto font[size="5"] { font-size: 20px; } .texto-ficha font[size="6"], .editor-texto font[size="6"] { font-size: 26px; }
 
 /* Patient pages: bigger fields (easy to read, no zoom on phones) */
 .form-grande input, .form-grande select, .form-grande textarea { font-size: 16.5px !important; padding: 13px 14px !important; }

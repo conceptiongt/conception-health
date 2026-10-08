@@ -14,6 +14,9 @@ const CORS = {
 }
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const CODIGO = /^[a-z0-9-]{8,60}$/ // short readable links, e.g. maria-lopez-k3j9xa
+// links can be the old long id or the new short code
+const columna = (token: string, larga: string, corta: string) => UUID.test(token) ? larga : corta
 const LIMITES: Record<string, number> = { portal: 60, documento: 60, registro_ver: 60, registro_guardar: 6 } // per 10 minutes
 
 async function permitido(ip: string, accion: string) {
@@ -32,9 +35,9 @@ const marca = (c: any) => c && ({
 
 // ─── patient intake form ───
 const CAMPOS: Record<string, number> = {
-  nombre: 120, telefono: 30, email: 120, fecha_nacimiento: 10, sexo: 20, dpi: 30, direccion: 300, ocupacion: 120, estado_civil: 30,
+  nombre: 120, telefono: 30, email: 120, fecha_nacimiento: 10, sexo: 20,
   tipo_sangre: 10, alergias: 500, enfermedades: 500, medicamentos: 500, antecedentes_quirurgicos: 500, antecedentes_familiares: 500,
-  contacto_emergencia: 120, telefono_emergencia: 30, origen: 20, motivo: 500,
+  contacto_emergencia: 120, telefono_emergencia: 30, origen: 20, motivo: 500, red: 20, referido_por: 120, origen_otro: 200,
 }
 const PELIGROSO = /[<>]|javascript:|data:text\/html|\bon\w+\s*=|<\s*\/?\s*(script|iframe|object|embed|svg)/i
 function limpiar(d: Record<string, unknown>) {
@@ -50,17 +53,19 @@ function limpiar(d: Record<string, unknown>) {
   if (out.fecha_nacimiento && !/^\d{4}-\d{2}-\d{2}$/.test(out.fecha_nacimiento)) throw new Error('DATO_INVALIDO')
   if (out.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) throw new Error('DATO_INVALIDO')
   if (out.origen && !['redes', 'referido', 'google', 'otro'].includes(out.origen)) out.origen = 'otro'
+  if (out.red && !['Facebook', 'Instagram', 'TikTok', 'WhatsApp', 'LinkedIn'].includes(out.red)) out.red = null
+  if (out.tipo_sangre && !['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'No lo sé'].includes(out.tipo_sangre)) throw new Error('DATO_INVALIDO')
   return out
 }
 
 // token is either a patient's own form or the clinic's general link
 async function destinoRegistro(token: string) {
-  const { data: p } = await db.from('pacientes').select('id, nombre, telefono, email, clinica_id, registro_completado_at').eq('registro_token', token).maybeSingle()
+  const { data: p } = await db.from('pacientes').select('id, nombre, telefono, email, clinica_id, registro_completado_at').eq(columna(token, 'registro_token', 'registro_codigo'), token).maybeSingle()
   if (p) {
     const { data: c } = await db.from('clinicas').select('*').eq('id', p.clinica_id).single()
     return { paciente: p, clinica: c }
   }
-  const { data: c } = await db.from('clinicas').select('*').eq('registro_token', token).maybeSingle()
+  const { data: c } = await db.from('clinicas').select('*').eq(columna(token, 'registro_token', 'registro_codigo'), token).maybeSingle()
   return c ? { paciente: null, clinica: c } : null
 }
 
@@ -70,23 +75,26 @@ Deno.serve(async (req) => {
   let body: any
   try { body = await req.json() } catch { return json({ error: 'JSON' }, 400) }
   const { accion, token } = body || {}
-  if (!LIMITES[accion] || typeof token !== 'string' || !UUID.test(token)) return json({ error: 'SOLICITUD' }, 400)
+  if (!LIMITES[accion] || typeof token !== 'string' || !(UUID.test(token) || CODIGO.test(token))) return json({ error: 'SOLICITUD' }, 400)
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'desconocida'
   if (!(await permitido(ip, accion))) return json({ error: 'DEMASIADOS_INTENTOS' }, 429)
 
   // ─── shared PDF ───
   if (accion === 'documento') {
-    const { data: d } = await db.from('documentos_compartidos').select('path, titulo, expira, clinica_id').eq('token', token).maybeSingle()
+    const { data: d } = await db.from('documentos_compartidos').select('path, titulo, expira, clinica_id, archivo').eq(columna(token, 'token', 'codigo'), token).maybeSingle()
     if (!d) return json({ error: 'NO_ENCONTRADO' }, 404)
     if (new Date(d.expira) < new Date()) return json({ error: 'VENCIDO' }, 410)
-    const { data: s } = await db.storage.from('compartidos').createSignedUrl(d.path, 3600)
+    const [{ data: s }, { data: bajar }] = await Promise.all([
+      db.storage.from('compartidos').createSignedUrl(d.path, 3600),
+      db.storage.from('compartidos').createSignedUrl(d.path, 3600, { download: d.archivo || 'documento.pdf' }), // saves with the patient's name and date
+    ])
     const { data: c } = await db.from('clinicas').select('*').eq('id', d.clinica_id).single()
-    return json({ url: s?.signedUrl, titulo: d.titulo, clinica: marca(c) })
+    return json({ url: s?.signedUrl, descargar: bajar?.signedUrl, archivo: d.archivo, titulo: d.titulo, clinica: marca(c) })
   }
 
   // ─── patient portal ───
   if (accion === 'portal') {
-    const { data: p } = await db.from('pacientes').select('*').eq('portal_token', token).maybeSingle()
+    const { data: p } = await db.from('pacientes').select('*').eq(columna(token, 'portal_token', 'portal_codigo'), token).maybeSingle()
     if (!p) return json({ error: 'NO_ENCONTRADO' }, 404)
     const { data: c } = await db.from('clinicas').select('*').eq('id', p.clinica_id).single()
     if (!p.portal_activo) return json({ inactivo: true, clinica: marca(c) })
@@ -137,7 +145,7 @@ Deno.serve(async (req) => {
   if (typeof body.ms === 'number' && body.ms < 3000) return json({ error: 'MUY_RAPIDO' }, 400)
   let d
   try { d = limpiar(body.datos) } catch { return json({ error: 'DATO_INVALIDO' }, 400) }
-  const { motivo, origen, ...campos } = d
+  const { motivo, origen, red, referido_por, origen_otro, ...campos } = d
   if (destino.paciente) {
     const { nombre, ...resto } = campos
     const { error } = await db.from('pacientes').update({ ...resto, ...(nombre ? { nombre } : {}), registro_completado_at: new Date().toISOString() }).eq('id', destino.paciente.id)
@@ -146,7 +154,9 @@ Deno.serve(async (req) => {
   }
   if (!campos.nombre || !campos.telefono) return json({ error: 'FALTAN_DATOS' }, 400)
   const { error } = await db.from('pacientes').insert({
-    ...campos, clinica_id: destino.clinica.id, origen: origen || 'otro', extra: motivo ? { motivo_registro: motivo } : {},
+    ...campos, clinica_id: destino.clinica.id, origen: origen || 'otro',
+    red: origen === 'redes' ? red || null : null, referido_por: origen === 'referido' ? referido_por || null : null,
+    extra: { ...(motivo ? { motivo_registro: motivo } : {}), ...(origen === 'otro' && origen_otro ? { origen_detalle: origen_otro } : {}) },
     registro_completado_at: new Date().toISOString(),
   })
   if (error) return json({ error: error.message.includes('LIMITE_PRUEBA') ? 'LIMITE' : 'NO_GUARDADO' }, 400)

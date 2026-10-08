@@ -126,3 +126,13 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .form-grande label { font-size: 15px !important; }
 @media (max-width: 700px) { .solo-escritorio { display: none; } }
 .cita-dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; align-items: start; }
+
+/* Inventory: products as a list (name | stock per location with bars | total | price | status) */
+.prod-fila { display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(200px, 2fr) 70px 100px 120px; gap: 16px; align-items: center; padding: 12px 18px; border: none; border-top: 1px solid #F0F1F5; width: 100%; background: transparent; text-align: left; font-family: inherit; font-size: 13.5px; cursor: pointer; }
+.prod-cab { border-top: none; background: #F8F9FB; font-size: 12px; color: #5F6172; cursor: default; padding: 10px 18px; }
+@media (max-width: 1180px) {
+  .prod-fila { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px 14px; }
+  .prod-fila > :nth-child(2) { grid-column: 1 / -1; order: 5; }
+  .prod-cab { display: none; }
+}
+@media (max-width: 520px) { .prod-fila > :nth-child(4) { display: none; } }

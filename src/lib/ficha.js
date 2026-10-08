@@ -66,10 +66,18 @@ export const edad = (iso) => {
   return a >= 0 && a < 130 ? a : null
 }
 
-// Public links for patients
-export const urlPortal = (p) => `${location.origin}/p/${p.portal_token}`
-export const urlRegistro = (token) => `${location.origin}/r/${token}`
-export const urlDocumento = (token) => `${location.origin}/d/${token}`
+// Public links for patients: short and readable (e.g. /p/maria-lopez-k3j9xa); the old long id still works
+export const urlPortal = (p) => `${location.origin}/p/${p.portal_codigo || p.portal_token}`
+export const urlRegistro = (codigo) => `${location.origin}/r/${codigo}`
+export const urlDocumento = (codigo) => `${location.origin}/d/${codigo}`
+export const codigoRegistro = (x) => x?.registro_codigo || x?.registro_token
+
+// Every downloaded file: patient or section name + date, e.g. maria-lopez_expediente-clinico_2026-10-07.pdf
+const slugArchivo = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()
+export function nombreArchivo(...partes) {
+  const d = new Date(), hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return [...partes.map(slugArchivo).filter(Boolean), hoy].join('_')
+}
 
 // Payment link (sample link until the clinic sets its own in Configuración → Pagos en línea)
 export const LINK_PAGO_EJEMPLO = 'https://pagos.conception-gt.com/ejemplo'

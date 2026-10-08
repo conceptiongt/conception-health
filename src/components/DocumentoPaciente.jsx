@@ -162,7 +162,8 @@ export function Fuera({ children, refEl }) {
   return createPortal(<div ref={refEl} style={{ position: 'fixed', left: -10000, top: 0, width: 794, zIndex: -1 }}>{children}</div>, document.body)
 }
 
-// Opens the PDF in a new window (the browser's viewer has its own download and print buttons).
+// Opens the PDF in a new window with its name on top and "Descargar" / "Imprimir" buttons; the download keeps
+// the file name (patient or section + date), which the browser's own viewer would lose.
 // The window is opened at the click, before generating, so the browser does not block it.
 export async function verPdf(generar, titulo = 'Documento') {
   const w = window.open('', '_blank')
@@ -170,8 +171,22 @@ export async function verPdf(generar, titulo = 'Documento') {
   try {
     const f = await generar()
     const url = URL.createObjectURL(f)
-    if (w) w.location.href = url
-    else { const a = document.createElement('a'); a.href = url; a.download = f.name; a.click() } // pop-ups blocked: download instead
+    if (!w) { const a = document.createElement('a'); a.href = url; a.download = f.name; a.click(); return } // pop-ups blocked: download instead
+    const d = w.document
+    d.open()
+    d.write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title><style>'
+      + 'body{margin:0;font-family:Poppins,-apple-system,sans-serif;background:#525659;display:flex;flex-direction:column;height:100vh}'
+      + '.barra{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.2);flex-wrap:wrap}'
+      + '.nombre{flex:1;min-width:180px;font-size:14px;color:#333;word-break:break-all}'
+      + '.btn{border:none;border-radius:160px;padding:10px 18px;font:600 14px Poppins,sans-serif;cursor:pointer;text-decoration:none;background:#6161FF;color:#fff}'
+      + '.btn.sec{background:#fff;color:#333;border:1px solid #DDDFEB}iframe{flex:1;border:none;width:100%}'
+      + '</style></head><body><div class="barra"><span class="nombre" id="n"></span><a class="btn" id="b">Descargar PDF</a><button class="btn sec" id="p">Imprimir</button></div><iframe id="f"></iframe></body></html>')
+    d.close()
+    d.title = f.name
+    d.getElementById('n').textContent = f.name
+    const b = d.getElementById('b'); b.href = url; b.download = f.name
+    d.getElementById('f').src = url
+    d.getElementById('p').onclick = () => { try { d.getElementById('f').contentWindow.print() } catch { w.print() } }
   } catch (e) { w?.close(); throw e }
 }
 

@@ -4,7 +4,7 @@ import { C, SHADOW } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
 import { puede } from '../lib/permisos'
-import { urlRegistro } from '../lib/ficha'
+import { urlRegistro, codigoRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
 import { hoyISO, fmtFecha, fmtHora, fmtQ, linkWhatsAppSinNumero } from '../lib/formato'
 import { useDatos, mensajeError } from '../hooks/useDatos'
@@ -93,7 +93,7 @@ export function Registrar() {
   return (
     <form onSubmit={guardar}>
       <Encabezado titulo="Registrar paciente" subtitulo="Datos del paciente y su primera cita" />
-      <EnlaceRegistro token={clinica?.registro_token} />
+      <EnlaceRegistro token={codigoRegistro(clinica)} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card title="Datos del paciente">
           <Grid>

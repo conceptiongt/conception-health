@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { plantillaDe, camposPaciente, urlRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
+import { plantillaDe, camposPaciente, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { PERMISOS, permisosIniciales, esAdmin } from '../lib/permisos'
 import { fmtFecha } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
@@ -93,7 +93,7 @@ export function PagosYRegistro() {
     if (error) { toast.error('No se pudo guardar'); return }
     toast.success('Guardado'); recargarSesion()
   }
-  const registro = urlRegistro(clinica.registro_token)
+  const registro = urlRegistro(codigoRegistro(clinica))
   const nuevoEnlace = async () => {
     if (!confirm('¿Crear un enlace nuevo? El anterior dejará de funcionar.')) return
     const { error } = await supabase.from('clinicas').update({ registro_token: crypto.randomUUID() }).eq('id', clinica.id)

@@ -297,8 +297,6 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
   const [buscar, setBuscar] = useState('')
   const [estado, setEstado] = useState('')
   const [categoria, setCategoria] = useState('')
-  const [vista, setVista] = useState(() => { try { return localStorage.getItem('inv_vista') || 'tarjetas' } catch { return 'tarjetas' } })
-  const cambiarVista = (v) => { setVista(v); try { localStorage.setItem('inv_vista', v) } catch { /* private mode */ } }
   const visibles = sedeFiltro ? sedes.filter(s => s.id === sedeFiltro) : sedes
   const categorias = [...new Set(inv.productos.filter(p => p.activo && p.categoria).map(p => p.categoria))].sort()
   const q = buscar.trim().toLowerCase()
@@ -337,9 +335,6 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
         </div>
         <select value={sedeFiltro} onChange={e => setSedeFiltro(e.target.value)} style={sel}><option value="">Todas las sedes</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
         {categorias.length > 0 && <select value={categoria} onChange={e => setCategoria(e.target.value)} style={sel}><option value="">Toda categoría</option>{categorias.map(c => <option key={c}>{c}</option>)}</select>}
-        <div style={{ display: 'inline-flex', border: `1px solid ${C.g200}`, borderRadius: 10, overflow: 'hidden' }}>
-          {[['tarjetas', 'Tarjetas'], ['lista', 'Lista']].map(([v, l]) => <button key={v} onClick={() => cambiarVista(v)} style={{ padding: '9px 12px', border: 'none', background: vista === v ? C.g100 : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: vista === v ? C.black : C.g500, fontFamily: 'inherit' }}>{l}</button>)}
-        </div>
         <Button variant="ghost" size="sm" icon="editar" onClick={onCategorias}>Categorías</Button>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </div>
@@ -350,51 +345,36 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
 
       {inv.productos.length === 0 ? <Card><Vacio icono="caja" titulo="Aún no hay productos" texto="Agregue los insumos y medicamentos que usa con sus pacientes."><Button icon="mas" onClick={onNuevo}>Nuevo producto</Button></Vacio></Card>
         : lista.length === 0 ? <Card><div style={{ color: C.g400, textAlign: 'center', padding: 20 }}>Ningún producto coincide</div></Card>
-        : vista === 'lista' ? (
-          <Tabla columnas={['Producto', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : []), 'Estado']} onFila={(f) => abrir(f.p)}
-            filas={lista.map(({ p, e }) => ({ key: p.id, p, celdas: [
-              <div><strong>{p.nombre}</strong><div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria, p.unidad].filter(Boolean).join(' · ')}</div></div>,
-              ...visibles.map(s => { const n = existencia(inv, s.id, p.id); return <span style={{ fontWeight: 700, color: n === 0 ? C.g300 : bajoMinimo(inv, s.id, p) ? C.amber : C.black }}>{fmtCant(n)}</span> }),
-              ...(visibles.length > 1 ? [<strong>{fmtCant(e.total)}</strong>] : []),
-              <Badge color={e.color} bg={e.bg}>{e.label}</Badge>,
-            ] }))} />
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))', gap: 12 }}>
-            {lista.map(({ p, e }) => {
-              const filas = visibles.filter(s => inv.existencias.some(x => x.sede_id === s.id && x.producto_id === p.id))
-              return (
-                <button key={p.id} onClick={() => abrir(p)} className="op-tile" style={{ textAlign: 'left', fontFamily: 'inherit', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 18, boxShadow: SHADOW, cursor: 'pointer', display: 'flex', flexDirection: 'column', opacity: p.activo ? 1 : 0.55 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 15, color: C.black, lineHeight: 1.3 }}>{p.nombre}</div>
-                      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 2 }}>{p.categoria || 'Sin categoría'}</div>
-                    </div>
-                    <Badge color={e.color} bg={e.bg}>{e.label}</Badge>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '14px 0 10px' }}>
-                    <span style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 600, color: C.black, letterSpacing: '-0.02em', lineHeight: 1 }}>{fmtCant(e.total)}</span>
-                    <span style={{ fontSize: 13, color: C.g500 }}>{p.unidad}{visibles.length > 1 ? ' en total' : ''}</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 'auto' }}>
-                    {filas.length === 0 ? <div style={{ fontSize: 12.5, color: C.g400 }}>Aún no se ha recibido en {sedeFiltro ? 'esta sede' : 'ninguna sede'}</div> : filas.map(s => {
-                      const n = existencia(inv, s.id, p.id), min = Number(p.stock_minimo), bajo = bajoMinimo(inv, s.id, p)
-                      const pct = Math.min(100, min > 0 ? (n / (min * 2)) * 100 : n > 0 ? 100 : 0)
-                      return (
-                        <div key={s.id}>
-                          <div style={{ display: 'flex', fontSize: 12.5, marginBottom: 3 }}>
-                            <span style={{ flex: 1, color: C.g600 }}>{s.nombre}</span>
-                            <strong style={{ color: n === 0 ? C.red : bajo ? C.amber : C.black }}>{fmtCant(n)}</strong>
-                          </div>
-                          <div style={{ height: 5, borderRadius: 3, background: C.g100, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: n === 0 ? C.red : bajo ? '#E0A526' : C.green }} />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </button>
-              )
-            })}
+        : (
+          // one row per product: name, stock per location with its bar, total, price and status
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, boxShadow: SHADOW, overflow: 'hidden' }}>
+            <div className="prod-fila prod-cab">
+              <span>Producto</span><span>Existencia por sede</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Precio</span><span>Estado</span>
+            </div>
+            {lista.map(({ p, e }) => (
+              <button key={p.id} onClick={() => abrir(p)} className="prod-fila fila" style={{ opacity: p.activo ? 1 : 0.55 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nombre}</div>
+                  <div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria || 'Sin categoría', p.unidad].join(' · ')}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+                  {visibles.map(s => {
+                    const n = existencia(inv, s.id, p.id), min = Number(p.stock_minimo), bajo = bajoMinimo(inv, s.id, p)
+                    const pct = Math.min(100, min > 0 ? (n / (min * 2)) * 100 : n > 0 ? 100 : 0)
+                    return (
+                      <div key={s.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(60px, 110px) minmax(40px, 1fr) 46px', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
+                        <span style={{ color: C.g600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</span>
+                        <span style={{ height: 6, borderRadius: 3, background: C.g100, overflow: 'hidden' }}><span style={{ display: 'block', width: `${pct}%`, height: '100%', borderRadius: 3, background: n === 0 ? C.red : bajo ? '#E0A526' : C.green }} /></span>
+                        <strong style={{ textAlign: 'right', color: n === 0 ? C.red : bajo ? C.amber : C.black }}>{fmtCant(n)}</strong>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 15 }}>{fmtCant(e.total)}</div>
+                <div style={{ textAlign: 'right', color: p.costo != null ? C.black : C.g300 }}>{p.costo != null ? fmtQ(p.costo) : 'Sin precio'}</div>
+                <div><Badge color={e.color} bg={e.bg}>{e.label}</Badge></div>
+              </button>
+            ))}
           </div>
         )}
     </>

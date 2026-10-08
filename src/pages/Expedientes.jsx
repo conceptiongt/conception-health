@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, estadoCita, origenLabel } from '../lib/constantes'
+import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { resumenDatos } from '../lib/especialidades'
@@ -22,7 +22,7 @@ import { PortalCliente } from '../components/PortalCliente'
 import { EnlacePaciente } from '../components/EnlacePaciente'
 import { BotonesSubir, subirArchivos } from '../components/SubirArchivos'
 import { TextoFormateado } from '../components/EditorTexto'
-import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro } from '../lib/ficha'
+import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro, codigoRegistro } from '../lib/ficha'
 import { puede } from '../lib/permisos'
 
 export function Expedientes({ abrirId }) {
@@ -211,7 +211,7 @@ function FichaPaciente({ paciente, onEditar }) {
         <div style={{ background: formulario ? C.amberLight : C.greenLight, color: formulario ? C.amber : C.green, borderRadius: 16, padding: '11px 16px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <Icon name={formulario ? 'reloj' : 'check'} size={17} />
           <span style={{ flex: 1 }}>{formulario ? 'Se le envió el formulario al paciente; sus datos aparecerán aquí cuando lo llene.' : `El paciente llenó su formulario el ${fmtFecha(paciente.registro_completado_at)}.`}</span>
-          {formulario && <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(urlRegistro(paciente.registro_token)); toast.success('Enlace copiado') }}>Copiar enlace del formulario</Button>}
+          {formulario && <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(urlRegistro(codigoRegistro(paciente))); toast.success('Enlace copiado') }}>Copiar enlace del formulario</Button>}
         </div>
       )}
       <Card title="Datos personales" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
@@ -224,7 +224,7 @@ function FichaPaciente({ paciente, onEditar }) {
           {par('Dirección', paciente.direccion)}
           {par('Ocupación', paciente.ocupacion)}
           {par('Estado civil', paciente.estado_civil)}
-          {par('Cómo nos encontró', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : origenLabel(paciente.origen))}
+          {par('Cómo nos encontró', paciente.origen === 'redes' && paciente.red ? `Redes (${paciente.red})` : paciente.origen === 'referido' && paciente.referido_por ? `Referido por ${paciente.referido_por}` : paciente.origen === 'otro' && paciente.extra?.origen_detalle ? `Otro: ${paciente.extra.origen_detalle}` : origenLabel(paciente.origen))}
           {nombreSede(sedes, paciente.sede_id) && par('Sede', nombreSede(sedes, paciente.sede_id))}
           {par('Contacto de emergencia', [paciente.contacto_emergencia, paciente.telefono_emergencia].filter(Boolean).join(' · '))}
           {paciente.extra?.motivo_registro && par('Motivo (lo escribió el paciente)', paciente.extra.motivo_registro)}
@@ -299,7 +299,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
         <Campo label="Teléfono de emergencia"><Input value={f.telefono_emergencia} onChange={set('telefono_emergencia')} maxLength={30} /></Campo>
 
         {titulo('Antecedentes médicos')}
-        <Campo label="Tipo de sangre"><Input value={f.tipo_sangre} onChange={set('tipo_sangre')} placeholder="Ej. O+" maxLength={10} /></Campo>
+        <Campo label="Tipo de sangre"><Select value={f.tipo_sangre} onChange={set('tipo_sangre')}><option value="">—</option>{[...TIPOS_SANGRE, ...(f.tipo_sangre && !TIPOS_SANGRE.includes(f.tipo_sangre) ? [f.tipo_sangre] : [])].map(t => <option key={t}>{t}</option>)}</Select></Campo>
         <Campo label="Alergias" full><Textarea value={f.alergias} onChange={set('alergias')} rows={2} maxLength={1000} /></Campo>
         <Campo label="Enfermedades crónicas" full><Textarea value={f.enfermedades} onChange={set('enfermedades')} rows={2} maxLength={1000} /></Campo>
         <Campo label="Medicamentos actuales" full><Textarea value={f.medicamentos} onChange={set('medicamentos')} rows={2} maxLength={1000} /></Campo>

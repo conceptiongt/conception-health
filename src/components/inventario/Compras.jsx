@@ -13,6 +13,7 @@ import { Exportar } from '../Documento'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
 import { eliminarRegistro } from './Formularios'
+import { BotonesSubir, tipoArchivo } from '../SubirArchivos'
 
 // Purchase order life cycle (like Odoo: request → sent → confirmed → received)
 export const ESTADOS_OC = {
@@ -24,7 +25,22 @@ export const ESTADOS_OC = {
   cancelada: { label: 'Cancelada', color: C.red, bg: C.redLight },
 }
 export const numeroOC = (o) => `OC-${String(o.numero).padStart(4, '0')}`
-export const totalOC = (lineas) => lineas.reduce((n, l) => n + Number(l.cantidad) * Number(l.costo_unitario), 0)
+export const totalOC = (lineas, orden) => lineas.length ? lineas.reduce((n, l) => n + Number(l.cantidad) * Number(l.costo_unitario), 0) : Number(orden?.total_manual) || 0
+
+// The supplier's own order document (PDF or photo), stored privately with the clinic's files
+async function subirAdjunto(file, clinicaId) {
+  const tipo = tipoArchivo(file)
+  const ext = tipo === 'application/pdf' ? 'pdf' : ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg')
+  const path = `${clinicaId}/ordenes/${crypto.randomUUID()}.${ext}`
+  const { error } = await supabase.storage.from('expedientes').upload(path, file, { contentType: tipo })
+  return error ? null : { adjunto_path: path, adjunto_nombre: file.name.replace(/[<>]/g, '').slice(0, 200), adjunto_mime: tipo }
+}
+async function abrirAdjunto(o) {
+  const w = window.open('', '_blank')
+  const { data } = await supabase.storage.from('expedientes').createSignedUrl(o.adjunto_path, 600)
+  if (data?.signedUrl && w) w.location.href = data.signedUrl
+  else { w?.close(); toast.error('No se pudo abrir el documento') }
+}
 const pendienteLinea = (l) => Math.max(0, Number(l.cantidad) - Number(l.recibido))
 
 // Quantities ordered and not yet received, per "sede|producto" (used by restocking)
@@ -101,10 +117,10 @@ export function Compras({ inv, compras, onNueva, onAbrir }) {
           filas={lista.map(o => {
             const e = ESTADOS_OC[o.estado], ls = lineas.filter(l => l.orden_id === o.id)
             return { key: o.id, orden: o, celdas: [
-              <div><strong>{numeroOC(o)}</strong><div style={{ fontSize: 12, color: C.g400 }}>{fmtFechaCorta(o.fecha)} · {ls.length} {ls.length === 1 ? 'producto' : 'productos'}</div></div>,
+              <div><strong>{numeroOC(o)}</strong>{o.adjunto_path && <span title="Tiene la orden adjunta" style={{ marginLeft: 6 }}>📎</span>}<div style={{ fontSize: 12, color: C.g400 }}>{fmtFechaCorta(o.fecha)} · {ls.length ? `${ls.length} ${ls.length === 1 ? 'producto' : 'productos'}` : 'orden adjunta'}{o.numero_proveedor ? ` · N.º ${o.numero_proveedor}` : ''}</div></div>,
               proveedor(o.proveedor_id)?.nombre || <span style={{ color: C.g400 }}>Sin proveedor</span>, sede(o.sede_id)?.nombre || '—',
               o.fecha_esperada ? <span style={{ color: atrasada(o) ? C.red : C.black, fontWeight: atrasada(o) ? 600 : 400 }}>{fmtFechaCorta(o.fecha_esperada)}{atrasada(o) ? ' · atrasada' : ''}</span> : '—',
-              <strong>{fmtQ(totalOC(ls))}</strong>, <Badge color={e.color} bg={e.bg}>{e.label}</Badge>,
+              <strong>{fmtQ(totalOC(ls, o))}</strong>, <Badge color={e.color} bg={e.bg}>{e.label}</Badge>,
             ] }
           })} />
       )}
@@ -119,13 +135,18 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
   const [f, setF] = useState({
     proveedor: orden?.proveedor_id || inicial.proveedor || '', sede: orden?.sede_id || inicial.sede || sedes[0]?.id || '',
     esperada: orden?.fecha_esperada || '', notas: orden?.notas || '',
+    numeroProveedor: orden?.numero_proveedor || '', totalManual: orden?.total_manual ?? '',
   })
+  const { clinica } = useDatos()
+  const [modo, setModo] = useState(orden?.adjunto_path && !lineasIniciales.length ? 'adjuntar' : 'crear')
+  const [archivo, setArchivo] = useState(null) // new document to attach
   const [lineas, setLineas] = useState(() => (lineasIniciales.length ? lineasIniciales : inicial.lineas || []).map(l => ({ producto: l.producto_id, cantidad: String(l.cantidad), costo: String(l.costo_unitario ?? '') })))
   const [agregar, setAgregar] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const prod = (id) => inv.productos.find(p => p.id === id)
-  const total = lineas.reduce((n, l) => n + (Number(l.cantidad) || 0) * (Number(l.costo) || 0), 0)
+  const totalLineas = lineas.reduce((n, l) => n + (Number(l.cantidad) || 0) * (Number(l.costo) || 0), 0)
+  const total = lineas.length ? totalLineas : Number(f.totalManual) || 0
 
   const elegirProveedor = (v) => { if (v === '__nuevo') onNuevoProveedor((id) => set('proveedor')(id)); else set('proveedor')(v) }
   const agregarLinea = (id) => {
@@ -138,10 +159,19 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
 
   const guardar = async () => {
     if (!f.sede) { toast.error('Elija la sede que recibe'); return }
-    if (!lineas.length) { toast.error('Agregue al menos un producto'); return }
+    const conAdjunto = !!(archivo || orden?.adjunto_path)
+    if (modo === 'adjuntar' && !conAdjunto) { toast.error('Adjunte el PDF o la foto de la orden'); return }
+    if (!lineas.length && modo === 'crear') { toast.error('Agregue al menos un producto'); return }
     if (lineas.some(l => !(Number(l.cantidad) > 0))) { toast.error('Revise las cantidades'); return }
     setBusy(true)
-    const cab = { proveedor_id: f.proveedor || null, sede_id: f.sede, fecha_esperada: f.esperada || null, notas: f.notas.trim() || null }
+    let adjunto = {}
+    if (archivo) {
+      adjunto = await subirAdjunto(archivo, clinica.id)
+      if (!adjunto) { setBusy(false); toast.error('No se pudo subir el documento'); return }
+      if (orden?.adjunto_path) supabase.storage.from('expedientes').remove([orden.adjunto_path])
+    }
+    const cab = { proveedor_id: f.proveedor || null, sede_id: f.sede, fecha_esperada: f.esperada || null, notas: f.notas.trim() || null,
+      numero_proveedor: f.numeroProveedor.trim() || null, total_manual: !lineas.length && f.totalManual !== '' ? Number(f.totalManual) : null, ...adjunto }
     let id = orden?.id
     if (orden) {
       const { error } = await supabase.from('ordenes_compra').update(cab).eq('id', orden.id)
@@ -152,7 +182,7 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
       if (error) { setBusy(false); toast.error(errorInventario(error)); return }
       id = data.id
     }
-    const { error } = await supabase.from('ordenes_compra_lineas').insert(lineas.map(l => ({ orden_id: id, producto_id: l.producto, cantidad: Number(l.cantidad), costo_unitario: Number(l.costo) || 0 })))
+    const { error } = lineas.length ? await supabase.from('ordenes_compra_lineas').insert(lineas.map(l => ({ orden_id: id, producto_id: l.producto, cantidad: Number(l.cantidad), costo_unitario: Number(l.costo) || 0 }))) : {}
     setBusy(false)
     if (error) { toast.error(errorInventario(error)); return }
     toast.success(orden ? 'Orden actualizada' : 'Orden de compra creada')
@@ -161,6 +191,17 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
 
   return (
     <Modal title={orden ? `Editar ${numeroOC(orden)}` : 'Nueva orden de compra'} subtitle="Pedido de productos a un proveedor" onClose={onClose} maxWidth={820}>
+      <div style={{ display: 'inline-flex', gap: 4, padding: 4, border: `1px solid ${C.line}`, borderRadius: 24, marginBottom: 16, flexWrap: 'wrap' }}>
+        {[['crear', 'Crear la orden aquí'], ['adjuntar', 'Adjuntar una orden que ya tengo']].map(([v, l]) => (
+          <button key={v} type="button" onClick={() => setModo(v)} style={{ padding: '8px 16px', borderRadius: 160, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, background: modo === v ? C.purple : 'transparent', color: modo === v ? C.onPurple : C.g600 }}>{l}</button>
+        ))}
+      </div>
+      {modo === 'adjuntar' && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 10, lineHeight: 1.5 }}>Suba el PDF o la foto de la orden que le dio su proveedor. Si agrega los productos abajo, al recibirla entrarán solos al inventario.</div>
+          <BotonesSubir onArchivos={(fs) => setArchivo(fs[0])} texto={archivo ? `📎 ${archivo.name} (cambiar)` : orden?.adjunto_path ? `📎 ${orden.adjunto_nombre || 'Orden adjunta'} (cambiar)` : 'Elegir PDF o foto de la orden'} />
+        </div>
+      )}
       <Grid min={200}>
         <Campo label="Proveedor">
           <Select value={f.proveedor} onChange={elegirProveedor}>
@@ -171,9 +212,11 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
         </Campo>
         <Campo label="Se recibe en la sede"><Select value={f.sede} onChange={set('sede')}>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>
         <Campo label="Fecha esperada de entrega"><Input type="date" value={f.esperada} onChange={set('esperada')} /></Campo>
+        {modo === 'adjuntar' && <Campo label="N.º de orden del proveedor (opcional)"><Input value={f.numeroProveedor} onChange={set('numeroProveedor')} maxLength={60} /></Campo>}
+        {modo === 'adjuntar' && !lineas.length && <Campo label="Total de la orden (Q)"><Input type="number" min="0" step="0.01" value={f.totalManual} onChange={set('totalManual')} placeholder="0.00" /></Campo>}
       </Grid>
 
-      <div style={{ marginTop: 20, fontWeight: 500, fontSize: 15 }}>Productos</div>
+      <div style={{ marginTop: 20, fontWeight: 500, fontSize: 15 }}>Productos{modo === 'adjuntar' ? ' (opcional)' : ''}</div>
       <div style={{ marginTop: 10, border: `1px solid ${C.line}`, borderRadius: 16, overflow: 'visible' }}>
         <div className="oc-fila oc-cab">
           <span>Producto</span><span>Cantidad</span><span>Costo unitario (Q)</span><span style={{ textAlign: 'right' }}>Subtotal</span><span />
@@ -216,7 +259,7 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
   const sede = inv.sedes.find(s => s.id === o.sede_id)
   const prod = (id) => inv.productos.find(p => p.id === id)
   const e = ESTADOS_OC[o.estado]
-  const total = totalOC(lineas)
+  const total = totalOC(lineas, o)
   const recibidoAlgo = lineas.some(l => Number(l.recibido) > 0)
 
   const pasos = ['borrador', 'enviada', 'confirmada', 'recibida']
@@ -283,6 +326,7 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
         {['confirmada', 'parcial'].includes(o.estado) && <Button onClick={() => setRecibir(true)} icon="descargar">Recibir productos</Button>}
         {whatsapp && o.estado !== 'cancelada' && <Button variant="ghost" icon="mensaje" onClick={() => window.open(whatsapp, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
         {!whatsapp && o.estado !== 'cancelada' && <Button variant="ghost" icon="copiar" onClick={() => navigator.clipboard?.writeText(texto).then(() => toast.success('Texto copiado'))}>Copiar texto</Button>}
+        {o.adjunto_path && <Button variant="ghost" icon="pdf" onClick={() => abrirAdjunto(o)}>Ver orden adjunta</Button>}
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <div style={{ flex: 1 }} />
         {['borrador', 'enviada'].includes(o.estado) && <Button variant="ghost" icon="editar" onClick={() => onEditar(o)}>Editar</Button>}
@@ -291,6 +335,7 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
       </div>
 
       <div style={{ border: `1px solid ${C.line}`, borderRadius: 16, overflow: 'hidden' }}>
+        {lineas.length === 0 && <div style={{ padding: '14px 16px', fontSize: 13.5, color: C.g500 }}>Orden adjunta{o.numero_proveedor ? ` N.º ${o.numero_proveedor}` : ''}: sus productos están en el documento. Edítela para agregarlos si quiere que entren solos al inventario al recibirla.</div>}
         {lineas.map((l, i) => {
           const p = prod(l.producto_id), rec = Number(l.recibido), pct = Math.min(100, (rec / Number(l.cantidad)) * 100)
           return (

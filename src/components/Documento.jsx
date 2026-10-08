@@ -7,7 +7,7 @@ import { useDatos } from '../hooks/useDatos'
 import { urlLogo, iniciales } from '../lib/marca'
 import { COLOR_BASE, mezclar, valido } from '../lib/theme'
 import { generarPdf, verPdf } from './DocumentoPaciente'
-import { slug } from '../lib/excel'
+import { nombreArchivo } from '../lib/ficha'
 
 const INK = '#1C1C1E', MUTED = '#6B6963', LINE = '#E3E1DB', SOFT = '#F7F6F3'
 
@@ -142,7 +142,7 @@ export function Exportar({ clinica, preparar, size = 'sm' }) {
       await verPdf(async () => {
         const d = await preparar()
         await new Promise(r => { esperaPdf.current = r; setPdf(d) }) // wait until the document is on the page
-        return generarPdf(refPdf.current.firstChild, `${slug(d.titulo || 'documento')}.pdf`)
+        return generarPdf(refPdf.current.firstChild, `${nombreArchivo(d.titulo || 'documento')}.pdf`)
       }, 'PDF')
     } catch { toast.error('No se pudo generar el PDF') }
     setPdf(null); setBusy(false)

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { fmtQ, mensajeConfirmacion, linkWhatsApp, linkCalendar } from '../lib/formato'
-import { linkPago, urlRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
+import { linkPago, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { useDatos } from '../hooks/useDatos'
 import { Button } from './ui/Button'
 import { toast } from './ui/Toast'
@@ -13,7 +13,7 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
   const [pago, setPago] = useState(!!cita.link_pago || (precio > 0 && ['Primera consulta'].includes(cita.tipo)))
   const [pct, setPct] = useState(cita.anticipo_pct || clinica?.anticipo_pct || 50)
   const [formulario, setFormulario] = useState(!paciente.registro_completado_at)
-  const [token, setToken] = useState(paciente.registro_token)
+  const [token, setToken] = useState(codigoRegistro(paciente))
   const monto = Math.round(precio * pct) / 100
   const ejemplo = !clinica?.link_pago
 
@@ -28,9 +28,9 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
     setFormulario(v)
     if (v && !token) {
       const nuevo = crypto.randomUUID()
-      const { error } = await supabase.from('pacientes').update({ registro_token: nuevo }).eq('id', paciente.id)
+      const { data, error } = await supabase.from('pacientes').update({ registro_token: nuevo }).eq('id', paciente.id).select('registro_codigo').single()
       if (error) { toast.error('No se pudo crear el enlace'); setFormulario(false); return }
-      setToken(nuevo); recargar()
+      setToken(data.registro_codigo); recargar()
     }
   }
   // the form switch starts on for patients who have not filled their data: create their link right away

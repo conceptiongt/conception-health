@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
 import { linkWhatsApp } from '../lib/formato'
-import { urlPortal, urlRegistro } from '../lib/ficha'
+import { urlPortal, urlRegistro, codigoRegistro } from '../lib/ficha'
 import { useDatos } from '../hooks/useDatos'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
@@ -12,7 +12,7 @@ import { toast } from './ui/Toast'
 export function EnlacePaciente({ paciente, size = 'sm' }) {
   const { recargar } = useDatos()
   const [abierto, setAbierto] = useState(false)
-  const [token, setToken] = useState(paciente.registro_token)
+  const [token, setToken] = useState(codigoRegistro(paciente))
   const caja = useRef(null)
   useEffect(() => {
     if (!abierto) return
@@ -36,10 +36,10 @@ export function EnlacePaciente({ paciente, size = 'sm' }) {
   const formulario = async () => { // creates the patient's private form link the first time
     if (token) return urlRegistro(token)
     const nuevo = crypto.randomUUID()
-    const { error } = await supabase.from('pacientes').update({ registro_token: nuevo }).eq('id', paciente.id)
+    const { data, error } = await supabase.from('pacientes').update({ registro_token: nuevo }).eq('id', paciente.id).select('registro_codigo').single()
     if (error) { toast.error('No se pudo crear el enlace'); return null }
-    setToken(nuevo); recargar()
-    return urlRegistro(nuevo)
+    setToken(data.registro_codigo); recargar()
+    return urlRegistro(data.registro_codigo)
   }
   const msgPortal = `Hola ${nombre} 👋\n\nEn este enlace puede ver su expediente, sus indicaciones y documentos cuando lo necesite:\n${portal}`
   const msgForm = (u) => `Hola ${nombre} 👋\n\nPor favor llene sus datos en este enlace (toma 3 minutos):\n${u}`

@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/config'
 import { C, SHADOW, aplicarMarca } from '../lib/theme'
 import { iniciales } from '../lib/marca'
-import { ETAPAS_FOTO, ORIGENES } from '../lib/constantes'
+import { ETAPAS_FOTO, ORIGENES, TIPOS_SANGRE } from '../lib/constantes'
 import { fmtFecha, fmtFechaCorta, fmtHora, fmtQ, totalCobro, saldo } from '../lib/formato'
 import { resumenDatos } from '../lib/especialidades'
-import { seccionesDe, edad } from '../lib/ficha'
+import { seccionesDe, edad, nombreArchivo } from '../lib/ficha'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
 import { Icon } from '../components/ui/Icon'
@@ -16,10 +16,10 @@ import { toast } from '../components/ui/Toast'
 import { slug } from '../lib/excel'
 
 // Pages patients open without an account: /p/<token> portal, /r/<token> data form, /d/<token> shared PDF
-const RUTA = /^\/(p|r|d)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i
+const RUTA = /^\/(p|r|d)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z0-9-]{8,60})\/?$/i
 export function rutaPublica() {
   const m = location.pathname.match(RUTA)
-  return m ? { tipo: m[1].toLowerCase(), token: m[2] } : null
+  return m ? { tipo: m[1].toLowerCase(), token: /^[0-9a-f-]{36}$/i.test(m[2]) ? m[2] : m[2].toLowerCase() } : null
 }
 
 async function llamar(body) {
@@ -78,7 +78,7 @@ function Portal({ token }) {
 
   useEffect(() => {
     if (!pdf || !ref.current) return
-    const nombre = `${slug(pdf.titulo)}_${slug(d.paciente.nombre)}.pdf`
+    const nombre = `${nombreArchivo(d.paciente.nombre, pdf.titulo)}.pdf`
     generarPdf(ref.current.firstChild, nombre).then(f => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = nombre; a.click()
     }).catch(() => toast.error('No se pudo generar el PDF')).finally(() => setPdf(null))
@@ -234,12 +234,8 @@ function Registro({ token }) {
             <Campo label="Correo electrónico"><Input type="email" value={f.email} onChange={set('email')} maxLength={120} autoComplete="email" /></Campo>
             <Campo label="Fecha de nacimiento"><Input type="date" value={f.fecha_nacimiento} onChange={set('fecha_nacimiento')} /></Campo>
             <Campo label="Sexo"><Select value={f.sexo} onChange={set('sexo')}><option value="">—</option>{['Femenino', 'Masculino', 'Otro'].map(s => <option key={s}>{s}</option>)}</Select></Campo>
-            <Campo label="DPI"><Input value={f.dpi} onChange={set('dpi')} maxLength={30} inputMode="numeric" /></Campo>
-            <Campo label="Ocupación"><Input value={f.ocupacion} onChange={set('ocupacion')} maxLength={120} /></Campo>
-            <Campo label="Estado civil"><Select value={f.estado_civil} onChange={set('estado_civil')}><option value="">—</option>{['Soltero(a)', 'Casado(a)', 'Unido(a)', 'Divorciado(a)', 'Viudo(a)'].map(s => <option key={s}>{s}</option>)}</Select></Campo>
-            <Campo label="Dirección" full><Input value={f.direccion} onChange={set('direccion')} maxLength={300} autoComplete="street-address" /></Campo>
             {t('Su salud')}
-            <Campo label="Tipo de sangre (si lo sabe)"><Input value={f.tipo_sangre} onChange={set('tipo_sangre')} maxLength={10} placeholder="Ej. O+" /></Campo>
+            <Campo label="Tipo de sangre"><Select value={f.tipo_sangre} onChange={set('tipo_sangre')}><option value="">Seleccione…</option>{TIPOS_SANGRE.map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="¿Tiene alergias?" full><Textarea value={f.alergias} onChange={set('alergias')} rows={2} maxLength={500} placeholder="Medicamentos, alimentos… o escriba «ninguna»" /></Campo>
             <Campo label="Enfermedades que padece" full><Textarea value={f.enfermedades} onChange={set('enfermedades')} rows={2} maxLength={500} placeholder="Ej. diabetes, presión alta…" /></Campo>
             <Campo label="Medicamentos que toma" full><Textarea value={f.medicamentos} onChange={set('medicamentos')} rows={2} maxLength={500} /></Campo>
@@ -250,7 +246,12 @@ function Registro({ token }) {
             <Campo label="Teléfono del contacto"><Input type="tel" value={f.telefono_emergencia} onChange={set('telefono_emergencia')} maxLength={30} /></Campo>
             {nuevo && <>
               {t('Su visita')}
-              <Campo label="¿Cómo nos encontró?"><Select value={f.origen} onChange={set('origen')}><option value="">—</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></Campo>
+              <Campo label="¿Cómo nos encontró?" full>
+                <Opciones valor={f.origen} onChange={(v) => setF(p => ({ ...p, origen: v, red: '', referido_por: '', origen_otro: '' }))} opciones={ORIGENES.map(o => [o.value, o.label])} />
+              </Campo>
+              {f.origen === 'redes' && <Campo label="¿En qué red social?" full><Opciones valor={f.red} onChange={set('red')} opciones={REDES_FORMULARIO.map(r => [r, r])} /></Campo>}
+              {f.origen === 'referido' && <Campo label="¿Quién le recomendó?" full><Input value={f.referido_por} onChange={set('referido_por')} maxLength={120} placeholder="Nombre de la persona" /></Campo>}
+              {f.origen === 'otro' && <Campo label="Cuéntenos cómo nos encontró" full><Input value={f.origen_otro} onChange={set('origen_otro')} maxLength={200} placeholder="Ej. pasé por la clínica, un anuncio…" /></Campo>}
               <Campo label="Motivo de su consulta" full><Textarea value={f.motivo} onChange={set('motivo')} rows={3} maxLength={500} /></Campo>
             </>}
           </Grid>
@@ -263,6 +264,22 @@ function Registro({ token }) {
         </form>
       </Caja>
     </Marco>
+  )
+}
+
+const REDES_FORMULARIO = ['Facebook', 'Instagram', 'TikTok']
+
+// Big tappable buttons (easier than a list for older patients)
+function Opciones({ valor, onChange, opciones }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {opciones.map(([v, l]) => (
+        <button key={v} type="button" onClick={() => onChange(v)} style={{
+          padding: '12px 18px', borderRadius: 160, cursor: 'pointer', fontFamily: 'inherit', fontSize: 16,
+          border: `1.5px solid ${valor === v ? 'var(--acento)' : C.g200}`, background: valor === v ? 'var(--acento-tenue)' : '#fff', color: C.black, fontWeight: valor === v ? 600 : 400,
+        }}>{valor === v ? '✓ ' : ''}{l}</button>
+      ))}
+    </div>
   )
 }
 
@@ -280,7 +297,7 @@ function DocumentoCompartido({ token }) {
         <div style={{ fontSize: 16, color: C.g500, marginBottom: 18 }}>Enviado por {d.clinica?.nombre}</div>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button size="lg" icon="ojo" onClick={() => window.open(d.url, '_blank', 'noopener')}>Ver documento</Button>
-          <a href={d.url} download style={{ textDecoration: 'none' }}><Button size="lg" variant="ghost" icon="descargar">Descargar</Button></a>
+          <Button size="lg" variant="ghost" icon="descargar" onClick={() => { location.href = d.descargar || d.url }}>Descargar</Button>
         </div>
       </Caja>
       <iframe src={d.url} title={d.titulo || 'Documento'} className="solo-escritorio" style={{ width: '100%', height: '80vh', border: 'none', borderRadius: 16, marginTop: 16, background: '#fff' }} />

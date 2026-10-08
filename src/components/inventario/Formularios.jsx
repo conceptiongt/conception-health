@@ -1,3 +1,4 @@
+import { Interruptor } from '../MensajePaciente'
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
@@ -135,12 +136,14 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
 export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio, onClose, onGuardado }) {
   const proveedores = inv?.proveedores || []
   const [f, setF] = useState({ nombre: producto?.nombre || '', codigo: producto?.codigo || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', stock_maximo: producto?.stock_maximo ?? '', costo: producto?.costo ?? '', proveedor_id: producto?.proveedor_id || '', activo: producto?.activo ?? true })
+  const [conPrecio, setConPrecio] = useState(producto?.costo != null) // the price is only saved if the user turns it on
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const guardar = async () => {
     if (!f.nombre.trim()) { toast.error('Escriba el nombre'); return }
+    if (conPrecio && !(Number(f.costo) >= 0 && f.costo !== '')) { toast.error('Escriba el precio o apague «Agregar precio»'); return }
     if (f.stock_maximo !== '' && Number(f.stock_maximo) < (Number(f.stock_minimo) || 0)) { toast.error('El máximo no puede ser menor que el mínimo'); return }
-    const fila = { nombre: f.nombre.trim(), codigo: f.codigo.trim() || null, categoria: f.categoria.trim() || null, unidad: f.unidad.trim() || 'unidad', stock_minimo: Number(f.stock_minimo) || 0, stock_maximo: f.stock_maximo === '' ? null : Number(f.stock_maximo), costo: f.costo === '' ? null : Number(f.costo), proveedor_id: f.proveedor_id || null, activo: f.activo }
+    const fila = { nombre: f.nombre.trim(), codigo: f.codigo.trim() || null, categoria: f.categoria.trim() || null, unidad: f.unidad.trim() || 'unidad', stock_minimo: Number(f.stock_minimo) || 0, stock_maximo: f.stock_maximo === '' ? null : Number(f.stock_maximo), costo: conPrecio && f.costo !== '' ? Number(f.costo) : null, proveedor_id: f.proveedor_id || null, activo: f.activo }
     setBusy(true)
     const { error } = producto ? await supabase.from('productos').update(fila).eq('id', producto.id) : await supabase.from('productos').insert(fila)
     setBusy(false)
@@ -157,7 +160,12 @@ export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio,
         <Campo label="Se cuenta por"><Input value={f.unidad} onChange={set('unidad')} list="unidades" /><datalist id="unidades">{UNIDADES.map(u => <option key={u} value={u} />)}</datalist></Campo>
         <Campo label="Mínimo por sede" ayuda="Si una sede baja de aquí, le avisamos para reabastecer"><Input type="number" min="0" step="any" value={f.stock_minimo} onChange={set('stock_minimo')} placeholder="0" /></Campo>
         <Campo label="Máximo por sede (opcional)" ayuda="Al reabastecer, se sugiere pedir hasta llegar aquí"><Input type="number" min="0" step="any" value={f.stock_maximo} onChange={set('stock_maximo')} placeholder="Doble del mínimo" /></Campo>
-        <Campo label="Costo por unidad (Q)" ayuda="Se actualiza solo al recibir una orden de compra"><Input type="number" min="0" step="0.01" value={f.costo} onChange={set('costo')} /></Campo>
+        <Campo label="Precio por unidad" ayuda={conPrecio ? 'Lo escribe usted. Si recibe una orden de compra con otro costo, se actualiza con ese.' : 'Opcional: sirve para saber cuánto vale su inventario'}>
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 14, cursor: 'pointer', marginBottom: conPrecio ? 8 : 0 }}>
+            <Interruptor activo={conPrecio} onChange={(v) => { setConPrecio(v); if (!v) set('costo')('') }} />Agregar precio
+          </label>
+          {conPrecio && <Input type="number" min="0" step="0.01" value={f.costo} onChange={set('costo')} placeholder="Q 0.00" />}
+        </Campo>
         <Campo label="Proveedor habitual" ayuda="Para armar las órdenes de compra automáticamente"><Select value={f.proveedor_id} onChange={set('proveedor_id')}><option value="">—</option>{proveedores.filter(p => p.activo || p.id === f.proveedor_id).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</Select></Campo>
         {producto && <Campo full><label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}><input type="checkbox" checked={f.activo} onChange={e => set('activo')(e.target.checked)} />Producto activo (desactívelo si ya no lo usa; su historial se conserva)</label></Campo>}
       </Grid>

@@ -14,6 +14,7 @@ import { Configuracion } from './pages/Configuracion'
 import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
 import { Pagos } from './pages/Pagos'
+import { Finanzas } from './pages/Finanzas'
 import { urlLogo, iniciales } from './lib/marca'
 import { especialidad } from './lib/especialidades'
 import { cargarSugeridos } from './lib/sugeridos'
@@ -34,13 +35,14 @@ const NAV = [
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
+  { id: 'finanzas', label: 'Finanzas', icono: 'actividad', soloAdmin: true },
   { id: 'inventario', label: 'Inventario', icono: 'caja', permiso: 'inventario' },
 ]
 const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'inventario']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion', soloAdmin: true },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes', permiso: 'configuracion' },
@@ -217,6 +219,7 @@ function Aplicacion({ sesion }) {
             : vista === 'citas' ? <Citas />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
             : vista === 'pagos' ? <Pagos />
+            : vista === 'finanzas' ? <Finanzas />
             : vista === 'configuracion' ? <Configuracion />
             : <Suscripcion />}
         </main>

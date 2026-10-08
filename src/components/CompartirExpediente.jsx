@@ -4,7 +4,7 @@ import { C } from '../lib/theme'
 import { TIPOS_CITA } from '../lib/constantes'
 import { fmtFechaCorta, linkWhatsApp } from '../lib/formato'
 import { urlLogo } from '../lib/marca'
-import { seccionesActivas, urlDocumento } from '../lib/ficha'
+import { seccionesActivas, urlDocumento, nombreArchivo } from '../lib/ficha'
 import { puede } from '../lib/permisos'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
@@ -50,7 +50,7 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
   const marca = { nombre: clinica?.nombre, color: clinica?.color, logo: urlLogo(clinica) }
   const partes = armarPartes({ paciente, citas, cobros: finanzas ? cobros : [], archivos, clinica, eleccion: e, secciones })
   const nada = !e.datos && !e.antecedentes && !partes.consultas.length && !partes.fotos.length && !partes.documentos.length && !partes.cobros.length
-  const archivo = `${slug(titulo || 'expediente')}_${slug(paciente.nombre)}.pdf`
+  const archivo = `${nombreArchivo(paciente.nombre, titulo || 'expediente')}.pdf`
 
   const pdf = async () => generarPdf(refDoc.current.firstChild, archivo)
   const [imprimiendo, setImprimiendo] = useState(false)
@@ -67,9 +67,9 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
       const path = `${clinica.id}/${crypto.randomUUID()}.pdf`
       const { error } = await supabase.storage.from('compartidos').upload(path, f, { contentType: 'application/pdf' })
       if (error) throw error
-      const { data, error: e2 } = await supabase.from('documentos_compartidos').insert({ clinica_id: clinica.id, paciente_id: paciente.id, path, titulo }).select('token').single()
+      const { data, error: e2 } = await supabase.from('documentos_compartidos').insert({ clinica_id: clinica.id, paciente_id: paciente.id, path, titulo, archivo }).select('codigo').single()
       if (e2) throw e2
-      setListo({ file: f, link: urlDocumento(data.token) })
+      setListo({ file: f, link: urlDocumento(data.codigo) })
     } catch { toast.error('No se pudo preparar el documento') }
     setBusy('')
   }

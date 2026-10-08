@@ -10,6 +10,7 @@ import { CamposEspecialidad, limpiarDatos } from './CamposEspecialidad'
 import { EditorTexto } from './EditorTexto'
 import { MensajePaciente, Interruptor } from './MensajePaciente'
 import { CompartirExpediente } from './CompartirExpediente'
+import { EnlacePaciente } from './EnlacePaciente'
 import { BotonesSubir, subirArchivos, tipoArchivo } from './SubirArchivos'
 import { Button } from './ui/Button'
 import { Badge } from './ui/Varios'
@@ -166,6 +167,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {cita && puede(perfil, 'eliminar') && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
+          {paciente && <EnlacePaciente paciente={paciente} size="md" />}
           {soloCita && clinico && <Button variant="ghost" onClick={() => ir('expedientes', paciente.id)} icon="expedientes">Abrir expediente</Button>}
           {cita && ficha && <Button variant="ghost" onClick={() => setCompartir(true)} icon="compartir">Imprimir o compartir</Button>}
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>

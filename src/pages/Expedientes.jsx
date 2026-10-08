@@ -19,6 +19,7 @@ import { FiltroSede, nombreSede } from '../components/Filtros'
 import { toast } from '../components/ui/Toast'
 import { CompartirExpediente } from '../components/CompartirExpediente'
 import { PortalCliente } from '../components/PortalCliente'
+import { EnlacePaciente } from '../components/EnlacePaciente'
 import { BotonesSubir, subirArchivos } from '../components/SubirArchivos'
 import { TextoFormateado } from '../components/EditorTexto'
 import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro } from '../lib/ficha'
@@ -164,7 +165,8 @@ function Expediente({ paciente, onVolver }) {
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
       <Encabezado titulo={paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
-        {clinico && <Button size="sm" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
+        <EnlacePaciente paciente={paciente} />
+        {clinico && <Button size="sm" variant="ghost" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
         {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
         <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar ficha</Button>
         {puede(perfil, 'eliminar') && <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar</Button>}

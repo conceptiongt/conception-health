@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { ESTADOS_CITA, estadoCita } from '../lib/constantes'
+import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita } from '../lib/constantes'
 import { especialidad, tiposDe } from '../lib/especialidades'
 import { seccionesActivas, limpiarHtml, tieneTexto } from '../lib/ficha'
 import { puede } from '../lib/permisos'
@@ -10,6 +10,7 @@ import { CamposEspecialidad, limpiarDatos } from './CamposEspecialidad'
 import { EditorTexto } from './EditorTexto'
 import { MensajePaciente, Interruptor } from './MensajePaciente'
 import { CompartirExpediente } from './CompartirExpediente'
+import { BotonesSubir, subirArchivos, tipoArchivo } from './SubirArchivos'
 import { Button } from './ui/Button'
 import { Badge } from './ui/Varios'
 import { Icon } from './ui/Icon'
@@ -20,11 +21,12 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from './Servicio
 
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
-export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
-  const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil } = useDatos()
+export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
+  const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir } = useDatos()
   const esp = especialidad(clinica?.especialidad)
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
+  const ficha = clinico && !soloCita // from Citas only the appointment is edited; the clinical file lives in the patient file
   const finanzas = puede(perfil, 'finanzas')
   const [f, setF] = useState({
     fecha: cita?.fecha || hoyISO(), hora: cita?.hora?.slice(0, 5) || '', tipo: cita?.tipo || 'Seguimiento',
@@ -41,6 +43,32 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
   const conSedes = acc?.inventario && sedes.length > 0
   useEffect(() => { window.scrollTo(0, 0) }, [])
 
+  // photos and PDFs of this consultation: uploaded right away, or kept until a new consultation is saved
+  const [archivos, setArchivos] = useState([])
+  const [pendientes, setPendientes] = useState([])
+  const [etapa, setEtapa] = useState('estudio')
+  const [subiendo, setSubiendo] = useState(0)
+  const cargarArchivos = useCallback(async () => {
+    if (!cita?.id || !ficha) return
+    const { data } = await supabase.from('archivos').select('*').eq('cita_id', cita.id).order('created_at')
+    const lista = data || []
+    if (lista.length) {
+      const { data: urls } = await supabase.storage.from('expedientes').createSignedUrls(lista.map(a => a.path), 3600)
+      const porPath = Object.fromEntries((urls || []).map(u => [u.path, u.signedUrl]))
+      lista.forEach(a => { a.url = porPath[a.path] })
+    }
+    setArchivos(lista)
+  }, [cita?.id, ficha])
+  useEffect(() => { cargarArchivos() }, [cargarArchivos])
+  const recibirArchivos = async (files) => {
+    if (!cita) { setPendientes(p => [...p, ...files.map(file => ({ file, url: URL.createObjectURL(file) }))]); return }
+    setSubiendo(files.length)
+    const errores = await subirArchivos(files, { clinicaId, pacienteId: paciente.id, citaId: cita.id, etapa, fecha: f.fecha })
+    setSubiendo(0)
+    if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`); else toast.success(files.length === 1 ? 'Archivo guardado' : 'Archivos guardados')
+    cargarArchivos()
+  }
+
   const anteriores = citas.filter(c => c.paciente_id === paciente?.id && c.id !== cita?.id).sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 4)
   const deuda = cobros.filter(c => c.paciente_id === paciente?.id).reduce((n, c) => n + saldo(c), 0)
   const cobroCita = cobros.find(c => c.cita_id === cita?.id)
@@ -55,7 +83,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
       servicio_id: s.servicio_id, servicio: s.servicio,
       fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado,
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
-      ...(clinico ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
+      ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
     }
     setBusy(true)
@@ -68,6 +96,10 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
         clinica_id: clinicaId, paciente_id: paciente.id, cita_id: guardada.id, servicio_id: s.servicio_id,
         concepto: s.servicio || f.tipo, precio: s.precio, fecha: f.fecha,
       })
+    }
+    if (!error && !cita && pendientes.length) {
+      const errores = await subirArchivos(pendientes.map(p => p.file), { clinicaId, pacienteId: paciente.id, citaId: guardada.id, etapa, fecha: f.fecha })
+      if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`)
     }
     setBusy(false)
     if (error) { toast.error('No se pudo guardar la cita'); return }
@@ -103,7 +135,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {cita && puede(perfil, 'eliminar') && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
-          {cita && clinico && <Button variant="ghost" onClick={() => setCompartir(true)} icon="compartir">Imprimir o compartir</Button>}
+          {soloCita && clinico && <Button variant="ghost" onClick={() => ir('expedientes', paciente.id)} icon="expedientes">Abrir expediente</Button>}
+          {cita && ficha && <Button variant="ghost" onClick={() => setCompartir(true)} icon="compartir">Imprimir o compartir</Button>}
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button onClick={guardar} disabled={busy} icon="check">{busy ? 'Guardando…' : 'Guardar'}</Button>
         </div>
@@ -123,7 +156,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
             </Grid>
           </section>
 
-          {clinico && <>
+          {ficha && <>
             <section className="bloque">
               <h3>{esp.label}</h3>
               <CamposEspecialidad esp={clinica?.especialidad} valor={f.datos} onChange={set('datos')} />
@@ -143,6 +176,33 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado }) {
                 ))}
                 <Campo label="Procedimiento realizado / a realizar"><Textarea value={f.procedimiento} onChange={set('procedimiento')} rows={2} /></Campo>
               </div>
+            </section>
+
+            <section className="bloque">
+              <h3>Fotos y documentos de esta consulta</h3>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                <span style={{ fontSize: 13, color: C.g500 }}>Tipo:</span>
+                <select value={etapa} onChange={e => setEtapa(e.target.value)} style={{ padding: '8px 10px', borderRadius: 6, border: `1px solid ${C.g200}`, fontFamily: 'inherit', fontSize: 13.5, background: '#fff' }}>
+                  {ETAPAS_FOTO.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+                </select>
+              </div>
+              <BotonesSubir onArchivos={recibirArchivos} ocupado={subiendo ? `Subiendo ${subiendo} archivo(s)…` : ''} />
+              {(archivos.length > 0 || pendientes.length > 0) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10, marginTop: 14 }}>
+                  {archivos.map(a => (
+                    <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer" title={a.nombre || ''} style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.g200}`, height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', color: C.red, textDecoration: 'none' }}>
+                      {(a.mime || '').startsWith('image/') ? <img src={a.url} alt={a.nombre || 'Foto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ textAlign: 'center', fontSize: 11, color: C.g600, padding: 6 }}><Icon name="pdf" size={28} style={{ color: C.red, display: 'block', margin: '0 auto 4px' }} />{a.nombre}</span>}
+                    </a>
+                  ))}
+                  {pendientes.map((p, i) => (
+                    <div key={p.url} style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px dashed ${C.purple}`, height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
+                      {tipoArchivo(p.file).startsWith('image/') ? <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 11, color: C.g600, padding: 6, textAlign: 'center' }}><Icon name="pdf" size={28} style={{ color: C.red, display: 'block', margin: '0 auto 4px' }} />{p.file.name}</span>}
+                      <button type="button" title="Quitar" onClick={() => setPendientes(l => l.filter((_, j) => j !== i))} style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {pendientes.length > 0 && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 8 }}>Se subirán al guardar la cita.</div>}
             </section>
 
             <section className="bloque" style={{ background: C.g50 }}>

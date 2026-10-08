@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     const { data: c } = await db.from('clinicas').select('*').eq('id', p.clinica_id).single()
     if (!p.portal_activo) return json({ inactivo: true, clinica: marca(c) })
     const [{ data: citas }, { data: archivos }, { data: cobros }] = await Promise.all([
-      db.from('citas').select('id, fecha, hora, tipo, servicio, estado, peso, talla, datos, ficha, procedimiento').eq('paciente_id', p.id).eq('portal', true).order('fecha', { ascending: false }),
+      db.from('citas').select('id, fecha, hora, tipo, servicio, estado, peso, talla, datos, ficha, procedimiento, portal_ocultar').eq('paciente_id', p.id).eq('portal', true).order('fecha', { ascending: false }),
       db.from('archivos').select('id, cita_id, etapa, fecha, notas, path, mime').eq('paciente_id', p.id).eq('portal', true).order('fecha', { ascending: false }),
       p.portal_costos ? db.from('cobros').select('id, fecha, concepto, precio, descuento, pagado, vence').eq('paciente_id', p.id).order('fecha', { ascending: false }) : Promise.resolve({ data: [] }),
     ])
@@ -109,7 +109,17 @@ Deno.serve(async (req) => {
     return json({
       clinica: { ...marca(c), plantilla: c.plantilla_ficha },
       paciente: { nombre: p.nombre, datos },
-      citas: citas || [],
+      // each consultation without the parts the doctor chose to hide
+      citas: (citas || []).map(({ portal_ocultar, ...c }) => {
+        const ocultas: string[] = portal_ocultar || []
+        return {
+          ...c,
+          ficha: Object.fromEntries(Object.entries(c.ficha || {}).filter(([k]) => !ocultas.includes(k))),
+          datos: ocultas.includes('_datos') ? {} : c.datos,
+          peso: ocultas.includes('_datos') ? null : c.peso, talla: ocultas.includes('_datos') ? null : c.talla,
+          procedimiento: ocultas.includes('_procedimiento') ? null : c.procedimiento,
+        }
+      }),
       archivos: (archivos || []).map(({ path, ...a }) => ({ ...a, url: firmados[path] })),
       cobros: cobros || [],
     })

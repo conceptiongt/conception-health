@@ -69,7 +69,7 @@ export function Citas() {
   const sel = filtroStyle
   const btnMini = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px', height: 30, borderRadius: 7, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 400, color: C.g700, fontFamily: 'inherit' }
 
-  if (editando) return <CitaModal cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
+  if (editando) return <CitaModal soloCita cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
 
   return (
     <>

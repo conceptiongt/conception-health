@@ -18,7 +18,8 @@ import { CobroDetalle, AbonoModal, estadoDeCuenta, ESTADOS_COBRO, estadoCobro, P
 import { FiltroSede, nombreSede } from '../components/Filtros'
 import { toast } from '../components/ui/Toast'
 import { CompartirExpediente } from '../components/CompartirExpediente'
-import { Interruptor } from '../components/MensajePaciente'
+import { PortalCliente } from '../components/PortalCliente'
+import { BotonesSubir, subirArchivos } from '../components/SubirArchivos'
 import { TextoFormateado } from '../components/EditorTexto'
 import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro } from '../lib/ficha'
 import { puede } from '../lib/permisos'
@@ -30,6 +31,8 @@ export function Expedientes({ abrirId }) {
   const [sede, setSede] = useState('')
   const [buscar, setBuscar] = useState('')
   const [origen, setOrigen] = useState('')
+  const [red, setRed] = useState('')
+  const [contacto, setContacto] = useState('') // '' | 'telefono' | 'email' | 'sin'
 
   useEffect(() => { setAbierto(abrirId || null) }, [abrirId])
 
@@ -38,7 +41,9 @@ export function Expedientes({ abrirId }) {
 
   const q = buscar.trim().toLowerCase()
   const lista = pacientes
-    .filter(p => (!q || p.nombre.toLowerCase().includes(q) || (p.telefono || '').includes(q)) && (!origen || p.origen === origen) && (!sede || p.sede_id === sede))
+    .filter(p => (!q || [p.nombre, p.telefono, p.email, p.dpi].some(v => (v || '').toLowerCase().includes(q)))
+      && (!origen || p.origen === origen) && (!red || p.red === red) && (!sede || p.sede_id === sede)
+      && (!contacto || (contacto === 'telefono' ? !!p.telefono : contacto === 'email' ? !!p.email : !p.telefono && !p.email)))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   const hoy = hoyISO()
   const info = (p) => {
@@ -51,16 +56,17 @@ export function Expedientes({ abrirId }) {
 
   const preparar = () => ({
     titulo: 'Pacientes', subtitulo: `${lista.length} pacientes`,
-    secciones: [{ tabla: { headers: ['Paciente', 'Teléfono', 'Origen', 'Consultas', 'Última cita', 'Próxima cita', 'Saldo'],
-      filas: lista.map(p => { const i = info(p); return [p.nombre, p.telefono || '—', p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), i.consultas, i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—', fmtQ(i.deuda)] }) } }],
+    secciones: [{ tabla: { headers: ['Paciente', 'Teléfono', 'Correo', 'Origen', 'Consultas', 'Última cita', 'Próxima cita', ...(finanzas ? ['Saldo'] : [])],
+      filas: lista.map(p => { const i = info(p); return [p.nombre, p.telefono || '—', p.email || '—', p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), i.consultas, i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—', ...(finanzas ? [fmtQ(i.deuda)] : [])] }) } }],
     excel: { archivo: 'pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
-      { header: 'Paciente', key: 'n', width: 30 }, { header: 'Teléfono', key: 't', width: 14 }, { header: 'Origen', key: 'o', width: 15 },
+      { header: 'Paciente', key: 'n', width: 30 }, { header: 'Teléfono', key: 't', width: 14 }, { header: 'Correo', key: 'e', width: 28 }, { header: 'DPI', key: 'dpi', width: 16 }, { header: 'Origen', key: 'o', width: 15 },
       { header: 'Red social', key: 'r', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 }, { header: 'Registrado', key: 'reg', width: 12 },
       { header: 'Consultas', key: 'c', width: 10 }, { header: 'Última cita', key: 'u', width: 12 }, { header: 'Próxima cita', key: 'px', width: 12 },
-      { header: 'Saldo pendiente', key: 's', width: 15, moneda: true }, { header: 'Tipo de sangre', key: 'sg', width: 12 },
+      ...(finanzas ? [{ header: 'Saldo pendiente', key: 's', width: 15, moneda: true }] : []), { header: 'Tipo de sangre', key: 'sg', width: 12 },
+      { header: 'Contacto de emergencia', key: 'ce', width: 24 }, { header: 'Tel. emergencia', key: 'te', width: 15 },
       { header: 'Alergias', key: 'al', width: 25 }, { header: 'Enfermedades', key: 'en', width: 25 }, { header: 'Medicamentos', key: 'me', width: 25 },
     ], filas: lista.map(p => { const i = info(p); return {
-      n: p.nombre, t: p.telefono, o: origenLabel(p.origen), r: p.red, ref: p.referido_por, reg: p.created_at.slice(0, 10), c: i.consultas,
+      n: p.nombre, t: p.telefono, e: p.email, dpi: p.dpi, ce: p.contacto_emergencia, te: p.telefono_emergencia, o: origenLabel(p.origen), r: p.red, ref: p.referido_por, reg: p.created_at.slice(0, 10), c: i.consultas,
       u: i.ultima?.fecha, px: i.proxima?.fecha, s: i.deuda, sg: p.tipo_sangre, al: p.alergias, en: p.enfermedades, me: p.medicamentos,
     } }) }] },
   })
@@ -73,8 +79,12 @@ export function Expedientes({ abrirId }) {
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por nombre o teléfono…" style={{ ...sel, flex: '1 1 240px' }} />
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por nombre, teléfono, correo o DPI…" style={{ ...sel, flex: '1 1 240px' }} />
         <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        <select value={red} onChange={e => setRed(e.target.value)} style={sel}><option value="">Toda red social</option>{REDES.map(r => <option key={r}>{r}</option>)}</select>
+        <select value={contacto} onChange={e => setContacto(e.target.value)} style={sel}>
+          <option value="">Con o sin contacto</option><option value="telefono">Con teléfono</option><option value="email">Con correo</option><option value="sin">Sin teléfono ni correo</option>
+        </select>
       </div>
       <div style={{ marginBottom: 14 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
       {pacientes.length === 0 ? (
@@ -98,8 +108,8 @@ export function Expedientes({ abrirId }) {
 }
 
 const TABS = [
-  { value: 'ficha', label: 'Ficha del paciente', icono: 'estetoscopio' },
   { value: 'consultas', label: 'Consultas', icono: 'citas' },
+  { value: 'ficha', label: 'Ficha del paciente', icono: 'estetoscopio' },
   { value: 'archivos', label: 'Fotos y documentos', icono: 'camara' },
   { value: 'cobros', label: 'Cobros', icono: 'cartera', permiso: 'finanzas' },
   { value: 'productos', label: 'Productos usados', icono: 'caja', inventario: true },
@@ -109,7 +119,8 @@ function Expediente({ paciente, onVolver }) {
   const { citas, cobros, clinica, perfil, recargar, acc, sedes } = useDatos()
   const clinico = puede(perfil, 'expedientes')
   const finanzas = puede(perfil, 'finanzas')
-  const [tab, setTab] = useState(clinico ? 'ficha' : 'consultas')
+  const [tab, setTab] = useState('consultas')
+  const [portal, setPortal] = useState(false)
   const [citaAbierta, setCitaAbierta] = useState(undefined) // undefined: list, null: new, object: edit
   const [editando, setEditando] = useState(false)
   const [compartir, setCompartir] = useState(undefined) // undefined: closed, null: whole file, cita: one consultation
@@ -143,6 +154,8 @@ function Expediente({ paciente, onVolver }) {
 
   if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={async (r) => { setCitaAbierta(undefined); if (r?.pacienteEliminado) { await recargar(); onVolver() } else recargar() }} />
 
+  if (portal && archivos) return <PortalCliente paciente={paciente} citas={misCitas} archivos={archivos} onVolver={() => setPortal(false)} onCambio={recargar} onArchivos={cargarArchivos} />
+
   const totalPrecio = misCobros.reduce((n, c) => n + totalCobro(c), 0)
   const totalPagado = misCobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
   const anios = edad(paciente.fecha_nacimiento)
@@ -151,12 +164,11 @@ function Expediente({ paciente, onVolver }) {
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
       <Encabezado titulo={paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+        {clinico && <Button size="sm" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
         {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
         <Button variant="ghost" size="sm" onClick={() => setEditando(true)} icon="editar">Editar ficha</Button>
         {puede(perfil, 'eliminar') && <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar</Button>}
       </Encabezado>
-
-      {clinico && <PortalBarra paciente={paciente} citas={misCitas} archivos={archivos || []} finanzas={finanzas} onCambio={recargar} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 16 }}>
         <Stat label="Consultas" valor={misCitas.length} />
@@ -176,53 +188,6 @@ function Expediente({ paciente, onVolver }) {
       {editando && <PacienteModal paciente={paciente} onClose={() => setEditando(false)} onGuardado={() => { setEditando(false); recargar() }} />}
       {compartir !== undefined && archivos && <CompartirExpediente paciente={paciente} citas={misCitas} cobros={misCobros} archivos={archivos} citaInicial={compartir} onClose={() => setCompartir(undefined)} />}
     </>
-  )
-}
-
-// ─── Patient portal: publish switch, link and what the patient can see ───
-function PortalBarra({ paciente, citas, archivos, finanzas, onCambio }) {
-  const [abierto, setAbierto] = useState(false)
-  const enPortal = citas.filter(c => c.portal).length, archivosPortal = archivos.filter(a => a.portal).length
-  const cambiar = async (campos, aviso) => {
-    const { error } = await supabase.from('pacientes').update(campos).eq('id', paciente.id)
-    if (error) { toast.error('No se pudo guardar'); return }
-    if (aviso) toast.success(aviso)
-    onCambio()
-  }
-  const link = urlPortal(paciente)
-  const wa = linkWhatsApp(paciente.telefono, `Hola ${paciente.nombre.split(' ')[0]} 👋\n\nEn este enlace puede ver su expediente, sus indicaciones y documentos cuando lo necesite:\n${link}`)
-  const chip = (activo, campo, texto) => (
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-      <Interruptor activo={activo} onChange={(v) => cambiar({ [campo]: v })} />{texto}
-    </label>
-  )
-  return (
-    <div style={{ background: paciente.portal_activo ? C.purpleMid : '#fff', border: `1px solid ${paciente.portal_activo ? 'transparent' : C.line}`, borderRadius: 18, padding: '12px 16px', marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <Icon name="ojo" size={18} style={{ color: C.purple }} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>Portal del paciente {paciente.portal_activo ? '· publicado' : '· sin publicar'}</div>
-          <div style={{ fontSize: 12.5, color: C.g500 }}>Ve {enPortal} {enPortal === 1 ? 'consulta' : 'consultas'} y {archivosPortal} {archivosPortal === 1 ? 'archivo' : 'archivos'} marcados con «Portal»{paciente.portal_datos ? ', sus datos' : ''}{paciente.portal_costos ? ' y sus costos' : ''}.</div>
-        </div>
-        <Button size="sm" variant="texto" onClick={() => setAbierto(!abierto)}>{abierto ? 'Ocultar opciones' : 'Opciones'}</Button>
-        <Button size="sm" variant={paciente.portal_activo ? 'ghost' : undefined} icon={paciente.portal_activo ? 'cerrar' : 'check'}
-          onClick={() => cambiar({ portal_activo: !paciente.portal_activo }, paciente.portal_activo ? 'El portal ya no es visible para el paciente' : 'Portal publicado: el paciente ya puede verlo')}>
-          {paciente.portal_activo ? 'Dejar de mostrar' : 'Mostrar en portal del paciente'}
-        </Button>
-      </div>
-      {abierto && (
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
-          {chip(paciente.portal_datos, 'portal_datos', 'Datos y antecedentes')}
-          {finanzas && chip(paciente.portal_costos, 'portal_costos', 'Costos y saldos')}
-          <span style={{ fontSize: 12.5, color: C.g400 }}>Cada consulta, foto y documento tiene su propio botón «Portal».</span>
-          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
-            <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(link); toast.success('Enlace copiado') }}>Copiar enlace</Button>
-            {wa && <Button size="sm" variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
-            <Button size="sm" variant="ghost" icon="ojo" onClick={() => window.open(link, '_blank', 'noopener')}>Ver como paciente</Button>
-          </div>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -358,10 +323,6 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
   const { sedes, clinica } = useDatos()
   const [abiertas, setAbiertas] = useState(() => new Set(citas.slice(0, 1).map(c => c.id)))
   const alternar = (id) => setAbiertas(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const portal = async (c, v) => {
-    const { error } = await supabase.from('citas').update({ portal: v }).eq('id', c.id)
-    if (error) toast.error('No se pudo guardar'); else onCambio()
-  }
   return (
     <Card title={`Consultas (${citas.length})`} right={<Button size="sm" onClick={() => onAbrir(null)} icon="mas">Nueva cita</Button>}>
       {citas.length === 0 ? <div style={{ color: C.g400 }}>Sin consultas registradas</div> : (
@@ -385,7 +346,7 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
                     {secciones.length > 0 && <span style={{ fontSize: 12, color: C.g400 }}>{secciones.map(s => s.titulo).slice(0, 3).join(' · ')}{secciones.length > 3 ? '…' : ''}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={ev => ev.stopPropagation()}>
-                    {clinico && <label title="Mostrar en el portal del paciente" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, cursor: 'pointer', marginRight: 4 }}><Interruptor activo={c.portal} onChange={(v) => portal(c, v)} />Portal</label>}
+                    {clinico && c.portal && <span title="Se muestra en el portal del cliente" style={{ display: 'inline-flex', marginRight: 4 }}><Badge color={C.purpleDark} bg={C.purpleMid}>En portal</Badge></span>}
                     {clinico && <Button size="sm" variant="texto" icon="compartir" title="Imprimir o compartir esta consulta" onClick={() => onCompartir(c)} />}
                     <Button size="sm" variant="ghost" icon="editar" onClick={() => onAbrir(c)}>Abrir</Button>
                     {contenido && <Icon name={abierta ? 'arriba' : 'abajo'} size={17} style={{ color: C.g400, cursor: 'pointer' }} />}
@@ -422,28 +383,10 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
   const [citaId, setCitaId] = useState('')
   const [ver, setVer] = useState(null)
 
-  const subir = async (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (!files.length) return
-    const malos = files.filter(f => !(f.type.startsWith('image/') || f.type === 'application/pdf'))
-    if (malos.length) { toast.error('Solo se aceptan fotos o archivos PDF'); return }
-    if (files.some(f => f.size > 25 * 1024 * 1024)) { toast.error('Cada archivo debe pesar menos de 25 MB'); return }
+  const subir = async (files) => {
     setSubiendo(files.length)
-    let errores = 0
-    for (const file of files) {
-      const ext = file.type === 'application/pdf' ? 'pdf' : ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg')
-      const path = `${clinicaId}/${paciente.id}/${crypto.randomUUID()}.${ext}`
-      const { error } = await supabase.storage.from('expedientes').upload(path, file, { contentType: file.type })
-      if (!error) {
-        const { error: e2 } = await supabase.from('archivos').insert({
-          clinica_id: clinicaId, paciente_id: paciente.id, cita_id: citaId || null, etapa, fecha, notas: notas.trim() || null, path, mime: file.type,
-          nombre: file.name.replace(/[<>]/g, '').slice(0, 200),
-        })
-        if (e2) { errores++; await supabase.storage.from('expedientes').remove([path]) }
-      } else errores++
-      setSubiendo(n => n - 1)
-    }
+    const errores = await subirArchivos(files, { clinicaId, pacienteId: paciente.id, citaId: citaId || null, etapa, fecha, notas: notas.trim() || null })
+    setSubiendo(0)
     if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`)
     else toast.success(files.length === 1 ? 'Archivo guardado' : 'Archivos guardados')
     setNotas('')
@@ -458,10 +401,6 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
     setVer(null)
     onCambio()
   }
-  const portal = async (a, v) => {
-    const { error } = await supabase.from('archivos').update({ portal: v }).eq('id', a.id)
-    if (error) toast.error('No se pudo guardar'); else onCambio()
-  }
   const esImagen = (a) => (a.mime || '').startsWith('image/')
 
   return (
@@ -473,11 +412,8 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
           <Campo label="Consulta (opcional)"><Select value={citaId} onChange={setCitaId}><option value="">—</option>{citas.map(c => <option key={c.id} value={c.id}>{fmtFechaCorta(c.fecha)} · {c.tipo || 'Consulta'}</option>)}</Select></Campo>
           <Campo label="Descripción (opcional)"><Input value={notas} onChange={setNotas} placeholder="Ej. Radiografía de tórax" maxLength={200} /></Campo>
         </Grid>
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: 18, borderRadius: 16, border: `2px dashed ${C.g300}`, background: C.g50, cursor: subiendo ? 'default' : 'pointer', fontWeight: 600, color: subiendo ? C.purple : C.g600, textAlign: 'center' }}>
-          <input type="file" accept="image/*,application/pdf" multiple onChange={subir} disabled={!!subiendo} style={{ display: 'none' }} />
-          <Icon name="subir" size={18} />{subiendo ? `Subiendo ${subiendo} archivo(s)…` : 'Elegir fotos o PDF (estudios, radiografías, laboratorios…)'}
-        </label>
-        <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>Se guardan en la nube de forma privada: solo su consultorio puede verlos, desde cualquier dispositivo. El paciente solo ve los que usted marque con «Portal».</div>
+        <div style={{ marginTop: 14 }}><BotonesSubir onArchivos={subir} ocupado={subiendo ? `Subiendo ${subiendo} archivo(s)…` : ''} texto="Elegir fotos o PDF (estudios, radiografías, laboratorios…)" /></div>
+        <div style={{ fontSize: 12, color: C.g400, marginTop: 6 }}>Se guardan en la nube de forma privada: solo su consultorio puede verlos, desde cualquier dispositivo. El paciente solo ve los que usted elija en «Portal del cliente».</div>
       </Card>
 
       {!archivos ? <Cargando /> : ETAPAS_FOTO.map(et => {
@@ -495,7 +431,7 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
                   </button>
                   <div style={{ padding: '7px 9px', fontSize: 12, color: C.g600, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtFechaCorta(a.fecha)}{a.notas ? ` · ${a.notas}` : ''}</span>
-                    <label title="Mostrar en el portal del paciente" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}><Interruptor activo={a.portal} onChange={(v) => portal(a, v)} /></label>
+                    {a.portal && <span title="Se muestra en el portal del cliente" style={{ fontSize: 11, color: C.purpleDark, fontWeight: 600 }}>Portal</span>}
                   </div>
                 </div>
               ))}
@@ -511,7 +447,7 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
             ? <img src={ver.url} alt={ver.notas || 'Foto del expediente'} style={{ width: '100%', borderRadius: 16 }} />
             : <iframe src={ver.url} title={ver.nombre || 'Documento'} style={{ width: '100%', height: '70vh', border: `1px solid ${C.line}`, borderRadius: 12 }} />}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, marginRight: 'auto', cursor: 'pointer' }}><Interruptor activo={ver.portal} onChange={(v) => { portal(ver, v); setVer({ ...ver, portal: v }) }} />Mostrar en el portal del paciente</label>
+            <span style={{ marginRight: 'auto' }} />
             <Button variant="ghost" onClick={() => window.open(ver.url, '_blank', 'noopener')} icon="descargar">Abrir / descargar</Button>
             <Button variant="danger" onClick={() => borrar(ver)} icon="eliminar">Eliminar</Button>
           </div>

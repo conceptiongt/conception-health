@@ -125,3 +125,4 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .form-grande input, .form-grande select, .form-grande textarea { font-size: 16.5px !important; padding: 13px 14px !important; }
 .form-grande label { font-size: 15px !important; }
 @media (max-width: 700px) { .solo-escritorio { display: none; } }
+.cita-dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; align-items: start; }

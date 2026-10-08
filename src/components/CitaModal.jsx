@@ -123,6 +123,37 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   }
 
   const citaActual = { ...cita, ...f, id: cita?.id, ficha: fichaLimpia() }
+  // measurements + patient summary: under the appointment data when editing from Citas, on the side in the patient file
+  const medidasPaciente = (
+    <>
+          <section className="bloque">
+            <h3>Medidas</h3>
+            <Grid min={110}>
+              <Campo label="Peso (kg)"><Input type="number" step="0.1" value={f.peso} onChange={set('peso')} /></Campo>
+              <Campo label="Talla (cm)"><Input type="number" step="0.1" value={f.talla} onChange={set('talla')} /></Campo>
+            </Grid>
+            {Number(f.peso) > 0 && Number(f.talla) > 0 && <div style={{ fontSize: 13, color: C.g500, marginTop: 10 }}>IMC: <strong style={{ color: C.black, fontWeight: 500 }}>{(Number(f.peso) / (Number(f.talla) / 100) ** 2).toFixed(1)}</strong></div>}
+          </section>
+          <section className="bloque">
+            <h3>Paciente</h3>
+            <div style={{ fontSize: 13.5, color: C.g600, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {paciente?.telefono && <span>{paciente.telefono}</span>}
+              {paciente?.alergias && <span style={{ color: C.red }}>Alergias: {paciente.alergias}</span>}
+              {finanzas && <span>Saldo pendiente: <strong style={{ color: deuda > 0 ? C.red : C.green, fontWeight: 500 }}>{fmtQ(deuda)}</strong></span>}
+            </div>
+            {anteriores.length > 0 && <>
+              <div style={{ fontSize: 12.5, color: C.g400, margin: '14px 0 6px' }}>Citas anteriores</div>
+              {anteriores.map(c => { const e = estadoCita(c.estado); return (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: `1px solid ${C.g100}`, fontSize: 13 }}>
+                  <span style={{ width: 78, color: C.g500 }}>{fmtFechaCorta(c.fecha)}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.tipo || 'Consulta'}</span>
+                  <Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                </div>
+              ) })}
+            </>}
+          </section>
+    </>
+  )
 
   return (
     <div>
@@ -156,6 +187,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
             </Grid>
           </section>
 
+          {!ficha && <div className="cita-dos">{medidasPaciente}</div>}
           {ficha && <>
             <section className="bloque">
               <h3>{esp.label}</h3>
@@ -228,32 +260,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
             <h3>Mensaje para el paciente</h3>
             <MensajePaciente paciente={paciente} cita={citaActual} precio={precio} compacto />
           </section>
-          <section className="bloque">
-            <h3>Medidas</h3>
-            <Grid min={110}>
-              <Campo label="Peso (kg)"><Input type="number" step="0.1" value={f.peso} onChange={set('peso')} /></Campo>
-              <Campo label="Talla (cm)"><Input type="number" step="0.1" value={f.talla} onChange={set('talla')} /></Campo>
-            </Grid>
-            {Number(f.peso) > 0 && Number(f.talla) > 0 && <div style={{ fontSize: 13, color: C.g500, marginTop: 10 }}>IMC: <strong style={{ color: C.black, fontWeight: 500 }}>{(Number(f.peso) / (Number(f.talla) / 100) ** 2).toFixed(1)}</strong></div>}
-          </section>
-          <section className="bloque">
-            <h3>Paciente</h3>
-            <div style={{ fontSize: 13.5, color: C.g600, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {paciente?.telefono && <span>{paciente.telefono}</span>}
-              {paciente?.alergias && <span style={{ color: C.red }}>Alergias: {paciente.alergias}</span>}
-              {finanzas && <span>Saldo pendiente: <strong style={{ color: deuda > 0 ? C.red : C.green, fontWeight: 500 }}>{fmtQ(deuda)}</strong></span>}
-            </div>
-            {anteriores.length > 0 && <>
-              <div style={{ fontSize: 12.5, color: C.g400, margin: '14px 0 6px' }}>Citas anteriores</div>
-              {anteriores.map(c => { const e = estadoCita(c.estado); return (
-                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: `1px solid ${C.g100}`, fontSize: 13 }}>
-                  <span style={{ width: 78, color: C.g500 }}>{fmtFechaCorta(c.fecha)}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.tipo || 'Consulta'}</span>
-                  <Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
-                </div>
-              ) })}
-            </>}
-          </section>
+          {ficha && medidasPaciente}
         </aside>
       </div>
       {compartir && <CompartirExpediente paciente={paciente} citas={citas.filter(c => c.paciente_id === paciente.id).map(c => c.id === cita.id ? citaActual : c)} citaInicial={cita} onClose={() => setCompartir(false)} />}

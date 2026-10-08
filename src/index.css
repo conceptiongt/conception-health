@@ -63,7 +63,7 @@ button { transition: background-color .15s, border-color .15s, color .15s; }
 @media print {
   @page { size: letter; margin: 14mm; }
   html, body { background: #fff !important; }
-  #root { display: none !important; }
+  #root, body > *:not(.print-only) { display: none !important; }
   .print-only { display: block !important; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

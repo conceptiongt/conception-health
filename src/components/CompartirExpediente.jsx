@@ -13,7 +13,7 @@ import { Button } from './ui/Button'
 import { Input } from './ui/Campos'
 import { toast } from './ui/Toast'
 import { SelectorPeriodo, RangoFechas, enPeriodo } from './Filtros'
-import { DocumentoPaciente, armarPartes, generarPdf, Fuera } from './DocumentoPaciente'
+import { DocumentoPaciente, armarPartes, generarPdf, Fuera, verPdf, Imprimir } from './DocumentoPaciente'
 
 const puedeCompartirArchivo = () => {
   try { return !!navigator.canShare?.({ files: [new File(['x'], 'x.pdf', { type: 'application/pdf' })] }) } catch { return false }
@@ -53,24 +53,10 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
   const archivo = `${slug(titulo || 'expediente')}_${slug(paciente.nombre)}.pdf`
 
   const pdf = async () => generarPdf(refDoc.current.firstChild, archivo)
-  const descargar = async () => {
-    setBusy('descargar')
-    try {
-      const f = await pdf()
-      const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = archivo; a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href), 30000)
-      toast.success('PDF descargado')
-    } catch { toast.error('No se pudo generar el PDF') }
-    setBusy('')
-  }
-  const imprimir = async () => {
-    const w = window.open('', '_blank') // opened right away so the browser does not block it
-    setBusy('imprimir')
-    try {
-      const f = await pdf()
-      if (w) w.location = URL.createObjectURL(f)
-      else toast.error('Permita las ventanas emergentes para imprimir')
-    } catch { w?.close(); toast.error('No se pudo generar el PDF') }
+  const [imprimiendo, setImprimiendo] = useState(false)
+  const abrirPdf = async () => {
+    setBusy('pdf')
+    try { await verPdf(pdf, titulo) } catch { toast.error('No se pudo generar el PDF') }
     setBusy('')
   }
   // WhatsApp: the PDF is saved privately and the patient gets a short link (valid 30 days); on phones the file itself can also be sent
@@ -175,10 +161,11 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
       <Input value={titulo} onChange={setTitulo} maxLength={80} />
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 20 }}>
-        <Button variant="ghost" icon="descargar" onClick={descargar} disabled={!!busy || nada}>{busy === 'descargar' ? 'Generando…' : 'Descargar PDF'}</Button>
-        <Button variant="ghost" icon="imprimir" onClick={imprimir} disabled={!!busy || nada}>{busy === 'imprimir' ? 'Generando…' : 'Imprimir'}</Button>
+        <Button variant="ghost" icon="pdf" onClick={abrirPdf} disabled={!!busy || nada} title="Se abre en otra ventana, desde donde puede descargarlo">{busy === 'pdf' ? 'Generando…' : 'Ver PDF'}</Button>
+        <Button variant="ghost" icon="imprimir" onClick={() => setImprimiendo(true)} disabled={!!busy || nada || imprimiendo}>Imprimir</Button>
         <Button icon="mensaje" onClick={preparar} disabled={!!busy || nada}>{busy === 'whatsapp' ? 'Preparando…' : 'Compartir por WhatsApp'}</Button>
       </div>
+      {imprimiendo && <Imprimir onListo={() => setImprimiendo(false)}><DocumentoPaciente impresion marca={marca} titulo={titulo} subtitulo={fmtFechaCorta(new Date().toISOString())} paciente={paciente} partes={partes} /></Imprimir>}
       <Fuera refEl={refDoc}><DocumentoPaciente marca={marca} titulo={titulo} subtitulo={fmtFechaCorta(new Date().toISOString())} paciente={paciente} partes={partes} /></Fuera>
     </Modal>
   )

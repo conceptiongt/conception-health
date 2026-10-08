@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { COLOR_BASE, mezclar, valido } from '../lib/theme'
 import { iniciales } from '../lib/marca'
@@ -10,7 +11,7 @@ const INK = '#1C1C1E', MUTED = '#5F6172', LINE = '#E3E1DB', SOFT = '#F7F6F3'
 
 // A4 document (794 px wide) of a patient's file with exactly what was chosen; used for the PDF, print and the portal.
 // marca = { nombre, color, logo }, partes = { datos, antecedentes, consultas: [{ cita, secciones: [{ titulo, html }], datosClinicos }], fotos: [{ src, pie }], documentos: [{ nombre }], cobros: [] }
-export function DocumentoPaciente({ marca, titulo, subtitulo, paciente, partes }) {
+export function DocumentoPaciente({ marca, titulo, subtitulo, paciente, partes, impresion }) {
   const acento = valido(marca?.color) ? marca.color : COLOR_BASE
   const tenue = mezclar(acento, '#FFFFFF', 0.9)
   const hoy = new Date().toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -34,7 +35,7 @@ export function DocumentoPaciente({ marca, titulo, subtitulo, paciente, partes }
   const totalC = cobros.reduce((n, c) => n + totalCobro(c), 0), pagadoC = cobros.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
 
   return (
-    <div style={{ width: 794, padding: '40px 48px', boxSizing: 'border-box', background: '#fff', fontFamily: "'Poppins', -apple-system, sans-serif", color: INK, fontSize: 12.5, lineHeight: 1.55 }}>
+    <div style={{ width: impresion ? '100%' : 794, padding: impresion ? 0 : '40px 48px', boxSizing: 'border-box', background: '#fff', fontFamily: "'Poppins', -apple-system, sans-serif", color: INK, fontSize: 12.5, lineHeight: 1.55 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 16, borderBottom: `2px solid ${acento}` }}>
         {marca?.logo
           ? <img src={marca.logo} alt="" crossOrigin="anonymous" style={{ height: 56, maxWidth: 190, objectFit: 'contain' }} />
@@ -159,4 +160,29 @@ export async function generarPdf(elemento, nombreArchivo) {
 // Off-screen holder for the document while the PDF is generated
 export function Fuera({ children, refEl }) {
   return createPortal(<div ref={refEl} style={{ position: 'fixed', left: -10000, top: 0, width: 794, zIndex: -1 }}>{children}</div>, document.body)
+}
+
+// Opens the PDF in a new window (the browser's viewer has its own download and print buttons).
+// The window is opened at the click, before generating, so the browser does not block it.
+export async function verPdf(generar, titulo = 'Documento') {
+  const w = window.open('', '_blank')
+  if (w) { w.document.title = titulo; w.document.body.style.cssText = 'font-family:sans-serif;padding:40px;color:#555'; w.document.body.textContent = 'Preparando el PDF…' }
+  try {
+    const f = await generar()
+    const url = URL.createObjectURL(f)
+    if (w) w.location.href = url
+    else { const a = document.createElement('a'); a.href = url; a.download = f.name; a.click() } // pop-ups blocked: download instead
+  } catch (e) { w?.close(); throw e }
+}
+
+// Shows the document only to the printer and opens the print dialog once its images have loaded
+export function Imprimir({ children, onListo }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const imgs = [...(ref.current?.querySelectorAll('img') || [])]
+    Promise.all(imgs.map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r }))).then(() => {
+      setTimeout(() => { window.print(); onListo() }, 200)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return createPortal(<div ref={ref} className="print-only">{children}</div>, document.body)
 }

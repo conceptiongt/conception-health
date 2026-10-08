@@ -6,12 +6,14 @@ import { descargarExcel } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
 import { urlLogo, iniciales } from '../lib/marca'
 import { COLOR_BASE, mezclar, valido } from '../lib/theme'
+import { generarPdf, verPdf } from './DocumentoPaciente'
+import { slug } from '../lib/excel'
 
 const INK = '#1C1C1E', MUTED = '#6B6963', LINE = '#E3E1DB', SOFT = '#F7F6F3'
 
 // Formal printable document in the clinic's own brand (logo + color). Only visible when printing (.print-only).
 // secciones: [{ titulo, tabla: { headers, filas } } | { titulo, pares: [[label, valor]] } | { titulo, texto } | { titulo, imagenes } | { resumen: [[label, valor]] }]
-function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onReady }) {
+function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onReady, refPdf }) {
   const { clinica } = useDatos() || {}
   const logo = urlLogo(clinica)
   const acento = valido(clinica?.color) ? clinica.color : COLOR_BASE
@@ -19,8 +21,12 @@ function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onRea
   const nombre = clinica?.nombre || nombreClinica
   const hoy = new Date().toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
   useEffect(() => { if (!logo) onReady?.() }, [logo, onReady])
-  return createPortal(
-    <div className="print-only" style={{ fontFamily: "'Poppins', -apple-system, sans-serif", color: INK, fontSize: 10.5, lineHeight: 1.5 }}>
+  // refPdf: rendered off-screen at A4 width to build the PDF; otherwise only visible to the printer
+  const contenedor = refPdf
+    ? (c) => <div ref={refPdf} style={{ position: 'fixed', left: -10000, top: 0, width: 794, zIndex: -1 }}><div style={{ width: 794, padding: '40px 44px', boxSizing: 'border-box', background: '#fff' }}>{c}</div></div>
+    : (c) => <div className="print-only">{c}</div>
+  return createPortal(contenedor(
+    <div style={{ fontFamily: "'Poppins', -apple-system, sans-serif", color: INK, fontSize: 10.5, lineHeight: 1.5 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 14, borderBottom: `1px solid ${LINE}` }}>
         {logo
           ? <img src={logo} alt="" onLoad={onReady} onError={onReady} style={{ height: 48, maxWidth: 170, objectFit: 'contain' }} />
@@ -91,16 +97,20 @@ function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onRea
         <span>{nombre} · Documento confidencial</span>
         <span>Generado el {hoy}</span>
       </div>
-    </div>,
+    </div>),
     document.body,
   )
 }
 
-// "Excel" + "PDF / Imprimir" buttons. `preparar()` returns { titulo, subtitulo, secciones, excel: { hojas, archivo } } (may be async)
+// "Excel", "Ver PDF" (opens in another window, where it can be downloaded) and "Imprimir" buttons.
+// `preparar()` returns { titulo, subtitulo, secciones, excel: { hojas, archivo } } (may be async)
 export function Exportar({ clinica, preparar, size = 'sm' }) {
   const [doc, setDoc] = useState(null)
+  const [pdf, setPdf] = useState(null) // document being turned into a PDF
   const [busy, setBusy] = useState(false)
   const printed = useRef(false)
+  const refPdf = useRef(null)
+  const esperaPdf = useRef(null)
 
   const excel = async () => {
     setBusy(true)
@@ -126,12 +136,26 @@ export function Exportar({ clinica, preparar, size = 'sm' }) {
     // give images a moment to load before opening the print dialog
     setTimeout(() => { window.print(); setDoc(null) }, 400)
   }
+  const verEnPdf = async () => {
+    setBusy(true)
+    try {
+      await verPdf(async () => {
+        const d = await preparar()
+        await new Promise(r => { esperaPdf.current = r; setPdf(d) }) // wait until the document is on the page
+        return generarPdf(refPdf.current.firstChild, `${slug(d.titulo || 'documento')}.pdf`)
+      }, 'PDF')
+    } catch { toast.error('No se pudo generar el PDF') }
+    setPdf(null); setBusy(false)
+  }
+  useEffect(() => { if (pdf && refPdf.current) esperaPdf.current?.() }, [pdf])
 
   return (
     <>
       <Button variant="ghost" size={size} onClick={excel} disabled={busy} icon="excel">Excel</Button>
-      <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} title="Se abre la ventana de impresión; elija 'Guardar como PDF' para descargarlo" icon="imprimir">PDF / Imprimir</Button>
+      <Button variant="ghost" size={size} onClick={verEnPdf} disabled={busy} title="Se abre en otra ventana, desde donde puede descargarlo" icon="pdf">Ver PDF</Button>
+      <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} icon="imprimir">Imprimir</Button>
       {doc && <Documento clinica={clinica} titulo={doc.titulo} subtitulo={doc.subtitulo} secciones={doc.secciones} onReady={onReady} />}
+      {pdf && <Documento clinica={clinica} titulo={pdf.titulo} subtitulo={pdf.subtitulo} secciones={pdf.secciones} refPdf={refPdf} />}
     </>
   )
 }

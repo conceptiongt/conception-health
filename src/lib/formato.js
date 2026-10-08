@@ -42,16 +42,18 @@ export function linkCalendar(paciente, cita) {
 // extras: { pago: { monto, pct, link }, formulario: url }
 export function mensajeConfirmacion(paciente, cita, clinica, extras = {}) {
   const { pago, formulario } = extras
-  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}\n⏰ Hora: ${fmtHora(cita.hora)}${cita.tipo ? `\n🩺 ${cita.tipo}` : ''}`
+  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}${cita.hora ? `\n⏰ Hora: ${fmtHora(cita.hora)}` : ''}${cita.tipo ? `\n🏥 ${cita.tipo}` : ''}`
     + (pago ? `\n\n💳 Para reservar su cita, realice el anticipo de ${fmtQ(pago.monto)} (${pago.pct}%) en este enlace:\n${pago.link}` : '')
     + (formulario ? `\n\n📝 Antes de su cita, por favor llene sus datos aquí (toma 3 minutos):\n${formulario}` : '')
     + `\n\nSi necesita reprogramar, por favor avísenos con anticipación. ¡Le esperamos!`
 }
 
-// wa.me link; Guatemala numbers without country code get +502
+// WhatsApp link; Guatemala numbers without country code get +502.
+// api.whatsapp.com/send keeps emojis intact (the wa.me redirect turns them into "?" on some computers)
+export const linkWhatsAppSinNumero = (texto) => `https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`
 export function linkWhatsApp(telefono, texto) {
   const digitos = (telefono || '').replace(/\D/g, '')
   if (!digitos) return null
   const numero = digitos.length === 8 ? `502${digitos}` : digitos
-  return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(texto)}`
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { fmtQ, mensajeConfirmacion, linkWhatsApp, linkCalendar } from '../lib/formato'
@@ -33,6 +33,8 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
       setToken(nuevo); recargar()
     }
   }
+  // the form switch starts on for patients who have not filled their data: create their link right away
+  useEffect(() => { if (formulario && !token) activarFormulario(true) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const guardarPago = (v, p = pct) => { // remember the choice on the appointment
     if (cita.id) supabase.from('citas').update({ link_pago: v, anticipo_pct: p }).eq('id', cita.id).then(() => {})
   }

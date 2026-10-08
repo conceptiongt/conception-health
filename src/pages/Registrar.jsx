@@ -6,7 +6,7 @@ import { tiposDe } from '../lib/especialidades'
 import { puede } from '../lib/permisos'
 import { urlRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
-import { hoyISO, fmtFecha, fmtHora, fmtQ } from '../lib/formato'
+import { hoyISO, fmtFecha, fmtHora, fmtQ, linkWhatsAppSinNumero } from '../lib/formato'
 import { useDatos, mensajeError } from '../hooks/useDatos'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
@@ -149,7 +149,7 @@ function EnlaceRegistro({ token }) {
         <div style={{ fontSize: 12.5, color: C.g600 }}>Envíele el enlace de registro; aparecerá en su lista de pacientes con sus antecedentes.</div>
       </div>
       <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(link); toast.success('Enlace copiado') }}>Copiar enlace</Button>
-      <Button size="sm" icon="mensaje" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener')}>Enviar por WhatsApp</Button>
+      <Button size="sm" icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(msg), '_blank', 'noopener')}>Enviar por WhatsApp</Button>
     </div>
   )
 }

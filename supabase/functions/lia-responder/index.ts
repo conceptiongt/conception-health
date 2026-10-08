@@ -520,7 +520,7 @@ async function bajarFoto(mediaId: string) {
   if (!r.ok) return undefined
   return { media_type: meta.mime_type as string, data: encodeBase64(new Uint8Array(await r.arrayBuffer())) }
 }
-const planConLia = (c: any) => ['max', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
+const planConLia = (c: any) => ['ultra', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
 function textoDe(m: any) {
   if (m.type === 'text') return m.text?.body || ''
   if (m.type === 'image') return m.image?.caption || ''

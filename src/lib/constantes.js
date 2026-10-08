@@ -24,6 +24,9 @@ export const origenLabel = (v) => ORIGENES.find(o => o.value === v)?.label || '�
 
 export const REDES = ['Instagram', 'Facebook', 'TikTok', 'WhatsApp', 'LinkedIn']
 
+// Blood types offered in every form (patients often do not know theirs)
+export const TIPOS_SANGRE = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'No lo sé']
+
 export const METODOS_PAGO = ['Efectivo', 'Tarjeta', 'Transferencia', 'Depósito', 'Otro']
 
 export const ETAPAS_FOTO = [
@@ -76,6 +79,9 @@ export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
 
 // Lía is being finished on its own; until then the menu shows a "coming soon" page
 export const LIA_DISPONIBLE = false
+// Accounts that already see Lía while it is being finished (Conception's own test clinic)
+const LIA_PREVIA = ['5a6ec316-ad70-4468-8812-539eebc5a4e6']
+export const liaVisible = (clinica) => LIA_DISPONIBLE || LIA_PREVIA.includes(clinica?.id)
 
 // What each account can open: Health (patients, files, charges, reports), inventory and/or Lía
 // (inventory is also enforced by the database: `inventario_habilitado()`)
@@ -85,7 +91,7 @@ export function accesos(clinica, planActivo) {
     prueba: !planActivo,
     health: !planActivo || plan !== 'lia',
     inventario: !planActivo || plan === 'max' || plan === 'ultra',
-    lia: LIA_DISPONIBLE && (plan === 'ultra' || plan === 'lia'),
+    lia: liaVisible(clinica) && (plan === 'ultra' || plan === 'lia'),
   }
 }
 

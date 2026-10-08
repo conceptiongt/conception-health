@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { C, SERIF, SHADOW } from './lib/theme'
-import { LIMITE_PRUEBA, LIA_DISPONIBLE, accesos, nombrePlan } from './lib/constantes'
+import { LIMITE_PRUEBA, liaVisible, accesos, nombrePlan } from './lib/constantes'
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
 import { Acceso, CrearPassword } from './pages/Acceso'
@@ -72,7 +72,7 @@ function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
   const acc = accesos(clinica, planActivo)
-  const [vista, setVista] = useState(() => acc.health || !LIA_DISPONIBLE ? 'inicio' : 'lia')
+  const [vista, setVista] = useState(() => acc.health || !liaVisible(clinica) ? 'inicio' : 'lia')
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(null)
@@ -173,7 +173,7 @@ function Aplicacion({ sesion }) {
                       }}>
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
                         {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
-                        {n.id === 'lia' && !LIA_DISPONIBLE && <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 10, background: C.peach, color: C.orange, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.04em' }}>PRONTO</span>}
+                        {n.id === 'lia' && !liaVisible(clinica) && <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 10, background: C.peach, color: C.orange, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.04em' }}>PRONTO</span>}
                         {n.id === 'lia' && pendientesLia > 0 && <span title="Conversaciones que le necesitan" style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
                       </button>
                     )
@@ -210,7 +210,7 @@ function Aplicacion({ sesion }) {
             : !datos ? <Cargando />
             : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
-            : vista === 'lia' ? (LIA_DISPONIBLE ? <Lia /> : <LiaProximamente />)
+            : vista === 'lia' ? (liaVisible(clinica) ? <Lia /> : <LiaProximamente />)
             : vista === 'inventario' ? (acc.inventario ? <Inventario /> : <SoloMax ir={ir} />)
             : vista === 'inicio' ? <Inicio />
             : vista === 'registrar' ? <Registrar />

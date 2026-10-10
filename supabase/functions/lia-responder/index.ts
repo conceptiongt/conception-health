@@ -385,8 +385,8 @@ function turnos(mensajes: any[], foto?: { media_type: string, data: string }) {
   return out
 }
 
-// Lía's AI is paused unless the secret LIA_IA_ACTIVA=true is set: no tests and no WhatsApp replies, so no credits are used
-const iaPausada = () => Deno.env.get('LIA_IA_ACTIVA') !== 'true'
+// Emergency switch: the secret LIA_IA_PAUSADA=true stops every AI call (no tests, no WhatsApp replies, no credits used)
+const iaPausada = () => Deno.env.get('LIA_IA_PAUSADA') === 'true'
 
 async function correr(ctx: Ctx, mensajes: any[], foto?: { media_type: string, data: string }) {
   const client = new Anthropic()

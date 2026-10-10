@@ -16,6 +16,7 @@ import { SedeModal } from '../components/inventario/Formularios'
 import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
 import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
+import { EliminarCuenta } from '../components/EliminarCuenta'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
@@ -30,6 +31,7 @@ export function Configuracion() {
         {acc?.inventario && <Sedes />}
         <Tarifas servicios={servicios} clinicaId={perfil.clinica_id} onCambio={recargar} />
         <VinculoStudio />
+        <EliminarCuenta />
       </div>
     </>
   )

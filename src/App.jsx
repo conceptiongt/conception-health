@@ -27,6 +27,7 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, puede } from './lib/permisos'
+import { MODO_DEMO } from './lib/config'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
 
 const NAV = [
@@ -197,6 +198,12 @@ function Aplicacion({ sesion }) {
         </aside>
 
         <main className="main">
+          {MODO_DEMO && (
+            <div style={{ background: C.amberLight, color: C.amber, borderRadius: 16, padding: '10px 16px', marginBottom: 18, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <Icon name="estrella" size={16} />
+              <span style={{ flex: 1, minWidth: 220 }}><strong>Versión demo:</strong> está viendo una clínica de ejemplo con datos ficticios. Puede probar todo; los cambios no se guardan y se borran al recargar la página.</span>
+            </div>
+          )}
           {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
           {enPrueba && (
             <div style={{ background: C.lavender, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>

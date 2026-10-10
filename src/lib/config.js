@@ -14,3 +14,6 @@ export const STUDIO_URL = requerida('VITE_STUDIO_URL')
 export const STUDIO_ANON_KEY = requerida('VITE_STUDIO_ANON_KEY')
 export const WHATSAPP_SOPORTE = env.VITE_WHATSAPP_SOPORTE || ''
 export const SITIO_URL = env.VITE_SITIO_URL || 'https://health.conception-gt.com'
+
+// Demo mode: no login, a fictional clinic kept in memory (see lib/demo.js). Set VITE_MODO_DEMO=false to use real accounts again.
+export const MODO_DEMO = env.VITE_MODO_DEMO === 'true'

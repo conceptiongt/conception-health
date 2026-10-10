@@ -385,6 +385,9 @@ function turnos(mensajes: any[], foto?: { media_type: string, data: string }) {
   return out
 }
 
+// Lía's AI is paused unless the secret LIA_IA_ACTIVA=true is set: no tests and no WhatsApp replies, so no credits are used
+const iaPausada = () => Deno.env.get('LIA_IA_ACTIVA') !== 'true'
+
 async function correr(ctx: Ctx, mensajes: any[], foto?: { media_type: string, data: string }) {
   const client = new Anthropic()
   const messages: any[] = turnos(mensajes, foto)
@@ -467,6 +470,7 @@ async function responder(clinica: any, conv: any, prueba: boolean, foto?: { medi
 
   if (!prueba && (cfg.modo === 'pausa' || (cfg.modo === 'fuera' && enHorario(cfg)))) return { ctx, nuevos: [] }
   if (!activada(cfg, mensajes)) return { ctx, nuevos: [], callada: true }
+  if (iaPausada()) return { ctx, nuevos: [] }
   const r = await correr(ctx, mensajes, foto)
   const { partes, ficha } = separar(r.texto)
   aplicarFicha(ctx, ficha)
@@ -636,6 +640,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, enviado: !!linea })
     }
     if (body.accion !== 'probar') return json({ error: 'accion' }, 400)
+    if (iaPausada()) return json({ error: 'pausada' }, 503)
     if (!Deno.env.get('ANTHROPIC_API_KEY')) return json({ error: 'sin_llave' }, 503)
 
     const texto = String(body.texto || '').trim().slice(0, 2000)

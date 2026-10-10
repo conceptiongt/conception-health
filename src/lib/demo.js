@@ -98,7 +98,7 @@ const DB = {
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'max', plan_activo: true, plan_hasta: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   categorias_inventario: ['Medicamentos', 'Insumos', 'Equipo'].map(nombre => ({ id: id(), clinica_id: cid, nombre })),
@@ -123,7 +123,7 @@ function from(t) {
     select(c) { if (op === 'select') cols = c; return b }, order(k, o) { ord = [k, o?.ascending]; return b }, range() { return b }, limit() { return b },
     eq(k, v) { filt.push([k, v]); return b }, is(k, v) { filt.push([k, v, 'is']); return b }, in(k, arr) { filt.push([k, arr, 'in']); return b },
     lt() { return b }, gte() { return b }, single() { one = true; return b }, maybeSingle() { maybe = true; return b },
-    insert(x) { op = 'insert'; payload = x; return b }, update(x) { op = 'update'; payload = x; return b }, delete() { op = 'delete'; return b },
+    insert(x) { op = 'insert'; payload = x; return b }, upsert(x) { op = 'upsert'; payload = x; return b }, update(x) { op = 'update'; payload = x; return b }, delete() { op = 'delete'; return b },
     then(res, rej) { return Promise.resolve(correr()).then(res, rej) },
   }
   const coincide = r => filt.every(([k, v, o]) => o === 'in' ? v.includes(r[k]) : o === 'is' ? (r[k] ?? null) === v : r[k] === v)
@@ -151,6 +151,10 @@ function from(t) {
       filas.push(...lista)
       if (t === 'abonos') recalcular()
       return { data: one ? lista[0] : lista, error: null }
+    }
+    if (op === 'upsert') { // only lia_config uses it: one row per clinic
+      for (const x of [].concat(payload)) { const r = filas.find(f => f.clinica_id === (x.clinica_id || cid)); if (r) Object.assign(r, x); else filas.push({ clinica_id: cid, ...x }) }
+      return { data: null, error: null }
     }
     if (op === 'update') {
       const cambiadas = filas.filter(coincide)

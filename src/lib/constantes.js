@@ -1,4 +1,5 @@
 import { C } from './theme'
+import { MODO_DEMO } from './config'
 
 export const APP_NOMBRE = 'Conception Health'
 
@@ -81,7 +82,10 @@ export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
 export const LIA_DISPONIBLE = false
 // Accounts that already see Lía while it is being finished (Conception's own test clinic)
 const LIA_PREVIA = ['5a6ec316-ad70-4468-8812-539eebc5a4e6']
-export const liaVisible = (clinica) => LIA_DISPONIBLE || LIA_PREVIA.includes(clinica?.id)
+// in the demo everyone sees Lía (her tests stay paused, see LIA_PRUEBAS_PAUSADAS)
+export const liaVisible = (clinica) => LIA_DISPONIBLE || MODO_DEMO || LIA_PREVIA.includes(clinica?.id)
+// Tests ("Probar") are paused so they do not use AI credits; the server is paused too (secret LIA_IA_ACTIVA)
+export const LIA_PRUEBAS_PAUSADAS = true
 
 // What each account can open: Health (patients, files, charges, reports), inventory and/or Lía
 // (inventory is also enforced by the database: `inventario_habilitado()`)

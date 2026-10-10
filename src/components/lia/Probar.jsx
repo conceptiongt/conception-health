@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { C, SHADOW } from '../../lib/theme'
 import { fmtQ } from '../../lib/formato'
 import { etapa } from '../../lib/lia'
+import { LIA_PRUEBAS_PAUSADAS } from '../../lib/constantes'
 import { Card, Badge } from '../ui/Varios'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
@@ -49,7 +50,23 @@ function prepararFoto(file) {
 }
 
 // "Probar a Lía": a phone where the doctor writes as a patient; Lía answers from the server with the clinic's real data
-export function Probar({ nombreLia = 'Lía', medico, servicios = [], onCambio }) {
+export function Probar(props) {
+  if (LIA_PRUEBAS_PAUSADAS) return <PruebasPausadas nombreLia={props.nombreLia} />
+  return <ProbarChat {...props} />
+}
+
+// Shown instead of the test chat while tests are paused (they use AI credits)
+function PruebasPausadas({ nombreLia = 'Lía' }) {
+  return (
+    <div id="lia-prueba" style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '40px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: C.peach, color: C.orange, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><Icon name="telefono" size={26} /></div>
+      <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 6 }}>Las pruebas de {nombreLia} están en pausa</div>
+      <div style={{ fontSize: 14, color: C.g500, maxWidth: 460, margin: '0 auto', lineHeight: 1.6 }}>Por el momento no se puede conversar con {nombreLia}. Puede revisar cómo atiende, sus ajustes y el seguimiento; las pruebas se activarán pronto.</div>
+    </div>
+  )
+}
+
+function ProbarChat({ nombreLia = 'Lía', medico, servicios = [], onCambio }) {
   const [conv, setConv] = useState(null)
   const [mensajes, setMensajes] = useState([])
   const [log, setLog] = useState([])

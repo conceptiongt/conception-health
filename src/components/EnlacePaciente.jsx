@@ -58,6 +58,7 @@ export function EnlacePaciente({ paciente, size = 'sm' }) {
           <div style={fila}>
             <Button size="sm" icon="mensaje" onClick={() => enviar(msgPortal)}>WhatsApp</Button>
             <Button size="sm" variant="ghost" icon="copiar" onClick={() => copiar(portal, 'Enlace del portal copiado')}>Copiar</Button>
+            <Button size="sm" variant="ghost" icon="ojo" onClick={() => window.open(portal, '_blank', 'noopener')}>Abrir</Button>
             {!paciente.portal_activo && <Button size="sm" variant="ghost" icon="check" onClick={publicar}>Publicar</Button>}
           </div>
 
@@ -67,6 +68,7 @@ export function EnlacePaciente({ paciente, size = 'sm' }) {
           <div style={fila}>
             <Button size="sm" icon="mensaje" onClick={async () => { const u = await formulario(); if (u) enviar(msgForm(u)) }}>WhatsApp</Button>
             <Button size="sm" variant="ghost" icon="copiar" onClick={async () => { const u = await formulario(); if (u) copiar(u, 'Enlace del formulario copiado') }}>Copiar</Button>
+            <Button size="sm" variant="ghost" icon="ojo" onClick={async () => { const w = window.open('', '_blank'); const u = await formulario(); if (u && w) w.location.href = u; else w?.close() }}>Abrir</Button>
           </div>
           <button onClick={() => setAbierto(false)} aria-label="Cerrar" style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', cursor: 'pointer', color: C.g400 }}><Icon name="cerrar" size={16} /></button>
         </div>

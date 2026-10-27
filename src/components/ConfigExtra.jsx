@@ -13,6 +13,7 @@ import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { toast } from './ui/Toast'
 import { Interruptor } from './MensajePaciente'
+import { confirmar } from './ui/Confirmar'
 
 // Invitation email (edge function invitar-asistente). Returns null when sent, or the reason it was not
 export async function enviarCorreoInvitacion(email) {
@@ -112,7 +113,7 @@ export function PagosYRegistro() {
   }
   const registro = urlRegistro(codigoRegistro(clinica))
   const nuevoEnlace = async () => {
-    if (!confirm('¿Crear un enlace nuevo? El anterior dejará de funcionar.')) return
+    if (!await confirmar('¿Crear un enlace nuevo? El anterior dejará de funcionar.')) return
     const { error } = await supabase.from('clinicas').update({ registro_token: crypto.randomUUID() }).eq('id', clinica.id)
     if (error) toast.error('No se pudo cambiar'); else { toast.success('Enlace nuevo creado'); recargarSesion() }
   }
@@ -166,7 +167,7 @@ export function Usuarios() {
     if (error) { toast.error('No se pudo guardar'); cargar() }
   }
   const quitar = async (u) => {
-    if (!confirm(`¿Quitar el acceso de ${u.nombre || u.email}? Ya no podrá entrar a la clínica. Lo que registró se conserva.`)) return
+    if (!await confirmar(`¿Quitar el acceso de ${u.nombre || u.email}? Ya no podrá entrar a la clínica. Lo que registró se conserva.`)) return
     const { error } = await supabase.from('perfiles').delete().eq('user_id', u.user_id)
     if (error) toast.error('No se pudo quitar'); else { toast.success('Acceso retirado'); cargar() }
   }
@@ -175,7 +176,7 @@ export function Usuarios() {
     const motivo = await enviarCorreoInvitacion(x.email)
     if (!motivo) toast.success(`Le enviamos otro correo a ${x.email}`)
     else toast.error(avisoCorreo(x.email, motivo))
-    if (motivo !== 'YA_ENTRA' && confirm('¿Enviarle también el enlace por WhatsApp?')) window.open(linkWhatsAppSinNumero(mensajeInvitacion(x, clinica)), '_blank', 'noopener')
+    if (motivo !== 'YA_ENTRA' && await confirmar('¿Enviarle también el enlace por WhatsApp?')) window.open(linkWhatsAppSinNumero(mensajeInvitacion(x, clinica)), '_blank', 'noopener')
     cargar()
   }
   const cancelar = async (i) => {
@@ -280,6 +281,7 @@ function InvitarModal({ clinica, onClose, onListo }) {
         <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 12, background: C.g100, fontSize: 12.5, color: C.g600, wordBreak: 'break-all' }}>{linkInvitacion(lista.email)}</div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
           <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
+          <Button variant="ghost" icon="ojo" onClick={() => window.open(linkInvitacion(lista.email), '_blank', 'noopener')}>Abrir</Button>
           <Button icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(msg), '_blank', 'noopener')}>Enviar por WhatsApp</Button>
         </div>
       </Modal>

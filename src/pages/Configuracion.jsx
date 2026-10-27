@@ -18,6 +18,7 @@ import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
 import { Interruptor } from '../components/MensajePaciente'
+import { confirmar } from '../components/ui/Confirmar'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
@@ -87,7 +88,7 @@ function Marca() {
     setSubiendo(false)
   }
   const quitarLogo = async () => {
-    if (!confirm('¿Quitar el logo? Se mostrarán las iniciales del consultorio.')) return
+    if (!await confirmar('¿Quitar el logo? Se mostrarán las iniciales del consultorio.')) return
     const anterior = clinica.logo_path
     await supabase.from('clinicas').update({ logo_path: null }).eq('id', clinica.id)
     if (anterior) await supabase.storage.from('logos').remove([anterior])
@@ -185,7 +186,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   }
   const eliminarVarios = async () => {
     const ids = [...marcados]
-    if (!confirm(`¿Eliminar ${ids.length} ${ids.length === 1 ? 'tarifa' : 'tarifas'}? Las citas y cobros ya registrados no cambian.`)) return
+    if (!await confirmar(`¿Eliminar ${ids.length} ${ids.length === 1 ? 'tarifa' : 'tarifas'}? Las citas y cobros ya registrados no cambian.`)) return
     const { error } = await supabase.from('servicios').delete().in('id', ids)
     if (error) { toast.error('No se pudieron eliminar'); return }
     toast.success(`${ids.length} ${ids.length === 1 ? 'tarifa eliminada' : 'tarifas eliminadas'}`)
@@ -209,7 +210,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
     onCambio()
   }
   const eliminar = async (s) => {
-    if (!confirm(`¿Eliminar "${s.nombre}" de sus tarifas? Las citas y cobros ya registrados no cambian.`)) return
+    if (!await confirmar(`¿Eliminar "${s.nombre}" de sus tarifas? Las citas y cobros ya registrados no cambian.`)) return
     const { error } = await supabase.from('servicios').delete().eq('id', s.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     onCambio()

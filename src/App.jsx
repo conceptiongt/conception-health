@@ -22,6 +22,7 @@ import { ElegirEspecialidad } from './components/ElegirEspecialidad'
 import { aplicarMarca } from './lib/theme'
 import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
+import { ConfirmarContainer } from './components/ui/Confirmar'
 import { Cargando, Logo } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
@@ -60,7 +61,7 @@ function leerRuta() {
 
 export default function App() {
   const publica = rutaPublica()
-  if (publica) return <><PaginaPublica {...publica} /><ToastContainer /></>
+  if (publica) return <><PaginaPublica {...publica} /><ToastContainer /><ConfirmarContainer /></>
   return <AppPrivada />
 }
 
@@ -73,7 +74,7 @@ function AppPrivada() {
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
-  return <>{contenido}<ToastContainer /></>
+  return <>{contenido}<ToastContainer /><ConfirmarContainer /></>
 }
 
 function Aplicacion({ sesion }) {

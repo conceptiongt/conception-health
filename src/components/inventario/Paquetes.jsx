@@ -12,6 +12,7 @@ import { Icon } from '../ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
+import { confirmar } from '../ui/Confirmar'
 
 const itemsDe = (inv, paqueteId) => (inv.paqueteItems || []).filter(i => i.paquete_id === paqueteId)
 
@@ -100,7 +101,7 @@ function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
     toast.success('Paquete guardado'); onGuardado()
   }
   const eliminar = async () => {
-    if (!confirm(`¿Eliminar el paquete «${paquete.nombre}»? Los usos ya registrados se conservan.`)) return
+    if (!await confirmar(`¿Eliminar el paquete «${paquete.nombre}»? Los usos ya registrados se conservan.`)) return
     const { error } = await supabase.from('paquetes').delete().eq('id', paquete.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     toast.success('Paquete eliminado'); onGuardado()
@@ -244,7 +245,7 @@ export function ConteoModal({ inv, sedeInicial, onClose, onGuardado }) {
 
   const guardar = async () => {
     if (!diferencias.length) { toast.success('Todo coincide; no hay nada que corregir'); onClose(); return }
-    if (!confirm(`Se corregirán ${diferencias.length} productos en ${sedes.find(s => s.id === sede)?.nombre}. ¿Continuar?`)) return
+    if (!await confirmar(`Se corregirán ${diferencias.length} productos en ${sedes.find(s => s.id === sede)?.nombre}. ¿Continuar?`)) return
     setBusy(true)
     const { error } = await supabase.from('inventario_movimientos').insert(diferencias.map(p => ({
       tipo: 'ajuste', sede_id: sede, producto_id: p.id, delta: Number(contado[p.id]) - existencia(inv, sede, p.id), fecha: hoyISO(), notas: 'Conteo físico',

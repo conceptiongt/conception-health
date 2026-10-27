@@ -151,6 +151,7 @@ function EnlaceRegistro({ token }) {
         <div style={{ fontSize: 12.5, color: C.g600 }}>Envíele el enlace de registro; aparecerá en su lista de pacientes con sus antecedentes.</div>
       </div>
       <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(link); toast.success('Enlace copiado') }}>Copiar enlace</Button>
+      <Button size="sm" variant="ghost" icon="ojo" onClick={() => window.open(link, '_blank', 'noopener')}>Abrir</Button>
       <Button size="sm" icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(msg), '_blank', 'noopener')}>Enviar por WhatsApp</Button>
     </div>
   )

@@ -8,6 +8,7 @@ import { Button } from './ui/Button'
 import { Input } from './ui/Campos'
 import { Icon } from './ui/Icon'
 import { toast } from './ui/Toast'
+import { confirmar } from './ui/Confirmar'
 
 const fmt = (d) => d ? new Date(d).toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 
@@ -43,7 +44,7 @@ export function VinculoStudio() {
     recargarSesion()
   }
   const quitar = async () => {
-    if (!confirm('¿Desvincular de Conception Studio? Dejará de enviar sus datos mensuales.')) return
+    if (!await confirmar('¿Desvincular de Conception Studio? Dejará de enviar sus datos mensuales.')) return
     setBusy(true)
     await desvincular(clinica)
     setBusy(false)

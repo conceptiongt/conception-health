@@ -10,6 +10,7 @@ import { Modal } from './ui/Modal'
 import { Icon } from './ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
+import { confirmar } from './ui/Confirmar'
 
 // ─── Status of a charge ───
 export const ESTADOS_COBRO = {
@@ -61,7 +62,7 @@ export function AbonoModal({ cobro, paciente, onClose, onGuardado }) {
   const n = Number(f.monto)
   const guardar = async () => {
     if (!(n > 0)) { toast.error('Escriba el monto del pago'); return }
-    if (n > pendiente + 0.001 && !confirm(`El pago (${fmtQ(n)}) es mayor que el saldo (${fmtQ(pendiente)}). ¿Registrarlo de todas formas?`)) return
+    if (n > pendiente + 0.001 && !await confirmar(`El pago (${fmtQ(n)}) es mayor que el saldo (${fmtQ(pendiente)}). ¿Registrarlo de todas formas?`)) return
     setBusy(true)
     const { error } = await supabase.from('abonos').insert({ cobro_id: cobro.id, monto: n, fecha: f.fecha, metodo: f.metodo || null, nota: f.nota.trim() || null })
     setBusy(false)
@@ -112,7 +113,7 @@ export function CobroDetalle({ cobro, paciente, onClose, onCambio }) {
     toast.success(v ? `Fecha límite: ${fmtFecha(v)}` : 'Sin fecha límite'); onCambio()
   }
   const borrar = async (a) => {
-    if (!confirm(`¿Eliminar el pago de ${fmtQ(a.monto)} del ${fmtFechaCorta(a.fecha)}? El saldo vuelve a subir.`)) return
+    if (!await confirmar(`¿Eliminar el pago de ${fmtQ(a.monto)} del ${fmtFechaCorta(a.fecha)}? El saldo vuelve a subir.`)) return
     const { error } = await supabase.from('abonos').delete().eq('id', a.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     toast.success('Pago eliminado'); cambio()

@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { toast } from '../ui/Toast'
 import { supabase } from '../../lib/supabase'
+import { confirmar } from '../ui/Confirmar'
 
 // Offered as one-click suggestions while the clinic has no categories yet
 export const CATEGORIAS_BASE = ['Insumos', 'Medicamentos', 'Equipo']
@@ -174,7 +175,7 @@ export function CategoriasModal({ inv, onClose, onCambio }) {
     const t = capital(nombre.trim().replace(/\s+/g, ' '))
     if (!t || t === c.nombre) { setEditando(null); return }
     const destino = cats.find(o => o.id !== c.id && o.nombre.toLowerCase() === t.toLowerCase())
-    if (destino && !confirm(`Ya existe «${destino.nombre}». ¿Unir «${c.nombre}» con «${destino.nombre}»? Sus ${usos(c)} productos pasan a «${destino.nombre}».`)) return
+    if (destino && !await confirmar(`Ya existe «${destino.nombre}». ¿Unir «${c.nombre}» con «${destino.nombre}»? Sus ${usos(c)} productos pasan a «${destino.nombre}».`)) return
     setBusy(true)
     const { data, error } = await supabase.rpc('categoria_renombrar', { p_id: c.id, p_nombre: destino ? destino.nombre : t })
     setBusy(false)
@@ -183,7 +184,7 @@ export function CategoriasModal({ inv, onClose, onCambio }) {
     setEditando(null); onCambio()
   }
   const unir = async (c, destino) => {
-    if (!confirm(`¿Unir «${c.nombre}» con «${destino.nombre}»? Sus ${usos(c)} productos pasan a «${destino.nombre}» y «${c.nombre}» desaparece.`)) return
+    if (!await confirmar(`¿Unir «${c.nombre}» con «${destino.nombre}»? Sus ${usos(c)} productos pasan a «${destino.nombre}» y «${c.nombre}» desaparece.`)) return
     setBusy(true)
     const { error } = await supabase.rpc('categoria_renombrar', { p_id: c.id, p_nombre: destino.nombre })
     setBusy(false)
@@ -192,7 +193,7 @@ export function CategoriasModal({ inv, onClose, onCambio }) {
   }
   const eliminar = async (c) => {
     const n = usos(c)
-    if (!confirm(n ? `¿Eliminar «${c.nombre}»? Sus ${n} productos se quedan, solo que sin categoría.` : `¿Eliminar «${c.nombre}»?`)) return
+    if (!await confirmar(n ? `¿Eliminar «${c.nombre}»? Sus ${n} productos se quedan, solo que sin categoría.` : `¿Eliminar «${c.nombre}»?`)) return
     setBusy(true)
     const { error } = await supabase.rpc('categoria_eliminar', { p_id: c.id })
     setBusy(false)

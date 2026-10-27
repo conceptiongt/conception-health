@@ -17,9 +17,12 @@ import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../compo
 import { CategoriasModal } from '../components/inventario/Selectores'
 import { Paquetes, ConteoModal } from '../components/inventario/Paquetes'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
+import { confirmar } from '../components/ui/Confirmar'
 
-// costs, inventory value, purchase orders and suppliers: administrator, or assistants with the "costos" permission
+// product costs and inventory value: administrator, or assistants with "costos"
 const useCostos = () => puede(useDatos().perfil, 'costos')
+// purchase orders and suppliers: administrator, or assistants with "compras" (they see the order amounts, not product costs)
+const useCompras = () => puede(useDatos().perfil, 'compras')
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
 const mesActual = () => new Date().toISOString().slice(0, 7)
@@ -27,6 +30,7 @@ const mesActual = () => new Date().toISOString().slice(0, 7)
 export function Inventario() {
   const { inv, recargar: recargarInv } = useInventario()
   const costos = useCostos()
+  const comprar = useCompras()
   const [movs, setMovs] = useState(null)
   const [tab, setTab] = useState('resumen')
   const [sedeFiltro, setSedeFiltro] = useState('')
@@ -84,7 +88,7 @@ export function Inventario() {
     for (const g of Object.values(grupos)) {
       const { data, error } = await supabase.from('ordenes_compra').insert({ sede_id: g.sede, proveedor_id: g.proveedor }).select().single()
       if (error) continue
-      const { error: e2 } = await supabase.from('ordenes_compra_lineas').insert(g.lineas.map(f => ({ orden_id: data.id, producto_id: f.producto.id, cantidad: f.sugerido, costo_unitario: Number(f.producto.costo) || 0 })))
+      const { error: e2 } = await supabase.from('ordenes_compra_lineas').insert(g.lineas.map(f => ({ orden_id: data.id, producto_id: f.producto.id, cantidad: f.sugerido, costo_unitario: costos ? Number(f.producto.costo) || 0 : 0 })))
       if (!e2) creadas++
     }
     if (!creadas) { toast.error('No se pudieron crear las órdenes'); return }
@@ -102,19 +106,19 @@ export function Inventario() {
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
     { value: 'historial', label: 'Historial', icono: 'actividad' },
   ]
-  const TABS = TABS_TODAS.filter(t => costos || !['compras', 'proveedores'].includes(t.value))
+  const TABS = TABS_TODAS.filter(t => comprar || !['compras', 'proveedores'].includes(t.value))
 
   return (
     <>
       <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} ${costos ? ` · vale ${fmtQ(valorInventario(inv))}` : ''}`}>
         <Button variant="ghost" icon="sede" onClick={() => setSede(null)}>Nueva sede</Button>
         <Button variant="ghost" icon="mas" onClick={() => setProducto(null)}>Nuevo producto</Button>
-        {costos && <Button icon="cartera" onClick={() => nuevaOrden()}>Nueva compra</Button>}
+        {comprar && <Button icon="cartera" onClick={() => nuevaOrden()}>Nueva compra</Button>}
       </Encabezado>
 
       {/* Everyday operations, like a warehouse dashboard */}
       <div className="inv-ops" style={{ marginBottom: 22 }}>
-        {costos && <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
+        {comprar && <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
           display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 12, border: `1px solid ${C.line}`, background: C.lavender, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
         }}>
           <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="cartera" size={21} /></div>
@@ -149,10 +153,10 @@ export function Inventario() {
         ? <Resumen inv={inv} movs={movs} sedes={sedes} productos={productos} reabastecer={reabastecer} vencen={vencen} operar={operar} verSede={verSede} irA={setTab} abrir={setDetalle} />
         : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
-      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={costos ? crearOrdenes : null} />}
+      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={comprar ? crearOrdenes : null} />}
       {tab === 'paquetes' && <Paquetes inv={inv} onCambio={recargarInv} />}
-      {tab === 'compras' && costos && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
-      {tab === 'proveedores' && costos && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
+      {tab === 'compras' && comprar && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
+      {tab === 'proveedores' && comprar && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
       {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
       {tab === 'historial' && <Historial inv={inv} movs={movs} onCambio={recargar} />}
 
@@ -555,7 +559,7 @@ function Historial({ inv, movs, onCambio }) {
 
   const deshacer = async (m) => {
     const p = producto(m.producto_id)
-    if (!confirm(`¿Deshacer este movimiento (${TIPOS_MOVIMIENTO[m.tipo].label}, ${fmtCant(Math.abs(m.delta))} ${p?.unidad || ''} de ${p?.nombre || 'producto'})? La existencia vuelve a como estaba.`)) return
+    if (!await confirmar(`¿Deshacer este movimiento (${TIPOS_MOVIMIENTO[m.tipo].label}, ${fmtCant(Math.abs(m.delta))} ${p?.unidad || ''} de ${p?.nombre || 'producto'})? La existencia vuelve a como estaba.`)) return
     const q = supabase.from('inventario_movimientos').delete()
     const { error } = await (m.traslado_id ? q.eq('traslado_id', m.traslado_id) : q.eq('id', m.id))
     if (error) { toast.error(errorInventario(error, 'No se pudo deshacer')); return }

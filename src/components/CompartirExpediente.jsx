@@ -95,6 +95,7 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
         {wa ? <Button icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>Abrir WhatsApp con el mensaje</Button>
           : <div style={{ fontSize: 13, color: C.amber }}>El paciente no tiene teléfono registrado; copie el mensaje.</div>}
         <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(mensaje); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
+        <Button variant="ghost" icon="ojo" onClick={() => window.open(listo.link, '_blank', 'noopener')}>Abrir enlace</Button>
         {puedeCompartirArchivo() && <Button variant="ghost" icon="pdf" onClick={enviarArchivo}>Enviar el archivo PDF</Button>}
       </div>
     </Modal>

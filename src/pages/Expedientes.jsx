@@ -24,6 +24,7 @@ import { BotonesSubir, subirArchivos } from '../components/SubirArchivos'
 import { TextoFormateado } from '../components/EditorTexto'
 import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro, codigoRegistro } from '../lib/ficha'
 import { puede } from '../lib/permisos'
+import { confirmar } from '../components/ui/Confirmar'
 
 export function Expedientes({ abrirId }) {
   const { pacientes, citas, cobros, clinica, ir, sedes, perfil } = useDatos()
@@ -143,7 +144,7 @@ function Expediente({ paciente, onVolver }) {
   useEffect(() => { cargarArchivos() }, [cargarArchivos])
 
   const eliminar = async () => {
-    if (!confirm(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos, documentos y cobros)? Esta acción no se puede deshacer.`)) return
+    if (!await confirmar(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos, documentos y cobros)? Esta acción no se puede deshacer.`)) return
     const paths = (archivos || []).map(a => a.path)
     if (paths.length) await supabase.storage.from('expedientes').remove(paths)
     const { error } = await supabase.from('pacientes').delete().eq('id', paciente.id)
@@ -212,6 +213,7 @@ function FichaPaciente({ paciente, onEditar }) {
           <Icon name={formulario ? 'reloj' : 'check'} size={17} />
           <span style={{ flex: 1 }}>{formulario ? 'Se le envió el formulario al paciente; sus datos aparecerán aquí cuando lo llene.' : `El paciente llenó su formulario el ${fmtFecha(paciente.registro_completado_at)}.`}</span>
           {formulario && <Button size="sm" variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(urlRegistro(codigoRegistro(paciente))); toast.success('Enlace copiado') }}>Copiar enlace del formulario</Button>}
+          {formulario && <Button size="sm" variant="ghost" icon="ojo" onClick={() => window.open(urlRegistro(codigoRegistro(paciente)), '_blank', 'noopener')}>Abrir</Button>}
         </div>
       )}
       <Card title="Datos personales" right={<Button variant="ghost" size="sm" onClick={onEditar} icon="editar">Editar</Button>}>
@@ -396,7 +398,7 @@ function Archivos({ paciente, archivos, citas, clinicaId, onCambio }) {
   }
 
   const borrar = async (a) => {
-    if (!confirm('¿Eliminar este archivo?')) return
+    if (!await confirmar('¿Eliminar este archivo?')) return
     await supabase.storage.from('expedientes').remove([a.path])
     const { error } = await supabase.from('archivos').delete().eq('id', a.id)
     if (error) { toast.error('No se pudo eliminar'); return }
@@ -536,7 +538,7 @@ function CobroModal({ cobro, paciente, clinicaId, onClose, onGuardado }) {
     onGuardado()
   }
   const eliminar = async () => {
-    if (!confirm('¿Eliminar este cobro?')) return
+    if (!await confirmar('¿Eliminar este cobro?')) return
     const { error } = await supabase.from('cobros').delete().eq('id', cobro.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     toast.success('Cobro eliminado')

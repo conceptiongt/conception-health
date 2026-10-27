@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { TIPOS_CITA, ESTADOS_CITA, ORIGENES, estadoCita, origenLabel } from '../lib/constantes'
@@ -13,6 +13,7 @@ import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
+import { Modal } from '../components/ui/Modal'
 
 export function Citas() {
   const { citas, pacientes, clinica, perfil, recargar, ir, sedes } = useDatos()
@@ -23,6 +24,7 @@ export function Citas() {
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
   const [editando, setEditando] = useState(null)
+  const [historial, setHistorial] = useState(false)
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
 
   const q = buscar.trim().toLowerCase()
@@ -75,6 +77,7 @@ export function Citas() {
     <>
       <Encabezado titulo="Citas" subtitulo={`${visibles.length} ${visibles.length === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
         <AgregarAnio />
+        <Button variant="ghost" icon="reloj" onClick={() => setHistorial(true)}>Citas eliminadas</Button>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
@@ -116,7 +119,45 @@ export function Citas() {
           ] }
         })}
       />
-
+      {historial && <CitasEliminadas onClose={() => setHistorial(false)} />}
     </>
+  )
+}
+
+// Every deleted appointment with who deleted it and why; the whole clinic (admin and assistants) sees the same list
+function CitasEliminadas({ onClose }) {
+  const [filas, setFilas] = useState(null)
+  const [buscar, setBuscar] = useState('')
+  useEffect(() => {
+    supabase.from('citas_eliminadas').select('id, paciente_nombre, fecha, hora, tipo, estado, sede_nombre, motivo, eliminado_por_nombre, eliminado_at, paciente_eliminado')
+      .order('eliminado_at', { ascending: false }).limit(500)
+      .then(({ data, error }) => { if (error) toast.error('No se pudo cargar el historial'); setFilas(data || []) })
+  }, [])
+  const q = buscar.trim().toLowerCase()
+  const visibles = (filas || []).filter(r => !q || [r.paciente_nombre, r.motivo, r.eliminado_por_nombre].some(x => (x || '').toLowerCase().includes(q)))
+  const cuando = (t) => new Date(t).toLocaleString('es-GT', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return (
+    <Modal title="Citas eliminadas" subtitle="Quién eliminó cada cita y por qué" onClose={onClose} maxWidth={720}>
+      {filas === null ? <div style={{ color: C.g400, fontSize: 14 }}>Cargando…</div>
+        : !filas.length ? <div style={{ color: C.g500, fontSize: 14, lineHeight: 1.6 }}>Aún no se ha eliminado ninguna cita. Cuando alguien elimine una, aquí verá la fecha de la cita, el paciente, quién la eliminó y el motivo.</div>
+        : <>
+          <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente, motivo o usuario…" style={{ ...filtroStyle, width: '100%', boxSizing: 'border-box', marginBottom: 12 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {visibles.map(r => (
+              <div key={r.id} style={{ border: `1px solid ${C.g200}`, borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                  <strong style={{ fontWeight: 500, fontSize: 14.5 }}>{r.paciente_nombre || 'Paciente'}</strong>
+                  <span style={{ fontSize: 13, color: C.g500 }}>Cita del {fmtFechaCorta(r.fecha)}{r.hora ? ` · ${fmtHora(r.hora)}` : ''}{r.tipo ? ` · ${r.tipo}` : ''}{r.sede_nombre ? ` · ${r.sede_nombre}` : ''}</span>
+                </div>
+                <div style={{ fontSize: 14, color: C.g700, marginTop: 6, lineHeight: 1.5 }}><span style={{ color: C.g500 }}>Motivo:</span> {r.motivo}</div>
+                <div style={{ fontSize: 12.5, color: C.g400, marginTop: 6 }}>
+                  Eliminada por <strong style={{ fontWeight: 500, color: C.g600 }}>{r.eliminado_por_nombre || 'usuario'}</strong> el {cuando(r.eliminado_at)}{r.paciente_eliminado ? ' · también se eliminó el expediente (no tenía más historial)' : ''}
+                </div>
+              </div>
+            ))}
+            {!visibles.length && <div style={{ color: C.g500, fontSize: 14 }}>Nada coincide con la búsqueda.</div>}
+          </div>
+        </>}
+    </Modal>
   )
 }

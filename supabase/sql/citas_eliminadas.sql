@@ -1,0 +1,3 @@
+-- Deleted appointments history (Citas → Citas eliminadas): who deleted each one and why. Same as migration "citas_eliminadas".
+-- See the migration in Supabase for the full body of cita_eliminar(p_cita, p_motivo) and puede_eliminar_citas().
+-- Rules: only cita_eliminar (security definer) writes here; everyone in the clinic can read; nobody edits or deletes rows.

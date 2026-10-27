@@ -14,6 +14,7 @@ import { SelectorPeriodo, RangoFechas, FiltroSede, enPeriodo, textoPeriodo, nomb
 import { sedeCobro } from '../components/Pagos'
 import { BotonesSubir, tipoArchivo } from '../components/SubirArchivos'
 import { totalOC } from '../components/inventario/Compras'
+import { confirmar } from '../components/ui/Confirmar'
 
 export const CATEGORIAS_GASTO = ['Renta', 'Sueldos y planilla', 'Insumos médicos', 'Servicios (luz, agua, internet)', 'Publicidad', 'Mantenimiento', 'Impuestos', 'Honorarios', 'Otros']
 const hoy = new Date()
@@ -189,7 +190,7 @@ function GastoModal({ gasto, onClose, onGuardado }) {
     toast.success('Gasto guardado'); onGuardado()
   }
   const eliminar = async () => {
-    if (!confirm('¿Eliminar este gasto?')) return
+    if (!await confirmar('¿Eliminar este gasto?')) return
     if (gasto.comprobante_path) await supabase.storage.from('expedientes').remove([gasto.comprobante_path])
     const { error } = await supabase.from('gastos').delete().eq('id', gasto.id)
     if (error) { toast.error('No se pudo eliminar'); return }

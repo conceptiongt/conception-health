@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita } from '../lib/constantes'
+import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita, MOTIVOS_ELIMINAR_CITA } from '../lib/constantes'
 import { especialidad, tiposDe } from '../lib/especialidades'
 import { seccionesActivas, limpiarHtml, tieneTexto } from '../lib/ficha'
 import { puede } from '../lib/permisos'
@@ -17,6 +17,7 @@ import { Badge } from './ui/Varios'
 import { Icon } from './ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
+import { confirmar } from './ui/Confirmar'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 
@@ -108,17 +109,22 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     onGuardado()
   }
 
-  // Deletes the appointment with its charges and payments; a patient with no other history is deleted too
+  // Deletes the appointment with its charges and payments; a patient with no other history is deleted too.
+  // The reason and who deleted it stay in "Citas eliminadas" (Citas → Historial), visible to everyone in the clinic.
   const eliminar = async () => {
     const otrasCitas = citas.some(c => c.paciente_id === paciente?.id && c.id !== cita.id)
-    const partes = ['¿Eliminar esta cita?', 'También se eliminará su cobro y los pagos registrados en él, para que no quede saldo pendiente.']
-    if (!otrasCitas) partes.push(`${paciente?.nombre} no tiene otras citas: si tampoco tiene otros cobros, fotos o productos usados, también se eliminará su expediente.`)
-    partes.push('Esta acción no se puede deshacer.')
-    if (!confirm(partes.join('\n\n'))) return
+    const mensaje = ['Se eliminará también su cobro y los pagos registrados en él, para que no quede saldo pendiente.']
+    if (!otrasCitas) mensaje.push(`${paciente?.nombre} no tiene otras citas: si tampoco tiene otros cobros, fotos o productos usados, también se eliminará su expediente.`)
+    mensaje.push('Quedará guardada en el historial de citas eliminadas con el motivo y quién la eliminó.')
+    const motivo = await confirmar({
+      titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`, mensaje, aceptar: 'Eliminar cita', peligro: true,
+      motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_ELIMINAR_CITA },
+    })
+    if (!motivo) return
     setBusy(true)
-    const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id })
+    const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id, p_motivo: motivo })
     setBusy(false)
-    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar' : 'No se pudo eliminar'); return }
+    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : 'No se pudo eliminar'); return }
     toast.success(data?.paciente_eliminado ? 'Se eliminaron la cita, su cobro y el expediente' : data?.cobros ? 'Se eliminaron la cita y su cobro' : 'Cita eliminada')
     onGuardado({ pacienteEliminado: !!data?.paciente_eliminado })
   }
@@ -166,7 +172,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <div style={{ fontSize: 13.5, color: C.g500, marginTop: 4 }}>{fmtFecha(f.fecha)}{f.hora ? ` · ${f.hora}` : ''}{f.tipo ? ` · ${f.tipo}` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {cita && puede(perfil, 'eliminar') && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
+          {cita && puede(perfil, 'eliminar_citas') && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
           {paciente && <EnlacePaciente paciente={paciente} size="md" />}
           {soloCita && clinico && <Button variant="ghost" onClick={() => ir('expedientes', paciente.id)} icon="expedientes">Abrir expediente</Button>}
           {cita && ficha && <Button variant="ghost" onClick={() => setCompartir(true)} icon="compartir">Imprimir o compartir</Button>}

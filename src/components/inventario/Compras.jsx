@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { C, SERIF, SHADOW } from '../../lib/theme'
 import { fmtQ, fmtFecha, fmtFechaCorta, hoyISO, linkWhatsApp } from '../../lib/formato'
 import { useDatos } from '../../hooks/useDatos'
+import { puede } from '../../lib/permisos'
 import { fmtCant, errorInventario } from '../../hooks/useInventario'
 import { Card, Badge, Vacio, Tabla } from '../ui/Varios'
 import { Button } from '../ui/Button'
@@ -14,6 +15,7 @@ import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
 import { eliminarRegistro } from './Formularios'
 import { BotonesSubir, tipoArchivo } from '../SubirArchivos'
+import { confirmar } from '../ui/Confirmar'
 
 // Purchase order life cycle (like Odoo: request → sent → confirmed → received)
 export const ESTADOS_OC = {
@@ -137,7 +139,8 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
     esperada: orden?.fecha_esperada || '', notas: orden?.notas || '',
     numeroProveedor: orden?.numero_proveedor || '', totalManual: orden?.total_manual ?? '',
   })
-  const { clinica } = useDatos()
+  const { clinica, perfil } = useDatos()
+  const verCostos = puede(perfil, 'costos') // without it the product's saved cost is not pre-filled
   const [modo, setModo] = useState(orden?.adjunto_path && !lineasIniciales.length ? 'adjuntar' : 'crear')
   const [archivo, setArchivo] = useState(null) // new document to attach
   const [lineas, setLineas] = useState(() => (lineasIniciales.length ? lineasIniciales : inicial.lineas || []).map(l => ({ producto: l.producto_id, cantidad: String(l.cantidad), costo: String(l.costo_unitario ?? '') })))
@@ -153,7 +156,7 @@ export function OrdenModal({ inv, orden, lineasIniciales = [], inicial = {}, onC
     setAgregar('')
     if (lineas.some(l => l.producto === id)) { toast.error('Ese producto ya está en la orden'); return }
     const p = prod(id)
-    setLineas(ls => [...ls, { producto: id, cantidad: '1', costo: p?.costo != null ? String(p.costo) : '' }])
+    setLineas(ls => [...ls, { producto: id, cantidad: '1', costo: verCostos && p?.costo != null ? String(p.costo) : '' }])
   }
   const cambiar = (i, k, v) => setLineas(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l))
 
@@ -273,12 +276,12 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
     toast.success(msg); onCambio()
   }
   const eliminar = async () => {
-    if (!confirm(`¿Eliminar el borrador ${numeroOC(o)}?`)) return
+    if (!await confirmar(`¿Eliminar el borrador ${numeroOC(o)}?`)) return
     const { error } = await supabase.from('ordenes_compra').delete().eq('id', o.id)
     if (error) { toast.error('No se pudo eliminar'); return }
     toast.success('Borrador eliminado'); onCambio(); onClose()
   }
-  const cancelar = () => { if (confirm(`¿Cancelar ${numeroOC(o)}? Lo ya recibido se queda en el inventario.`)) cambiarEstado('cancelada', 'Orden cancelada') }
+  const cancelar = async () => { if (await confirmar(`¿Cancelar ${numeroOC(o)}? Lo ya recibido se queda en el inventario.`)) cambiarEstado('cancelada', 'Orden cancelada') }
 
   const texto = [
     `Hola${prov?.contacto ? ` ${prov.contacto}` : ''}, le comparto nuestra orden de compra ${numeroOC(o)} de ${clinica?.nombre || 'nuestra clínica'}:`, '',
@@ -383,7 +386,7 @@ function RecibirModal({ orden, lineas, inv, onClose, onListo }) {
     const lista = abiertas.map(l => ({ linea: l.id, cantidad: Number(filas[l.id].cantidad) || 0, lote: filas[l.id].lote.trim(), vence: filas[l.id].vence }))
     if (!lista.some(x => x.cantidad > 0)) { toast.error('Escriba cuánto llegó'); return }
     const demas = abiertas.find(l => Number(filas[l.id].cantidad) > pendienteLinea(l))
-    if (demas && !confirm(`Llegó más de lo pedido de ${prod(demas.producto_id)?.nombre}. ¿Registrarlo de todas formas?`)) return
+    if (demas && !await confirmar(`Llegó más de lo pedido de ${prod(demas.producto_id)?.nombre}. ¿Registrarlo de todas formas?`)) return
     setBusy(true)
     const { data, error } = await supabase.rpc('orden_recibir', { p_orden: orden.id, p_lineas: lista, p_fecha: fecha })
     setBusy(false)

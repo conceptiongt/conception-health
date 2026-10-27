@@ -122,3 +122,6 @@ export const TIPOS_MOVIMIENTO = {
   ajuste: { label: 'Ajuste', color: C.amber, bg: C.amberLight },
   traslado: { label: 'Traslado', color: C.blue, bg: C.blueLight },
 }
+
+// Reasons offered when deleting an appointment ("Otro" is added automatically)
+export const MOTIVOS_ELIMINAR_CITA = ['El paciente canceló', 'Se agendó por error', 'Cita duplicada', 'Se reprogramó en otra cita', 'El paciente no se presentó']

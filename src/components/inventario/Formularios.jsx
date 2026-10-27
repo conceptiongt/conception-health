@@ -13,10 +13,11 @@ import { toast } from '../ui/Toast'
 import { useDatos } from '../../hooks/useDatos'
 import { puede } from '../../lib/permisos'
 import { BuscadorProducto, ElegirCategoria } from './Selectores'
+import { confirmar } from '../ui/Confirmar'
 
 // Delete a product, location or supplier. The database refuses when it has history (then: deactivate).
 export async function eliminarRegistro(tabla, registro, nombre, onListo) {
-  if (!confirm(`¿Eliminar «${nombre}»? Esta acción no se puede deshacer.`)) return
+  if (!await confirmar(`¿Eliminar «${nombre}»? Esta acción no se puede deshacer.`)) return
   if (tabla === 'proveedores') {
     const { count } = await supabase.from('ordenes_compra').select('id', { count: 'exact', head: true }).eq('proveedor_id', registro.id)
     if (count) { toast.error('Este proveedor tiene órdenes de compra, por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'); return }

@@ -109,15 +109,13 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     onGuardado()
   }
 
-  // Deletes the appointment with its charges and payments; a patient with no other history is deleted too.
-  // The reason and who deleted it stay in "Citas eliminadas" (Citas → Historial), visible to everyone in the clinic.
+  // Deletes only this appointment: its charge and payments, and the products it used go back to stock.
+  // The patient's file stays as it is. The reason and who deleted it stay in Citas → "Citas eliminadas".
   const eliminar = async () => {
-    const otrasCitas = citas.some(c => c.paciente_id === paciente?.id && c.id !== cita.id)
-    const mensaje = ['Se eliminará también su cobro y los pagos registrados en él, para que no quede saldo pendiente.']
-    if (!otrasCitas) mensaje.push(`${paciente?.nombre} no tiene otras citas: si tampoco tiene otros cobros, fotos o productos usados, también se eliminará su expediente.`)
-    mensaje.push('Quedará guardada en el historial de citas eliminadas con el motivo y quién la eliminó.')
     const motivo = await confirmar({
-      titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`, mensaje, aceptar: 'Eliminar cita', peligro: true,
+      titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`,
+      mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.'],
+      aceptar: 'Eliminar cita', peligro: true,
       motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_ELIMINAR_CITA },
     })
     if (!motivo) return
@@ -125,8 +123,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id, p_motivo: motivo })
     setBusy(false)
     if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : 'No se pudo eliminar'); return }
-    toast.success(data?.paciente_eliminado ? 'Se eliminaron la cita, su cobro y el expediente' : data?.cobros ? 'Se eliminaron la cita y su cobro' : 'Cita eliminada')
-    onGuardado({ pacienteEliminado: !!data?.paciente_eliminado })
+    toast.success(data?.productos ? 'Cita eliminada; los productos regresaron al inventario' : 'Cita eliminada')
+    onGuardado()
   }
 
   const citaActual = { ...cita, ...f, id: cita?.id, ficha: fichaLimpia() }

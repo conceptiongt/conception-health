@@ -192,12 +192,10 @@ async function rpc(fn, a) {
     const c = DB.citas.find(x => x.id === a.p_cita)
     const pac = DB.pacientes.find(x => x.id === c.paciente_id)
     DB.citas_eliminadas.unshift({ id: crypto.randomUUID(), cita_id: c.id, paciente_nombre: pac?.nombre, fecha: c.fecha, hora: c.hora, tipo: c.tipo, motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
-    const otros = DB.citas.some(x => x.paciente_id === c.paciente_id && x.id !== c.id) || DB.cobros.some(x => x.paciente_id === c.paciente_id && x.cita_id !== c.id)
     const n = DB.cobros.filter(x => x.cita_id === c.id).length
     DB.cobros = DB.cobros.filter(x => x.cita_id !== c.id); DB.citas = DB.citas.filter(x => x.id !== c.id)
-    if (!otros) DB.pacientes = DB.pacientes.filter(x => x.id !== c.paciente_id)
     DB.abonos = DB.abonos.filter(x => DB.cobros.some(co => co.id === x.cobro_id))
-    return { data: { cobros: n, paciente_eliminado: !otros }, error: null }
+    return { data: { cobros: n, productos: 0 }, error: null }
   }
   if (fn === 'categoria_renombrar') {
     const c = DB.categorias_inventario.find(x => x.id === a.p_id), d = DB.categorias_inventario.find(x => x.id !== a.p_id && x.nombre.toLowerCase() === a.p_nombre.toLowerCase())

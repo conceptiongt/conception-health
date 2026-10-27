@@ -154,7 +154,7 @@ function Expediente({ paciente, onVolver }) {
     onVolver()
   }
 
-  if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={async (r) => { setCitaAbierta(undefined); if (r?.pacienteEliminado) { await recargar(); onVolver() } else recargar() }} />
+  if (citaAbierta !== undefined) return <CitaModal cita={citaAbierta} paciente={paciente} clinicaId={perfil.clinica_id} onClose={() => setCitaAbierta(undefined)} onGuardado={() => { setCitaAbierta(undefined); recargar() }} />
 
   if (portal && archivos) return <PortalCliente paciente={paciente} citas={misCitas} archivos={archivos} onVolver={() => setPortal(false)} onCambio={recargar} onArchivos={cargarArchivos} />
 

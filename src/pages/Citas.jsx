@@ -129,7 +129,7 @@ function CitasEliminadas({ onClose }) {
   const [filas, setFilas] = useState(null)
   const [buscar, setBuscar] = useState('')
   useEffect(() => {
-    supabase.from('citas_eliminadas').select('id, paciente_nombre, fecha, hora, tipo, estado, sede_nombre, motivo, eliminado_por_nombre, eliminado_at, paciente_eliminado')
+    supabase.from('citas_eliminadas').select('id, paciente_nombre, fecha, hora, tipo, estado, sede_nombre, motivo, eliminado_por_nombre, eliminado_at')
       .order('eliminado_at', { ascending: false }).limit(500)
       .then(({ data, error }) => { if (error) toast.error('No se pudo cargar el historial'); setFilas(data || []) })
   }, [])
@@ -151,7 +151,7 @@ function CitasEliminadas({ onClose }) {
                 </div>
                 <div style={{ fontSize: 14, color: C.g700, marginTop: 6, lineHeight: 1.5 }}><span style={{ color: C.g500 }}>Motivo:</span> {r.motivo}</div>
                 <div style={{ fontSize: 12.5, color: C.g400, marginTop: 6 }}>
-                  Eliminada por <strong style={{ fontWeight: 500, color: C.g600 }}>{r.eliminado_por_nombre || 'usuario'}</strong> el {cuando(r.eliminado_at)}{r.paciente_eliminado ? ' · también se eliminó el expediente (no tenía más historial)' : ''}
+                  Eliminada por <strong style={{ fontWeight: 500, color: C.g600 }}>{r.eliminado_por_nombre || 'usuario'}</strong> el {cuando(r.eliminado_at)}
                 </div>
               </div>
             ))}

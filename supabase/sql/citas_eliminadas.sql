@@ -1,3 +1,5 @@
 -- Deleted appointments history (Citas → Citas eliminadas): who deleted each one and why. Same as migration "citas_eliminadas".
 -- See the migration in Supabase for the full body of cita_eliminar(p_cita, p_motivo) and puede_eliminar_citas().
 -- Rules: only cita_eliminar (security definer) writes here; everyone in the clinic can read; nobody edits or deletes rows.
+-- 2026-10-27 (migration cita_eliminar_sin_tocar_expediente): deleting an appointment no longer deletes the patient.
+-- It removes the appointment, its charge/payments and its inventory movements (stock goes back via inv_aplicar).

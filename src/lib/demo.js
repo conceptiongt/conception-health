@@ -197,6 +197,14 @@ async function rpc(fn, a) {
     DB.abonos = DB.abonos.filter(x => DB.cobros.some(co => co.id === x.cobro_id))
     return { data: { cobros: n, productos: 0 }, error: null }
   }
+  if (fn === 'inventario_eliminar') {
+    const tabla = { producto: 'productos', sede: 'sedes', proveedor: 'proveedores', paquete: 'paquetes', categoria: 'categorias_inventario', orden: 'ordenes_compra', movimiento: 'inventario_movimientos' }[a.p_tipo]
+    const fila = (DB[tabla] || []).find(x => x.id === a.p_id)
+    if (!fila) return { data: null, error: { message: 'NO_ENCONTRADO' } }
+    ;(DB.inventario_eliminados ||= []).unshift({ id: crypto.randomUUID(), tipo: a.p_tipo, nombre: fila.nombre || 'Movimiento', motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
+    DB[tabla] = DB[tabla].filter(x => x.id !== a.p_id)
+    return { data: { eliminados: 1 }, error: null }
+  }
   if (fn === 'categoria_renombrar') {
     const c = DB.categorias_inventario.find(x => x.id === a.p_id), d = DB.categorias_inventario.find(x => x.id !== a.p_id && x.nombre.toLowerCase() === a.p_nombre.toLowerCase())
     DB.productos.filter(p => p.categoria === c.nombre).forEach(p => { p.categoria = d ? d.nombre : a.p_nombre })

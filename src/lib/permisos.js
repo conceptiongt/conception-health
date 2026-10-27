@@ -8,6 +8,7 @@ export const PERMISOS = [
   { k: 'compras', label: 'Hacer órdenes de compra', ayuda: 'Pedir a proveedores y registrar órdenes que ya llegaron, con sus montos. No le muestra el costo de los productos en el inventario', defecto: false },
   { k: 'exportar', label: 'Descargar e imprimir reportes', ayuda: 'Excel, PDF e impresión de listas y reportes', defecto: true },
   { k: 'eliminar_citas', label: 'Eliminar citas', ayuda: 'Siempre pide el motivo; queda en el historial de citas eliminadas', defecto: true },
+  { k: 'eliminar_inventario', label: 'Eliminar en el inventario', ayuda: 'Productos, movimientos, paquetes, sedes y borradores. Siempre pide el motivo; queda en el historial', defecto: true },
   { k: 'eliminar', label: 'Eliminar pacientes y expedientes', defecto: false },
   { k: 'configuracion', label: 'Cambiar la configuración', ayuda: 'Marca, tarifas, ficha clínica y sedes', defecto: false },
 ]

@@ -1,0 +1,4 @@
+-- Same as migration "inventario_eliminados" (2026-10-27): table inventario_eliminados (history of deletes in Inventario),
+-- function inventario_eliminar(p_tipo, p_id, p_motivo) as the only way to delete there (permission eliminar_inventario,
+-- default on), direct DELETE removed from productos, sedes, proveedores, ordenes_compra, categorias_inventario, paquetes
+-- and inventario_movimientos; categoria_eliminar no longer callable by users.

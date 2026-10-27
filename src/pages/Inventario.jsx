@@ -13,7 +13,7 @@ import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
 import { puede } from '../lib/permisos'
-import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
+import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal, eliminarDelInventario } from '../components/inventario/Formularios'
 import { CategoriasModal } from '../components/inventario/Selectores'
 import { Paquetes, ConteoModal } from '../components/inventario/Paquetes'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
@@ -105,6 +105,7 @@ export function Inventario() {
     { value: 'proveedores', label: 'Proveedores', icono: 'usuarios' },
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
     { value: 'historial', label: 'Historial', icono: 'actividad' },
+    { value: 'eliminados', label: 'Eliminados', icono: 'eliminar' },
   ]
   const TABS = TABS_TODAS.filter(t => comprar || !['compras', 'proveedores'].includes(t.value))
 
@@ -155,6 +156,7 @@ export function Inventario() {
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
       {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={comprar ? crearOrdenes : null} />}
       {tab === 'paquetes' && <Paquetes inv={inv} onCambio={recargarInv} />}
+      {tab === 'eliminados' && <Eliminados />}
       {tab === 'compras' && comprar && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
       {tab === 'proveedores' && comprar && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
       {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
@@ -559,12 +561,12 @@ function Historial({ inv, movs, onCambio }) {
 
   const deshacer = async (m) => {
     const p = producto(m.producto_id)
-    if (!await confirmar(`¿Deshacer este movimiento (${TIPOS_MOVIMIENTO[m.tipo].label}, ${fmtCant(Math.abs(m.delta))} ${p?.unidad || ''} de ${p?.nombre || 'producto'})? La existencia vuelve a como estaba.`)) return
-    const q = supabase.from('inventario_movimientos').delete()
-    const { error } = await (m.traslado_id ? q.eq('traslado_id', m.traslado_id) : q.eq('id', m.id))
-    if (error) { toast.error(errorInventario(error, 'No se pudo deshacer')); return }
-    toast.success('Movimiento deshecho')
-    onCambio()
+    const ok = await eliminarDelInventario({
+      tipo: 'movimiento', id: m.id, titulo: '¿Eliminar este movimiento?',
+      subtitulo: `${TIPOS_MOVIMIENTO[m.tipo].label} · ${fmtCant(Math.abs(m.delta))} ${p?.unidad || ''} de ${p?.nombre || 'producto'}`,
+      mensaje: 'La existencia vuelve a como estaba antes de este movimiento.', exito: 'Movimiento eliminado',
+    })
+    if (ok) onCambio()
   }
 
   const sel = filtroStyle
@@ -587,6 +589,42 @@ function Historial({ inv, movs, onCambio }) {
           ] }
         })}
       />
+    </>
+  )
+}
+
+// Everything deleted in Inventario: what, who, when and why. The whole clinic sees the same list.
+const TIPO_ELIMINADO = { producto: 'Producto', sede: 'Sede', proveedor: 'Proveedor', movimiento: 'Movimiento', paquete: 'Paquete', orden: 'Orden de compra', categoria: 'Categoría' }
+function Eliminados() {
+  const [filas, setFilas] = useState(null)
+  const [buscar, setBuscar] = useState('')
+  useEffect(() => {
+    supabase.from('inventario_eliminados').select('id, tipo, nombre, detalle, motivo, eliminado_por_nombre, eliminado_at')
+      .order('eliminado_at', { ascending: false }).limit(500)
+      .then(({ data, error }) => { if (error) toast.error('No se pudo cargar el historial'); setFilas(data || []) })
+  }, [])
+  const q = buscar.trim().toLowerCase()
+  const visibles = (filas || []).filter(r => !q || [r.nombre, r.detalle, r.motivo, r.eliminado_por_nombre, TIPO_ELIMINADO[r.tipo]].some(x => (x || '').toLowerCase().includes(q)))
+  const cuando = (t) => new Date(t).toLocaleString('es-GT', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  if (filas === null) return <Card><div style={{ color: C.g400, fontSize: 14 }}>Cargando…</div></Card>
+  if (!filas.length) return <Card><div style={{ color: C.g500, fontSize: 14, lineHeight: 1.6 }}>Aún no se ha eliminado nada del inventario. Cuando alguien elimine un producto, un movimiento, un paquete o una sede, aquí verá qué fue, quién lo eliminó, cuándo y por qué.</div></Card>
+  return (
+    <>
+      <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar producto, motivo o usuario…" style={{ ...filtroStyle, width: '100%', boxSizing: 'border-box', marginBottom: 12 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {visibles.map(r => (
+          <div key={r.id} style={{ background: '#fff', border: `1px solid ${C.g200}`, borderRadius: 14, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: C.g500, background: C.g100, borderRadius: 6, padding: '2px 7px' }}>{TIPO_ELIMINADO[r.tipo] || r.tipo}</span>
+              <strong style={{ fontWeight: 500, fontSize: 14.5 }}>{r.nombre}</strong>
+              {r.detalle && <span style={{ fontSize: 13, color: C.g500 }}>{r.detalle}</span>}
+            </div>
+            <div style={{ fontSize: 14, color: C.g700, marginTop: 6, lineHeight: 1.5 }}><span style={{ color: C.g500 }}>Motivo:</span> {r.motivo}</div>
+            <div style={{ fontSize: 12.5, color: C.g400, marginTop: 6 }}>Eliminado por <strong style={{ fontWeight: 500, color: C.g600 }}>{r.eliminado_por_nombre || 'usuario'}</strong> el {cuando(r.eliminado_at)}</div>
+          </div>
+        ))}
+        {!visibles.length && <div style={{ color: C.g500, fontSize: 14 }}>Nada coincide con la búsqueda.</div>}
+      </div>
     </>
   )
 }

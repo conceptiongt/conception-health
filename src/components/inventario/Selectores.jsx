@@ -7,6 +7,7 @@ import { Modal } from '../ui/Modal'
 import { toast } from '../ui/Toast'
 import { supabase } from '../../lib/supabase'
 import { confirmar } from '../ui/Confirmar'
+import { eliminarDelInventario } from './Formularios'
 
 // Offered as one-click suggestions while the clinic has no categories yet
 export const CATEGORIAS_BASE = ['Insumos', 'Medicamentos', 'Equipo']
@@ -193,12 +194,10 @@ export function CategoriasModal({ inv, onClose, onCambio }) {
   }
   const eliminar = async (c) => {
     const n = usos(c)
-    if (!await confirmar(n ? `¿Eliminar «${c.nombre}»? Sus ${n} productos se quedan, solo que sin categoría.` : `¿Eliminar «${c.nombre}»?`)) return
     setBusy(true)
-    const { error } = await supabase.rpc('categoria_eliminar', { p_id: c.id })
+    const ok = await eliminarDelInventario({ tipo: 'categoria', id: c.id, titulo: `¿Eliminar la categoría «${c.nombre}»?`, mensaje: n ? `Sus ${n} productos se quedan, solo que sin categoría.` : null, exito: 'Categoría eliminada' })
     setBusy(false)
-    if (error) { toast.error('No se pudo eliminar'); return }
-    toast.success('Categoría eliminada'); onCambio()
+    if (ok) onCambio()
   }
   const agregar = async () => {
     const t = capital(nueva.trim().replace(/\s+/g, ' '))

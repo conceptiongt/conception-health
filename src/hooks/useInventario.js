@@ -43,7 +43,10 @@ export function errorInventario(error, porDefecto = 'No se pudo guardar') {
   }
   if (t.includes('duplicate key') || t.includes('unique')) return 'Ya existe uno con ese nombre'
   if (error?.code === '23503' || t.includes('foreign key')) return 'Tiene historial (movimientos u órdenes), por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'
-  if (t.includes('row-level security')) return 'Su plan no incluye inventario'
+  if (t.includes('PROVEEDOR_CON_ORDENES')) return 'Este proveedor tiene órdenes de compra, por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'
+  if (t.includes('SIN_PERMISO')) return 'Su usuario no tiene permiso para eliminar en el inventario'
+  if (t.includes('ORDEN_NO_BORRADOR')) return 'Solo se pueden eliminar órdenes en borrador; cancele la orden'
+  if (t.includes('row-level security') || t.includes('SIN_INVENTARIO')) return 'Su plan no incluye inventario'
   return porDefecto
 }
 

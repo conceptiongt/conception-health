@@ -13,6 +13,7 @@ import { toast } from './ui/Toast'
 import { BuscadorProducto } from './inventario/Selectores'
 import { UsarPaqueteModal } from './inventario/Paquetes'
 import { confirmar } from './ui/Confirmar'
+import { eliminarDelInventario } from './inventario/Formularios'
 
 // Products used on a patient: each one is taken out of a location's stock, only if there is enough
 export function ProductosPaciente({ paciente, citas }) {
@@ -40,11 +41,11 @@ export function ProductosPaciente({ paciente, citas }) {
   const costo = usos.reduce((n, u) => n + Math.abs(u.delta) * (Number(producto(u.producto_id)?.costo) || 0), 0)
 
   const devolver = async (u) => {
-    if (!await confirmar('¿Quitar este registro? La cantidad regresa al inventario de la sede.')) return
-    const { error } = await supabase.from('inventario_movimientos').delete().eq('id', u.id)
-    if (error) { toast.error(errorInventario(error, 'No se pudo quitar')); return }
-    toast.success('Registro quitado; la cantidad regresó al inventario')
-    cargar(); recargar()
+    const ok = await eliminarDelInventario({
+      tipo: 'movimiento', id: u.id, titulo: '¿Quitar este producto usado?', subtitulo: producto(u.producto_id)?.nombre,
+      mensaje: 'La cantidad regresa al inventario de la sede.', exito: 'Registro quitado; la cantidad regresó al inventario',
+    })
+    if (ok) { cargar(); recargar() }
   }
 
   return (

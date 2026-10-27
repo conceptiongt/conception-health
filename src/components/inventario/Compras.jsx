@@ -13,7 +13,7 @@ import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../ui/Campos'
 import { Exportar } from '../Documento'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
-import { eliminarRegistro } from './Formularios'
+import { eliminarRegistro, eliminarDelInventario } from './Formularios'
 import { BotonesSubir, tipoArchivo } from '../SubirArchivos'
 import { confirmar } from '../ui/Confirmar'
 
@@ -276,10 +276,7 @@ export function OrdenDetalle({ inv, orden: o, lineas, onClose, onCambio, onEdita
     toast.success(msg); onCambio()
   }
   const eliminar = async () => {
-    if (!await confirmar(`¿Eliminar el borrador ${numeroOC(o)}?`)) return
-    const { error } = await supabase.from('ordenes_compra').delete().eq('id', o.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
-    toast.success('Borrador eliminado'); onCambio(); onClose()
+    if (await eliminarDelInventario({ tipo: 'orden', id: o.id, titulo: `¿Eliminar el borrador ${numeroOC(o)}?`, exito: 'Borrador eliminado' })) { onCambio(); onClose() }
   }
   const cancelar = async () => { if (await confirmar(`¿Cancelar ${numeroOC(o)}? Lo ya recibido se queda en el inventario.`)) cambiarEstado('cancelada', 'Orden cancelada') }
 

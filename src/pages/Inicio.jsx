@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
@@ -13,8 +14,9 @@ import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from 
 import { sedeCobro } from '../components/Pagos'
 
 const hoy = new Date()
-const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780' }
-const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
+const NO_CUENTAN = ['Cancelada', 'No asistió']
+const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780', Eliminada: '#9F1239' }
+const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas', Eliminada: 'Eliminadas' }
 const Seccion = ({ children }) => (
   <div style={{ fontSize: 11, fontWeight: 600, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
 )
@@ -33,11 +35,15 @@ export function Inicio() {
   const porId = Object.fromEntries(todosP.map(p => [p.id, p]))
 
   const enMesSel = (iso) => enPeriodo(iso, periodo)
-  const nuevos = pacientes.filter(p => enMesSel(p.created_at))
+  const citasMes = citas.filter(c => enMesSel(c.fecha))
+  // patients of the month = patients with an appointment that month (in the chosen location) that was not cancelled
+  // or missed; deleted appointments are gone, so they never count. Totals and locations always agree.
+  const pacientesDe = (lista) => [...new Set(lista.filter(c => !NO_CUENTAN.includes(c.estado)).map(c => c.paciente_id))].map(id => porId[id]).filter(Boolean)
+  const nuevos = pacientesDe(citasMes)
+  const atendidos = new Set(citasMes.filter(c => c.estado === 'Asistió').map(c => c.paciente_id)).size
   const deRedes = nuevos.filter(p => p.origen === 'redes').length
   const otros = nuevos.length - deRedes
   const pct = (n) => nuevos.length ? `${Math.round((n / nuevos.length) * 100)}% del total` : '—'
-  const citasMes = citas.filter(c => enMesSel(c.fecha))
   const cobrosMes = cobros.filter(c => enMesSel(c.fecha))
   const ventasMes = cobrosMes.reduce((n, c) => n + (Number(c.pagado) || 0), 0)
   const ventasAnio = cobros.filter(c => c.fecha?.startsWith(String(periodo.anio))).reduce((n, c) => n + (Number(c.pagado) || 0), 0)
@@ -54,7 +60,7 @@ export function Inicio() {
   const seis = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(periodo.anio, periodo.mes - 5 + i, 1)
     const m = { mes: d.getMonth(), anio: d.getFullYear() }
-    return { ...m, n: pacientes.filter(p => enPeriodo(p.created_at, m)).length }
+    return { ...m, n: pacientesDe(citas.filter(c => enPeriodo(c.fecha, m))).length }
   })
   const maxMes = Math.max(1, ...seis.map(s => s.n))
 
@@ -66,6 +72,17 @@ export function Inicio() {
     .sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')))
     .slice(0, 6)
 
+  // appointments deleted this month (Citas → Citas eliminadas), shown as their own box in "Estado de citas"
+  const [eliminadasMes, setEliminadasMes] = useState([])
+  useEffect(() => {
+    const desde = `${periodo.anio}-${String(periodo.mes + 1).padStart(2, '0')}-01`
+    const fin = new Date(periodo.anio, periodo.mes + 1, 1)
+    const hasta = `${fin.getFullYear()}-${String(fin.getMonth() + 1).padStart(2, '0')}-01`
+    supabase.from('citas_eliminadas').select('id, fecha, sede:datos->>sede_id').gte('fecha', desde).lt('fecha', hasta)
+      .then(({ data }) => setEliminadasMes(data || []))
+  }, [periodo.mes, periodo.anio])
+  const eliminadas = eliminadasMes.filter(e => !sede || e.sede === sede).length
+
   const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
   const titulo = `${MESES[periodo.mes]} ${periodo.anio}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
 
@@ -73,7 +90,7 @@ export function Inicio() {
     titulo: `Resumen de ${titulo}`,
     subtitulo: nombre,
     secciones: [
-      { resumen: [['Pacientes nuevos', fmtNum(nuevos.length)], ['Citas del mes', fmtNum(citasMes.length)], ...(finanzas ? [['Cobrado del mes', fmtQ(ventasMes)], ['Saldo pendiente', fmtQ(pendienteTotal)]] : [])] },
+      { resumen: [['Pacientes del mes', fmtNum(nuevos.length)], ['Citas del mes', fmtNum(citasMes.length)], ...(finanzas ? [['Cobrado del mes', fmtQ(ventasMes)], ['Saldo pendiente', fmtQ(pendienteTotal)]] : [])] },
       { titulo: 'Resumen', pares: [
         ['Pacientes del mes', fmtNum(nuevos.length)], ['Desde redes', `${deRedes} (${pct(deRedes)})`],
         ['Referidos / otros', `${otros} (${pct(otros)})`], ['Citas del mes', fmtNum(citasMes.length)],
@@ -81,7 +98,7 @@ export function Inicio() {
         ...(finanzas ? [['Cobrado del mes', fmtQ(ventasMes)], ['Facturado del mes', fmtQ(facturadoMes)],
           [`Cobrado en ${periodo.anio}`, fmtQ(ventasAnio)], ['Saldo pendiente total', fmtQ(pendienteTotal)]] : []),
       ] },
-      { titulo: 'Estado de citas', tabla: { headers: ['Estado', 'Citas'], filas: porEstado.map(e => [PLURAL[e.value], e.n]) } },
+      { titulo: 'Estado de citas', tabla: { headers: ['Estado', 'Citas'], filas: [...porEstado.map(e => [PLURAL[e.value], e.n]), ['Eliminadas', eliminadas]] } },
       { titulo: 'Origen de los pacientes', tabla: { headers: ['Origen', 'Pacientes'], filas: porOrigen.map(o => [o.label, o.valor]) } },
       { titulo: 'Distribución por red social', tabla: { headers: ['Red', 'Pacientes'], filas: porRed.map(r => [r.red, r.n]) } },
     ],
@@ -91,7 +108,7 @@ export function Inicio() {
         filas: [['Pacientes del mes', nuevos.length], ['Desde redes', deRedes], ['Referidos / otros', otros], ['Citas del mes', citasMes.length],
           ['Cirugías', cirugias], ['Procedimientos', procedimientos], ...(finanzas ? [['Cobrado del mes (Q)', ventasMes], ['Facturado del mes (Q)', facturadoMes],
           [`Cobrado en ${periodo.anio} (Q)`, ventasAnio], ['Saldo pendiente total (Q)', pendienteTotal]] : []),
-          ...porEstado.map(e => [`Citas ${PLURAL[e.value].toLowerCase()}`, e.n]), ...porRed.map(r => [`Red: ${r.red}`, r.n])]
+          ...porEstado.map(e => [`Citas ${PLURAL[e.value].toLowerCase()}`, e.n]), ['Citas eliminadas', eliminadas], ...porRed.map(r => [`Red: ${r.red}`, r.n])]
           .map(([k, v]) => ({ k, v })) }],
     },
   })
@@ -116,7 +133,7 @@ export function Inicio() {
       {sedes.length > 0 && <div style={{ marginBottom: 18 }}><FiltroSede valor={sede} onChange={setSede} /></div>}
 
       <Indicadores items={[
-        { label: 'Pacientes del mes', valor: fmtNum(nuevos.length), sub: 'Total registrados' },
+        { label: 'Pacientes del mes', valor: fmtNum(nuevos.length), sub: `${atendidos} ya atendidos · sin canceladas` },
         { label: 'Desde redes', valor: fmtNum(deRedes), sub: pct(deRedes) },
         { label: 'Referidos / otros', valor: fmtNum(otros), sub: pct(otros) },
         { label: 'Citas del mes', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
@@ -126,8 +143,8 @@ export function Inicio() {
 
       <Seccion>Estado de citas — {esActual ? 'este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</Seccion>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
-        {porEstado.map(e => (
-          <div key={e.value} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center' }}>
+        {[...porEstado, { value: 'Eliminada', n: eliminadas, onClick: () => ir('citas') }].map(e => (
+          <div key={e.value} onClick={e.onClick} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center', cursor: e.onClick ? 'pointer' : undefined }}>
             <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
             <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
           </div>

@@ -15,17 +15,27 @@ import { puede } from '../../lib/permisos'
 import { BuscadorProducto, ElegirCategoria } from './Selectores'
 import { confirmar } from '../ui/Confirmar'
 
+// Every delete in Inventario goes through here: asks why, and the database keeps who deleted what and why
+// (Inventario → Eliminados). Returns true when it was deleted.
+const MOTIVOS_INVENTARIO = ['Se ingresó por error', 'Se registró dos veces', 'La cantidad o el dato estaba mal', 'Ya no se usa']
+export async function eliminarDelInventario({ tipo, id, titulo, subtitulo, mensaje, exito = 'Eliminado' }) {
+  const motivo = await confirmar({
+    titulo, subtitulo, aceptar: 'Eliminar', peligro: true,
+    mensaje: [mensaje, 'Quedará en el historial de eliminados con el motivo y quién lo eliminó.'].filter(Boolean),
+    motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_INVENTARIO },
+  })
+  if (!motivo) return false
+  const { error } = await supabase.rpc('inventario_eliminar', { p_tipo: tipo, p_id: id, p_motivo: motivo })
+  if (error) { toast.error(errorInventario(error, 'No se pudo eliminar')); return false }
+  toast.success(exito)
+  return true
+}
+
 // Delete a product, location or supplier. The database refuses when it has history (then: deactivate).
+const TIPO_TABLA = { productos: 'producto', sedes: 'sede', proveedores: 'proveedor' }
 export async function eliminarRegistro(tabla, registro, nombre, onListo) {
-  if (!await confirmar(`¿Eliminar «${nombre}»? Esta acción no se puede deshacer.`)) return
-  if (tabla === 'proveedores') {
-    const { count } = await supabase.from('ordenes_compra').select('id', { count: 'exact', head: true }).eq('proveedor_id', registro.id)
-    if (count) { toast.error('Este proveedor tiene órdenes de compra, por eso no se puede eliminar. Desactívelo: deja de aparecer y su historial se conserva.'); return }
-  }
-  const { error } = await supabase.from(tabla).delete().eq('id', registro.id)
-  if (error) { toast.error(errorInventario(error, 'No se pudo eliminar')); return }
-  toast.success('Eliminado')
-  onListo()
+  const ok = await eliminarDelInventario({ tipo: TIPO_TABLA[tabla], id: registro.id, titulo: `¿Eliminar «${nombre}»?` })
+  if (ok) onListo()
 }
 
 // The four everyday operations, in plain words

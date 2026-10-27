@@ -13,6 +13,7 @@ import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { toast } from '../ui/Toast'
 import { BuscadorProducto } from './Selectores'
 import { confirmar } from '../ui/Confirmar'
+import { eliminarDelInventario } from './Formularios'
 
 const itemsDe = (inv, paqueteId) => (inv.paqueteItems || []).filter(i => i.paquete_id === paqueteId)
 
@@ -101,10 +102,7 @@ function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
     toast.success('Paquete guardado'); onGuardado()
   }
   const eliminar = async () => {
-    if (!await confirmar(`¿Eliminar el paquete «${paquete.nombre}»? Los usos ya registrados se conservan.`)) return
-    const { error } = await supabase.from('paquetes').delete().eq('id', paquete.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
-    toast.success('Paquete eliminado'); onGuardado()
+    if (await eliminarDelInventario({ tipo: 'paquete', id: paquete.id, titulo: `¿Eliminar el paquete «${paquete.nombre}»?`, mensaje: 'Los usos ya registrados se conservan.', exito: 'Paquete eliminado' })) onGuardado()
   }
 
   return (

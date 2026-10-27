@@ -94,6 +94,7 @@ for (let m = 0; m < 6; m++) {
 }
 
 const DB = {
+  citas_eliminadas: [],
   perfiles: [
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
@@ -189,6 +190,8 @@ const almacen = () => ({
 async function rpc(fn, a) {
   if (fn === 'cita_eliminar') {
     const c = DB.citas.find(x => x.id === a.p_cita)
+    const pac = DB.pacientes.find(x => x.id === c.paciente_id)
+    DB.citas_eliminadas.unshift({ id: crypto.randomUUID(), cita_id: c.id, paciente_nombre: pac?.nombre, fecha: c.fecha, hora: c.hora, tipo: c.tipo, motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
     const otros = DB.citas.some(x => x.paciente_id === c.paciente_id && x.id !== c.id) || DB.cobros.some(x => x.paciente_id === c.paciente_id && x.cita_id !== c.id)
     const n = DB.cobros.filter(x => x.cita_id === c.id).length
     DB.cobros = DB.cobros.filter(x => x.cita_id !== c.id); DB.citas = DB.citas.filter(x => x.id !== c.id)

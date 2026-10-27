@@ -12,6 +12,7 @@ import { Icon } from '../components/ui/Icon'
 import { Exportar } from '../components/Documento'
 import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from '../components/Filtros'
 import { sedeCobro } from '../components/Pagos'
+import { abrirCitasCon } from './Citas'
 
 const hoy = new Date()
 const NO_CUENTAN = ['Cancelada', 'No asistió']
@@ -83,6 +84,9 @@ export function Inicio() {
   }, [periodo.mes, periodo.anio])
   const eliminadas = eliminadasMes.filter(e => !sede || e.sede === sede).length
 
+  // a status box opens Citas with that status, this month and this location
+  const verCitas = (f) => { abrirCitasCon({ ...f, sede, periodo: { mes: periodo.mes, anio: periodo.anio, desde: '', hasta: '' } }); ir('citas') }
+
   const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
   const titulo = `${MESES[periodo.mes]} ${periodo.anio}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
 
@@ -143,7 +147,7 @@ export function Inicio() {
 
       <Seccion>Estado de citas — {esActual ? 'este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</Seccion>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
-        {[...porEstado, { value: 'Eliminada', n: eliminadas, onClick: () => ir('citas') }].map(e => (
+        {[...porEstado.map(e => ({ ...e, onClick: () => verCitas({ estado: e.value }) })), { value: 'Eliminada', n: eliminadas, onClick: () => verCitas({ eliminadas: true }) }].map(e => (
           <div key={e.value} onClick={e.onClick} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center', cursor: e.onClick ? 'pointer' : undefined }}>
             <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
             <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>

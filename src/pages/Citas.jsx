@@ -15,30 +15,39 @@ import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
 import { Modal } from '../components/ui/Modal'
 
+// Inicio → a status box opens Citas already filtered (status, month, location)
+let filtroPendiente = null
+export const abrirCitasCon = (f) => { filtroPendiente = f }
+
+const PLURAL_ESTADO = { Pendiente: 'Pendientes', Confirmada: 'Confirmadas', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
+
 export function Citas() {
+  const [inicial] = useState(() => { const f = filtroPendiente; filtroPendiente = null; return f || {} })
   const { citas, pacientes, clinica, perfil, recargar, ir, sedes } = useDatos()
   const [buscar, setBuscar] = useState('')
-  const [periodo, setPeriodo] = useState({ mes: '', anio: '', desde: '', hasta: '' })
-  const [sede, setSede] = useState('')
-  const [estado, setEstado] = useState('')
+  const [periodo, setPeriodo] = useState(inicial.periodo || { mes: '', anio: '', desde: '', hasta: '' })
+  const [sede, setSede] = useState(inicial.sede || '')
+  const [estado, setEstado] = useState(inicial.estado || '')
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
   const [editando, setEditando] = useState(null)
-  const [historial, setHistorial] = useState(false)
+  const [historial, setHistorial] = useState(!!inicial.eliminadas)
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
 
   const q = buscar.trim().toLowerCase()
-  const visibles = citas.filter(c => {
+  // every filter except the status: the status buttons show how many there are of each
+  const sinEstado = citas.filter(c => {
     const p = porId[c.paciente_id]
     if (!p) return false
     if (q && !p.nombre.toLowerCase().includes(q) && !(p.telefono || '').includes(q)) return false
     if (!enPeriodo(c.fecha, periodo)) return false
     if (sede && c.sede_id !== sede) return false
-    if (estado && c.estado !== estado) return false
     if (tipo && c.tipo !== tipo) return false
     if (origen && p.origen !== origen) return false
     return true
-  }).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
+  })
+  const visibles = sinEstado.filter(c => !estado || c.estado === estado)
+    .sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
 
   const cambiarEstado = async (c, nuevo) => {
     const { error } = await supabase.from('citas').update({ estado: nuevo }).eq('id', c.id)
@@ -77,7 +86,6 @@ export function Citas() {
     <>
       <Encabezado titulo="Citas" subtitulo={`${visibles.length} ${visibles.length === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
         <AgregarAnio />
-        <Button variant="ghost" icon="reloj" onClick={() => setHistorial(true)}>Citas eliminadas</Button>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
@@ -88,11 +96,12 @@ export function Citas() {
       <div style={{ marginBottom: 10 }}><FiltroSede valor={sede} onChange={setSede} contar={deSede} /></div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
         <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios />
-        <select value={estado} onChange={e => setEstado(e.target.value)} style={sel}><option value="">Todo estado</option>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</select>
         <select value={tipo} onChange={e => setTipo(e.target.value)} style={sel}><option value="">Todo tipo</option>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</select>
         <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
         <RangoFechas valor={periodo} onChange={setPeriodo} />
       </div>
+
+      <BotonesEstado citas={sinEstado} valor={estado} onChange={setEstado} onEliminadas={() => setHistorial(true)} />
 
       <Tabla
         columnas={['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', '']}
@@ -159,5 +168,27 @@ function CitasEliminadas({ onClose }) {
           </div>
         </>}
     </Modal>
+  )
+}
+
+// Status buttons above the list: one tap shows only that status; "Eliminadas" opens the deleted appointments history
+function BotonesEstado({ citas, valor, onChange, onEliminadas }) {
+  const boton = (activo, color, bg, label, n, onClick, key) => (
+    <button key={key} onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 160, cursor: 'pointer',
+      fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', transition: 'background 0.15s, border-color 0.15s',
+      border: `1.5px solid ${activo ? color : C.g200}`, background: activo ? bg : '#fff', color: activo ? color : C.g700,
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: 8, background: color }} />
+      {label}
+      {n != null && <span style={{ minWidth: 20, padding: '1px 7px', borderRadius: 160, fontSize: 12, fontWeight: 600, background: activo ? '#fff' : C.g100, color: activo ? color : C.g500 }}>{n}</span>}
+    </button>
+  )
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      {boton(!valor, C.purple, C.purpleMid, 'Todas', citas.length, () => onChange(''), 'todas')}
+      {ESTADOS_CITA.map(e => boton(valor === e.value, e.color, e.bg, PLURAL_ESTADO[e.value] || e.value, citas.filter(c => c.estado === e.value).length, () => onChange(valor === e.value ? '' : e.value), e.value))}
+      {boton(false, C.red, C.redLight, 'Eliminadas', null, onEliminadas, 'eliminadas')}
+    </div>
   )
 }

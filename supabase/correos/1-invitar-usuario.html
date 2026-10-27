@@ -1,0 +1,11 @@
+<!-- Asunto: Le invitaron a trabajar en {{ .Data.clinica }} -->
+<div style="font-family:Arial,Helvetica,sans-serif;background:#F5F6F8;padding:32px 16px">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:32px 28px;color:#1F2230">
+    <div style="font-size:13px;font-weight:bold;letter-spacing:3px;color:#6B5CE7;margin-bottom:22px">CONCEPTION HEALTH</div>
+    <h1 style="font-size:22px;margin:0 0 14px;color:#1F2230">Le invitaron a {{ .Data.clinica }}</h1>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 22px;color:#444">Hola{{ if .Data.nombre }} {{ .Data.nombre }}{{ end }}, le dieron acceso a <strong>{{ .Data.clinica }}</strong> en Conception Health. Toque el botón para crear su contraseña y entrar.</p>
+    <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#6B5CE7;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 26px;border-radius:10px">Crear mi contraseña</a>
+    <p style="font-size:13px;line-height:1.6;margin:24px 0 0;color:#888">Si no esperaba este correo, puede ignorarlo. El enlace vence en 24 horas.</p>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#999;margin:18px 0 0">Conception Health · Expedientes, citas y cobros de su clínica</p>
+</div>

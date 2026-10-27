@@ -14,6 +14,17 @@ import { Modal } from './ui/Modal'
 import { toast } from './ui/Toast'
 import { Interruptor } from './MensajePaciente'
 
+// Invitation email (edge function invitar-asistente). Returns null when sent, or the reason it was not
+export async function enviarCorreoInvitacion(email) {
+  const { data, error } = await supabase.functions.invoke('invitar-asistente', { body: { email } })
+  if (!error && data?.ok) return null
+  let codigo = data?.error
+  try { codigo = codigo || (await error?.context?.json())?.error } catch { /* sin detalle */ }
+  return codigo || 'NO_SE_ENVIO'
+}
+const avisoCorreo = (email, motivo) => motivo === 'YA_ENTRA' ? `${email} ya tiene contraseña y puede entrar.`
+  : `No se pudo enviar el correo a ${email}. Envíele el enlace por WhatsApp.`
+
 // Link that opens "Crear cuenta" already filled in for an invited assistant
 export const linkInvitacion = (email) => `${location.origin}/?crear=1&asistente=1&correo=${encodeURIComponent(email)}`
 const mensajeInvitacion = (i, clinica) => `¡Hola${i.nombre ? ' ' + i.nombre.split(' ')[0] : ''}! 👋 Le invité a trabajar en ${clinica.nombre} con Conception Health.\n\nCree su contraseña aquí (con el correo ${i.email}):\n${linkInvitacion(i.email)}`
@@ -139,7 +150,7 @@ export function Usuarios() {
   const [extra, setExtra] = useState(false)
   const cargar = useCallback(async () => {
     const [{ data: u }, { data: i }] = await Promise.all([
-      supabase.from('perfiles').select('user_id, nombre, email, rol, permisos, created_at').order('created_at'),
+      supabase.from('perfiles').select('user_id, nombre, email, rol, permisos, created_at, password_creada').order('created_at'),
       supabase.from('invitaciones').select('*').is('aceptada_at', null).order('created_at', { ascending: false }),
     ])
     setUsuarios(u || []); setInvitaciones(i || [])
@@ -157,6 +168,14 @@ export function Usuarios() {
     if (!confirm(`¿Quitar el acceso de ${u.nombre || u.email}? Ya no podrá entrar a la clínica. Lo que registró se conserva.`)) return
     const { error } = await supabase.from('perfiles').delete().eq('user_id', u.user_id)
     if (error) toast.error('No se pudo quitar'); else { toast.success('Acceso retirado'); cargar() }
+  }
+  // email again + the WhatsApp link (whichever the person finds first)
+  const reenviar = async (x) => {
+    const motivo = await enviarCorreoInvitacion(x.email)
+    if (!motivo) toast.success(`Le enviamos otro correo a ${x.email}`)
+    else toast.error(avisoCorreo(x.email, motivo))
+    if (motivo !== 'YA_ENTRA' && confirm('¿Enviarle también el enlace por WhatsApp?')) window.open(linkWhatsAppSinNumero(mensajeInvitacion(x, clinica)), '_blank', 'noopener')
+    cargar()
   }
   const cancelar = async (i) => {
     await supabase.from('invitaciones').delete().eq('id', i.id); cargar()
@@ -186,6 +205,10 @@ export function Usuarios() {
         <div key={u.user_id} style={{ padding: '14px 0', borderBottom: `1px solid ${C.g100}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <Icon name="usuarios" size={18} style={{ color: C.g500 }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{u.nombre}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{u.email}</div></div>
+            {!u.password_creada && <>
+              <Badge color={C.amber} bg={C.amberLight}>Aún no crea su contraseña</Badge>
+              <Button size="sm" variant="ghost" icon="enviar" onClick={() => reenviar(u)}>Reenviar</Button>
+            </>}
             <Badge>Asistente</Badge><Button size="sm" variant="texto" onClick={() => quitar(u)}>Quitar acceso</Button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
@@ -202,7 +225,7 @@ export function Usuarios() {
       {invitaciones.map(i => (
         <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}` }}>
           <Icon name="reloj" size={18} style={{ color: C.amber }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{i.nombre || i.email}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{i.email} · invitado el {fmtFecha(i.created_at)} · aún no entra</div></div>
-          <Button size="sm" variant="ghost" icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(mensajeInvitacion(i, clinica)), '_blank', 'noopener')}>Reenviar</Button>
+          <Button size="sm" variant="ghost" icon="enviar" onClick={() => reenviar(i)}>Reenviar</Button>
           <Button size="sm" variant="texto" onClick={() => cancelar(i)}>Cancelar invitación</Button>
         </div>
       ))}
@@ -224,21 +247,28 @@ function InvitarModal({ clinica, onClose, onListo }) {
     if (/[<>]/.test(nombre)) { toast.error('El nombre no puede tener < >'); return }
     setBusy(true)
     const { data, error } = await supabase.from('invitaciones').insert({ clinica_id: clinica.id, email: e, nombre: nombre.trim() || null, permisos }).select().single()
-    setBusy(false)
     if (error) {
+      setBusy(false)
       toast.error(error.code === '23505' ? 'Ya hay una invitación para ese correo'
         : /LIMITE_USUARIOS/.test(error.message) ? 'Ya usa todos los usuarios de su plan. Agregue un usuario adicional.'
         : 'No se pudo invitar')
       return
     }
-    setLista(data); onListo()
+    // the email is sent right away; the WhatsApp link stays as a second way
+    const motivo = await enviarCorreoInvitacion(e)
+    setBusy(false)
+    setLista({ ...data, correo: !motivo })
+    onListo()
   }
   if (lista) {
     const msg = mensajeInvitacion(lista, clinica)
     return (
       <Modal title="Invitación lista" subtitle={lista.email} onClose={onClose} maxWidth={520}>
+        <div style={{ padding: '10px 14px', borderRadius: 12, marginBottom: 12, fontSize: 14, background: lista.correo ? C.greenLight : C.amberLight, color: lista.correo ? C.green : C.amber }}>
+          {lista.correo ? <>Le enviamos un correo a <strong>{lista.email}</strong> para que cree su contraseña.</> : <>No se pudo enviar el correo. Envíele el enlace por WhatsApp.</>}
+        </div>
         <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
-          Envíele este enlace a <strong>{lista.nombre || lista.email}</strong>. Al abrirlo creará su contraseña con el correo <strong>{lista.email}</strong> y entrará directo a {clinica.nombre}.
+          {lista.correo ? 'Si no le llega (revise también spam), envíele este enlace:' : <>Al abrir este enlace, <strong>{lista.nombre || lista.email}</strong> creará su contraseña con el correo <strong>{lista.email}</strong> y entrará directo a {clinica.nombre}.</>}
         </div>
         <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 12, background: C.g100, fontSize: 12.5, color: C.g600, wordBreak: 'break-all' }}>{linkInvitacion(lista.email)}</div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
@@ -263,10 +293,10 @@ function InvitarModal({ clinica, onClose, onListo }) {
           </label>
         ))}
       </div>
-      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14, lineHeight: 1.5 }}>Después le damos un enlace para enviárselo por WhatsApp; con él crea su contraseña y entra. Debe ser un correo que todavía no tenga cuenta en Conception Health. Puede cambiar los permisos cuando quiera.</div>
+      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14, lineHeight: 1.5 }}>Le llegará un correo para crear su contraseña; también le damos un enlace para enviárselo por WhatsApp. Debe ser un correo que todavía no tenga cuenta en Conception Health. Puede cambiar los permisos cuando quiera.</div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button icon="enviar" onClick={enviar} disabled={busy}>{busy ? 'Guardando…' : 'Crear invitación'}</Button>
+        <Button icon="enviar" onClick={enviar} disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</Button>
       </div>
     </Modal>
   )

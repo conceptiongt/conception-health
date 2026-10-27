@@ -41,7 +41,9 @@ Deno.serve(async (req) => {
 
   // an invited assistant does not need clinic name or specialty
   const { data: inv } = await db.from('invitaciones').select('id').ilike('email', email).is('aceptada_at', null).limit(1).maybeSingle()
-  if (!inv && (!nombre || !especialidad)) return json({ error: 'FALTAN_DATOS' }, 400)
+  // or already joined by the invitation email but without a password yet
+  const { data: pendiente } = inv ? { data: null } : await db.from('perfiles').select('user_id').ilike('email', email).neq('rol', 'dueno').eq('password_creada', false).maybeSingle()
+  if (!inv && !pendiente && (!nombre || !especialidad)) return json({ error: 'FALTAN_DATOS' }, 400)
 
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'desconocida'
   if (!(await permitido(ip))) return json({ error: 'DEMASIADOS_INTENTOS' }, 429)
@@ -52,7 +54,14 @@ Deno.serve(async (req) => {
   })
   if (error) {
     const ya = /already|registered|exists/i.test(error.message)
-    return json({ error: ya ? 'YA_EXISTE' : 'NO_SE_PUDO' }, ya ? 409 : 500)
+    if (!ya) return json({ error: 'NO_SE_PUDO' }, 500)
+    // invited by email but entering with the WhatsApp link: the user exists and has never set a password
+    const { data: p } = await db.from('perfiles').select('user_id, rol, password_creada').ilike('email', email).maybeSingle()
+    if (!p || p.rol === 'dueno' || p.password_creada) return json({ error: 'YA_EXISTE' }, 409)
+    const { error: e2 } = await db.auth.admin.updateUserById(p.user_id, { password, email_confirm: true })
+    if (e2) return json({ error: 'NO_SE_PUDO' }, 500)
+    await db.from('perfiles').update({ password_creada: true }).eq('user_id', p.user_id)
+    return json({ ok: true, asistente: true })
   }
   // they already chose their password: skip the "create your password" screen
   await db.from('perfiles').update({ password_creada: true }).eq('user_id', data.user.id)

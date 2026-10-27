@@ -1,6 +1,6 @@
 // Receives Recurrente webhooks (signed with Svix) and keeps each clinic's plan in sync.
 // Secrets (Supabase > Edge Functions > Secrets): RECURRENTE_WEBHOOK_SECRET (whsec_...), RECURRENTE_SECRET_KEY,
-// optional RECURRENTE_PRODUCTO_MAX / RECURRENTE_PRODUCTO_BASICO / RECURRENTE_PRODUCTO_LIA (product ids).
+// optional RECURRENTE_PRODUCTO_MAX / RECURRENTE_PRODUCTO_BASICO / RECURRENTE_PRODUCTO_LIA / RECURRENTE_PRODUCTO_USUARIO (product ids).
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -50,6 +50,18 @@ function detectarPlan(p: any): 'basico' | 'max' | 'lia' | null {
   return null
 }
 
+// "Usuario adicional" product: adds a user to the clinic instead of changing the plan
+async function esUsuarioExtra(p: any, subId: string | null) {
+  const mira = (x: any) => {
+    const prodId = x?.product?.id || x?.product_id
+    if (prodId && prodId === Deno.env.get('RECURRENTE_PRODUCTO_USUARIO')) return true
+    return /usuario/.test(JSON.stringify(x?.product?.name || x?.product?.title || x?.checkout?.items || '').toLowerCase())
+  }
+  if (mira(p)) return true
+  const sub = subId ? await obtenerSuscripcion(subId) : null
+  return !!sub && mira(sub)
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('ok')
   const body = await req.text()
@@ -65,9 +77,29 @@ Deno.serve(async (req) => {
     : { data: null }
   const clinicaId = perfil?.clinica_id || null
 
+  // Recurrente retries: an event already processed is not applied twice
+  if (svixId) {
+    const { data: ya } = await db.from('recurrente_eventos').select('svix_id').eq('svix_id', svixId).maybeSingle()
+    if (ya) return new Response(JSON.stringify({ ok: true, resultado: 'repetido' }), { headers: { 'Content-Type': 'application/json' } })
+  }
+
+  const subIdEvento = tipo.startsWith('subscription.') ? p.id : (p.subscription_id || p.subscription?.id || null)
+  const extra = clinicaId ? await esUsuarioExtra(p, subIdEvento) : false
+
   let resultado = 'ignorado'
   if (!clinicaId) {
     resultado = 'sin_cuenta_con_ese_correo'
+  } else if (extra) {
+    // one more user when the extra-user subscription starts; one less when it is cancelled. Monthly payments change nothing.
+    const { data: c } = await db.from('clinicas').select('usuarios_extra').eq('id', clinicaId).single()
+    const actual = c?.usuarios_extra || 0
+    if (['subscription.create', 'subscription.reactivate'].includes(tipo)) {
+      const { error } = await db.from('clinicas').update({ usuarios_extra: actual + 1 }).eq('id', clinicaId)
+      resultado = error ? `error: ${error.message}` : `usuario adicional (+1 = ${actual + 1})`
+    } else if (tipo === 'subscription.cancel') {
+      const { error } = await db.from('clinicas').update({ usuarios_extra: Math.max(0, actual - 1) }).eq('id', clinicaId)
+      resultado = error ? `error: ${error.message}` : `usuario adicional cancelado (${Math.max(0, actual - 1)})`
+    } else resultado = 'usuario adicional: pago mensual'
   } else if (['subscription.create', 'subscription.reactivate', 'subscription.unpause', 'intent.succeeded', 'payment_intent.succeeded'].includes(tipo)) {
     const subId = tipo.startsWith('subscription.') ? p.id : (p.subscription_id || p.subscription?.id || null)
     const sub = subId ? await obtenerSuscripcion(subId) : null

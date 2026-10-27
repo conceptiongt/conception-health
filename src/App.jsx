@@ -51,6 +51,11 @@ const NAV_CUENTA = [
 // what each user can open (the administrator decides for assistants in Configuración)
 const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
+// "#/expedientes/<id>" → { vista: 'expedientes', id }
+function leerRuta() {
+  const [, v, id] = window.location.hash.split('/')
+  return TODAS.some(n => n.id === v) ? { vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null } : {}
+}
 
 
 export default function App() {
@@ -75,10 +80,16 @@ function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
   const acc = accesos(clinica, planActivo)
-  const [vista, setVista] = useState(() => acc.health || !liaVisible(clinica) ? 'inicio' : 'lia')
+  // the section lives in the address (#/citas), so reloading the page stays where you were
+  const [vista, setVista] = useState(() => leerRuta().vista || (acc.health || !liaVisible(clinica) ? 'inicio' : 'lia'))
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
-  const [expedienteId, setExpedienteId] = useState(null)
+  const [expedienteId, setExpedienteId] = useState(() => leerRuta().id)
+  useEffect(() => {
+    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setMenu(false) } }
+    window.addEventListener('hashchange', fn)
+    return () => window.removeEventListener('hashchange', fn)
+  }, [])
 
   useEffect(() => { aplicarMarca(clinica?.color) }, [clinica?.color])
 
@@ -111,6 +122,8 @@ function Aplicacion({ sesion }) {
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
+    const ruta = `#/${v}${v === 'expedientes' && extra ? '/' + extra : ''}`
+    if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
 

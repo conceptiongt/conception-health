@@ -110,8 +110,15 @@ export function Pestanas({ opciones, valor, onChange }) {
   )
 }
 
+// Conception logo with "HEALTH" in place of the agency tagline (the tagline corner of the image is clipped away)
+const SIN_LEMA = 'polygon(0 0, 50.5% 0, 50.5% 50%, 100% 50%, 100% 100%, 0 100%)'
 export function Logo({ variant = 'dark', height = 36 }) {
-  return <img src={variant === 'light' ? '/logo-light.png' : '/logo-dark.png'} alt="Conception" style={{ height, width: 'auto', display: 'block' }} />
+  return (
+    <span role="img" aria-label="Conception Health" style={{ position: 'relative', display: 'block', height, width: height * 900 / 377, flexShrink: 0 }}>
+      <img src={variant === 'light' ? '/logo-light.png' : '/logo-dark.png'} alt="" style={{ height, width: 'auto', display: 'block', clipPath: SIN_LEMA }} />
+      <span style={{ position: 'absolute', left: '52.5%', top: '16%', height: '30%', display: 'flex', alignItems: 'center', fontSize: height * 0.2, fontWeight: 500, letterSpacing: '0.32em', color: variant === 'light' ? '#fff' : '#111', fontFamily: 'Poppins, sans-serif', lineHeight: 1 }}>HEALTH</span>
+    </span>
+  )
 }
 
 // Metric cards in a responsive grid (each one a white rounded card)

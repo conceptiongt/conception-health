@@ -14,7 +14,7 @@ function Marco({ children }) {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: `linear-gradient(135deg, #0D1B2E 0%, #1a0a3c 100%)` }}>
       <div style={{ background: '#fff', borderRadius: 20, padding: '32px 28px', width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.35)' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}><Logo height={56} /></div>
-        <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: C.purple, letterSpacing: '0.12em', marginBottom: 22 }}>HEALTH</div>
+        <div style={{ textAlign: 'center', fontSize: 12.5, color: C.g500, marginBottom: 22 }}>Expedientes, citas y cobros de su clínica</div>
         {children}
       </div>
     </div>
@@ -27,12 +27,28 @@ function Aviso({ tipo = 'info', children }) {
 }
 
 // Login / sign-up / forgot password
+// Links from an invitation open "Crear cuenta" already filled in: ?crear=1&correo=ana@x.com&asistente=1
+const params = new URLSearchParams(window.location.search)
+const ERRORES_CREAR = {
+  YA_EXISTE: 'Ese correo ya tiene una cuenta. Use "Iniciar sesión" o "¿Olvidó su contraseña?".',
+  CORREO_INVALIDO: 'Revise el correo electrónico.',
+  PASSWORD_CORTA: 'La contraseña debe tener al menos 8 caracteres.',
+  FALTAN_DATOS: 'Escriba el nombre y elija su especialidad.',
+  DATO_INVALIDO: 'El nombre no puede tener los signos < >.',
+  DEMASIADOS_INTENTOS: 'Demasiados intentos desde esta conexión. Espere 10 minutos e intente de nuevo.',
+  MUY_RAPIDO: 'Revise sus datos e intente de nuevo.',
+}
+
 export function Acceso() {
-  const [modo, setModo] = useState('entrar') // entrar | crear | olvido
+  const [modo, setModo] = useState(params.get('crear') ? 'crear' : 'entrar') // entrar | crear | olvido
+  const asistente = params.get('asistente') === '1'
   const [nombre, setNombre] = useState('')
   const [esp, setEsp] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(params.get('correo') || '')
   const [password, setPassword] = useState('')
+  const [password2, setPassword2] = useState('')
+  const [sitio, setSitio] = useState('') // honeypot: people never see it
+  const [abierto] = useState(() => Date.now())
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -48,16 +64,27 @@ export function Acceso() {
 
   const crear = async (e) => {
     e.preventDefault()
-    if (!nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor o de la clínica.' }); return }
-    if (!esp) { setMsg({ tipo: 'error', t: 'Elija su especialidad.' }); return }
+    if (!asistente && !nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor o de la clínica.' }); return }
+    if (!asistente && !esp) { setMsg({ tipo: 'error', t: 'Elija su especialidad.' }); return }
+    if (password.length < 8) { setMsg({ tipo: 'error', t: 'La contraseña debe tener al menos 8 caracteres.' }); return }
+    if (password !== password2) { setMsg({ tipo: 'error', t: 'Las contraseñas no coinciden.' }); return }
     setBusy(true); setMsg(null)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { shouldCreateUser: true, data: { nombre: nombre.trim(), especialidad: esp }, emailRedirectTo: redirect() },
+    const correo = email.trim().toLowerCase()
+    const { data, error } = await supabase.functions.invoke('crear-cuenta', {
+      body: { nombre: nombre.trim(), especialidad: esp, email: correo, password, sitio, t: Date.now() - abierto },
     })
+    let codigo = data?.error
+    if (error) { try { codigo = (await error.context?.json())?.error } catch { /* sin detalle */ } }
+    if (error || !data?.ok) {
+      setBusy(false)
+      // an invited assistant without a clinic name: the server asks for the missing data
+      setMsg({ tipo: 'error', t: ERRORES_CREAR[codigo] || 'No se pudo crear la cuenta. Intente de nuevo en unos minutos.' })
+      return
+    }
+    const { error: e2 } = await supabase.auth.signInWithPassword({ email: correo, password })
     setBusy(false)
-    if (error) setMsg({ tipo: 'error', t: 'No se pudo enviar el correo. Revise la dirección e intente de nuevo en unos minutos.' })
-    else setMsg({ tipo: 'ok', t: `Le enviamos un enlace a ${email.trim()}. Ábralo desde este dispositivo para entrar y crear su contraseña.` })
+    if (e2) { cambiar('entrar'); setMsg({ tipo: 'ok', t: 'Su cuenta está lista. Inicie sesión con su correo y contraseña.' }) }
+    else if (params.get('crear')) window.history.replaceState(null, '', window.location.pathname)
   }
 
   const olvido = async (e) => {
@@ -91,15 +118,21 @@ export function Acceso() {
       {modo === 'crear' && (
         <form onSubmit={crear} style={campos}>
           <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.5 }}>
-            Cree su cuenta con su nombre y correo. Le enviaremos un enlace para entrar y crear su contraseña.
-            Puede probar {APP_NOMBRE} gratis con hasta 3 pacientes.
+            {asistente
+              ? <>Le invitaron a trabajar en una clínica. Cree su contraseña para entrar.</>
+              : <>Cree su cuenta y entre de inmediato. Puede probar {APP_NOMBRE} gratis con hasta 3 pacientes y suscribirse cuando quiera.</>}
           </div>
-          <Campo label="Nombre del doctor o clínica"><Input value={nombre} onChange={setNombre} required placeholder="Ej. Dr. Juan Pérez" /></Campo>
-          <Campo label="Especialidad" ayuda="La plataforma se adapta a su especialidad; puede cambiarla después">
-            <Select value={esp} onChange={setEsp} required><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
-          </Campo>
-          <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" /></Campo>
-          <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Crear cuenta'}</Button>
+          {!asistente && <>
+            <Campo label="Nombre del doctor o clínica"><Input value={nombre} onChange={setNombre} required maxLength={120} placeholder="Ej. Dr. Juan Pérez" /></Campo>
+            <Campo label="Especialidad" ayuda="La plataforma se adapta a su especialidad; puede cambiarla después">
+              <Select value={esp} onChange={setEsp} required><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
+            </Campo>
+          </>}
+          <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required maxLength={120} autoComplete="email" /></Campo>
+          <Campo label="Contraseña" ayuda="Mínimo 8 caracteres"><Input type="password" value={password} onChange={setPassword} required autoComplete="new-password" /></Campo>
+          <Campo label="Repita la contraseña"><Input type="password" value={password2} onChange={setPassword2} required autoComplete="new-password" /></Campo>
+          <input value={sitio} onChange={e => setSitio(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0 }} />
+          <Button type="submit" size="lg" disabled={busy}>{busy ? 'Creando su cuenta…' : 'Crear cuenta y entrar'}</Button>
           <div>{link('Ya tengo cuenta', 'entrar')}</div>
         </form>
       )}

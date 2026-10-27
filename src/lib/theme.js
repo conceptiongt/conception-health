@@ -42,6 +42,8 @@ export const valido = (hex) => /^#[0-9a-fA-F]{6}$/.test(hex || '')
 
 export function aplicarMarca(color) {
   const c = valido(color) ? color : COLOR_BASE
+  // remembered so the next reload paints the clinic color right away (main.jsx), with no flash of the default color
+  try { localStorage.setItem('ch-color', c) } catch { /* private window */ }
   const r = document.documentElement.style
   r.setProperty('--acento', c)
   r.setProperty('--acento-oscuro', mezclar(c, '#000000', 0.2))

@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { plantillaDe, camposPaciente, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { PERMISOS, permisosIniciales, esAdmin } from '../lib/permisos'
-import { fmtFecha } from '../lib/formato'
+import { fmtFecha, linkWhatsAppSinNumero } from '../lib/formato'
+import { USUARIOS_INCLUIDOS, PRECIO_USUARIO_EXTRA, LINK_USUARIO_EXTRA } from '../lib/constantes'
 import { useDatos } from '../hooks/useDatos'
 import { Card, Badge } from './ui/Varios'
 import { Button } from './ui/Button'
@@ -12,6 +13,10 @@ import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { toast } from './ui/Toast'
 import { Interruptor } from './MensajePaciente'
+
+// Link that opens "Crear cuenta" already filled in for an invited assistant
+export const linkInvitacion = (email) => `${location.origin}/?crear=1&asistente=1&correo=${encodeURIComponent(email)}`
+const mensajeInvitacion = (i, clinica) => `¡Hola${i.nombre ? ' ' + i.nombre.split(' ')[0] : ''}! 👋 Le invité a trabajar en ${clinica.nombre} con Conception Health.\n\nCree su contraseña aquí (con el correo ${i.email}):\n${linkInvitacion(i.email)}`
 
 const nuevoId = () => 'c' + Math.random().toString(36).slice(2, 9)
 const iconoBtn = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', color: C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
@@ -131,6 +136,7 @@ export function Usuarios() {
   const [usuarios, setUsuarios] = useState(null)
   const [invitaciones, setInvitaciones] = useState([])
   const [invitar, setInvitar] = useState(false)
+  const [extra, setExtra] = useState(false)
   const cargar = useCallback(async () => {
     const [{ data: u }, { data: i }] = await Promise.all([
       supabase.from('perfiles').select('user_id, nombre, email, rol, permisos, created_at').order('created_at'),
@@ -158,9 +164,21 @@ export function Usuarios() {
 
   const asistentes = (usuarios || []).filter(u => u.rol !== 'dueno')
   const admin = (usuarios || []).find(u => u.rol === 'dueno')
+  const permitidos = USUARIOS_INCLUIDOS + (clinica?.usuarios_extra || 0)
+  const ocupados = (usuarios || []).length + invitaciones.length
+  const lleno = usuarios !== null && ocupados >= permitidos
   return (
-    <Card title="Usuarios y permisos" right={<Button size="sm" icon="mas" onClick={() => setInvitar(true)}>Invitar asistente</Button>}>
+    <Card title="Usuarios y permisos" right={<Button size="sm" icon="mas" onClick={() => lleno ? setExtra(true) : setInvitar(true)}>Invitar asistente</Button>}>
       <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14, lineHeight: 1.5 }}>Usted es el administrador: ve todo, incluidos costos y pagos. Sus asistentes trabajan en la misma clínica (pacientes, citas y expedientes compartidos) y solo ven lo que usted les permita.</div>
+      {usuarios !== null && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: lleno ? C.amberLight : C.purpleMid, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 13.5 }}>
+          <Icon name="usuarios" size={18} style={{ color: lleno ? C.amber : C.purple }} />
+          <div style={{ flex: 1, minWidth: 220, color: C.g700 }}>
+            <strong>{ocupados} de {permitidos} usuarios.</strong> Su plan incluye {USUARIOS_INCLUIDOS} (usted y un asistente){clinica?.usuarios_extra ? ` + ${clinica.usuarios_extra} adicional${clinica.usuarios_extra > 1 ? 'es' : ''}` : ''}. Cada usuario adicional cuesta {PRECIO_USUARIO_EXTRA} al mes.
+          </div>
+          <Button size="sm" variant="ghost" icon="mas" onClick={() => setExtra(true)}>Agregar usuario adicional</Button>
+        </div>
+      )}
       {admin && <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}` }}>
         <Icon name="escudo" size={18} style={{ color: C.purple }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{admin.nombre}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{admin.email}</div></div><Badge color={C.purpleDark} bg={C.purpleMid}>Administrador</Badge>
       </div>}
@@ -184,10 +202,12 @@ export function Usuarios() {
       {invitaciones.map(i => (
         <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}` }}>
           <Icon name="reloj" size={18} style={{ color: C.amber }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{i.nombre || i.email}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{i.email} · invitado el {fmtFecha(i.created_at)} · aún no entra</div></div>
+          <Button size="sm" variant="ghost" icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(mensajeInvitacion(i, clinica)), '_blank', 'noopener')}>Reenviar</Button>
           <Button size="sm" variant="texto" onClick={() => cancelar(i)}>Cancelar invitación</Button>
         </div>
       ))}
-      {invitar && <InvitarModal clinica={clinica} onClose={() => setInvitar(false)} onListo={() => { setInvitar(false); cargar() }} />}
+      {invitar && <InvitarModal clinica={clinica} onClose={() => { setInvitar(false); cargar() }} onListo={cargar} />}
+      {extra && <UsuarioExtraModal onClose={() => setExtra(false)} />}
     </Card>
   )
 }
@@ -197,19 +217,36 @@ function InvitarModal({ clinica, onClose, onListo }) {
   const [email, setEmail] = useState('')
   const [permisos, setPermisos] = useState(permisosIniciales)
   const [busy, setBusy] = useState(false)
+  const [lista, setLista] = useState(null) // the invitation once saved
   const enviar = async () => {
     const e = email.trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { toast.error('Escriba un correo válido'); return }
     if (/[<>]/.test(nombre)) { toast.error('El nombre no puede tener < >'); return }
     setBusy(true)
-    const { error } = await supabase.from('invitaciones').insert({ clinica_id: clinica.id, email: e, nombre: nombre.trim() || null, permisos })
-    if (error) { setBusy(false); toast.error(error.code === '23505' ? 'Ya hay una invitación para ese correo' : 'No se pudo invitar'); return }
-    // the assistant gets an email link to enter and create their password
-    const { error: e2 } = await supabase.auth.signInWithOtp({ email: e, options: { shouldCreateUser: true, data: { nombre: nombre.trim() }, emailRedirectTo: location.origin } })
+    const { data, error } = await supabase.from('invitaciones').insert({ clinica_id: clinica.id, email: e, nombre: nombre.trim() || null, permisos }).select().single()
     setBusy(false)
-    if (e2) toast.error('La invitación quedó guardada, pero no se pudo enviar el correo. Pídale que entre con «Crear cuenta» usando ese correo.')
-    else toast.success(`Le enviamos un correo a ${e} para que entre`)
-    onListo()
+    if (error) {
+      toast.error(error.code === '23505' ? 'Ya hay una invitación para ese correo'
+        : /LIMITE_USUARIOS/.test(error.message) ? 'Ya usa todos los usuarios de su plan. Agregue un usuario adicional.'
+        : 'No se pudo invitar')
+      return
+    }
+    setLista(data); onListo()
+  }
+  if (lista) {
+    const msg = mensajeInvitacion(lista, clinica)
+    return (
+      <Modal title="Invitación lista" subtitle={lista.email} onClose={onClose} maxWidth={520}>
+        <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
+          Envíele este enlace a <strong>{lista.nombre || lista.email}</strong>. Al abrirlo creará su contraseña con el correo <strong>{lista.email}</strong> y entrará directo a {clinica.nombre}.
+        </div>
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 12, background: C.g100, fontSize: 12.5, color: C.g600, wordBreak: 'break-all' }}>{linkInvitacion(lista.email)}</div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
+          <Button variant="ghost" icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
+          <Button icon="mensaje" onClick={() => window.open(linkWhatsAppSinNumero(msg), '_blank', 'noopener')}>Enviar por WhatsApp</Button>
+        </div>
+      </Modal>
+    )
   }
   return (
     <Modal title="Invitar asistente" subtitle={`Trabajará en ${clinica.nombre}`} onClose={onClose} maxWidth={560}>
@@ -226,10 +263,31 @@ function InvitarModal({ clinica, onClose, onListo }) {
           </label>
         ))}
       </div>
-      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14, lineHeight: 1.5 }}>Recibirá un correo para entrar y crear su contraseña. Debe ser un correo que todavía no tenga cuenta en Conception Health. Puede cambiar los permisos cuando quiera.</div>
+      <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14, lineHeight: 1.5 }}>Después le damos un enlace para enviárselo por WhatsApp; con él crea su contraseña y entra. Debe ser un correo que todavía no tenga cuenta en Conception Health. Puede cambiar los permisos cuando quiera.</div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button icon="enviar" onClick={enviar} disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</Button>
+        <Button icon="enviar" onClick={enviar} disabled={busy}>{busy ? 'Guardando…' : 'Crear invitación'}</Button>
+      </div>
+    </Modal>
+  )
+}
+
+// More users than the plan includes: monthly extra charge (Recurrente product "Usuario adicional")
+function UsuarioExtraModal({ onClose }) {
+  return (
+    <Modal title="Usuario adicional" subtitle={`${PRECIO_USUARIO_EXTRA} al mes por usuario`} onClose={onClose} maxWidth={480}>
+      <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
+        Su plan incluye {USUARIOS_INCLUIDOS} usuarios: usted (administrador) y un asistente. Para invitar a más personas, agregue usuarios adicionales por <strong>{PRECIO_USUARIO_EXTRA} al mes</strong> cada uno.
+        <ul style={{ margin: '12px 0 0', paddingLeft: 20, color: C.g600 }}>
+          <li>Se cobra junto con su suscripción, en Recurrente.</li>
+          <li>Apenas se confirme el pago podrá invitar a la nueva persona.</li>
+        </ul>
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+        <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        {LINK_USUARIO_EXTRA
+          ? <Button icon="suscripcion" onClick={() => window.open(LINK_USUARIO_EXTRA, '_blank', 'noopener')}>Agregar usuario adicional</Button>
+          : <Button disabled>Próximamente</Button>}
       </div>
     </Modal>
   )

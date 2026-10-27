@@ -76,6 +76,12 @@ export const PLANES = [
     incluye: ['Recepcionista virtual en su WhatsApp', 'Contesta y agenda las 24 horas', 'Recontacta, confirma y recuerda citas', 'Agenda de citas (sin expedientes ni cobros)'],
   },
 ]
+// Users: every plan includes the administrator + 1 assistant; more users are an extra monthly charge.
+// The database enforces the limit (invitaciones_limite); clinicas.usuarios_extra counts the ones bought.
+export const USUARIOS_INCLUIDOS = 2
+export const PRECIO_USUARIO_EXTRA = 'Q75' // per extra user per month
+export const LINK_USUARIO_EXTRA = null // Recurrente link for the "Usuario adicional" product (pending)
+
 export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
 
 // Lía is being finished on its own; until then the menu shows a "coming soon" page

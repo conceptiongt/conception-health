@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { plantillaDe, camposPaciente, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
-import { PERMISOS, permisosIniciales, esAdmin } from '../lib/permisos'
+import { PERMISOS, permisosIniciales, esAdmin, puede } from '../lib/permisos'
 import { fmtFecha, linkWhatsAppSinNumero } from '../lib/formato'
 import { USUARIOS_INCLUIDOS, PRECIO_USUARIO_EXTRA, LINK_USUARIO_EXTRA } from '../lib/constantes'
 import { useDatos } from '../hooks/useDatos'
@@ -191,7 +191,7 @@ export function Usuarios() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
             {PERMISOS.map(p => (
               <label key={p.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, cursor: 'pointer' }}>
-                <Interruptor activo={!!u.permisos?.[p.k]} onChange={v => cambiarPermiso(u, p.k, v)} />
+                <Interruptor activo={puede(u, p.k)} onChange={v => cambiarPermiso(u, p.k, v)} />
                 <span>{p.label}{p.ayuda && <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>{p.ayuda}</span>}</span>
               </label>
             ))}

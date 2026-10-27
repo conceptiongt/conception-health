@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { fmtQ, fmtFechaCorta, hoyISO } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
+import { puede } from '../lib/permisos'
 import { useInventario, existencia, fmtCant, errorInventario } from '../hooks/useInventario'
 import { Card, Tabla, Cargando } from './ui/Varios'
 import { Button } from './ui/Button'
@@ -14,7 +15,8 @@ import { UsarPaqueteModal } from './inventario/Paquetes'
 
 // Products used on a patient: each one is taken out of a location's stock, only if there is enough
 export function ProductosPaciente({ paciente, citas }) {
-  const { ir } = useDatos()
+  const { ir, perfil } = useDatos()
+  const costos = puede(perfil, 'costos')
   const { inv, recargar } = useInventario()
   const [usos, setUsos] = useState(null)
   const [nuevo, setNuevo] = useState(false)
@@ -60,7 +62,7 @@ export function ProductosPaciente({ paciente, citas }) {
             return { key: u.id, celdas: [fmtFechaCorta(u.fecha), <strong>{p?.nombre || '—'}</strong>, `${fmtCant(Math.abs(u.delta))} ${p?.unidad || ''}`, sede(u.sede_id)?.nombre || '—',
               c ? `${fmtFechaCorta(c.fecha)} · ${c.tipo || 'Consulta'}` : '—', <span style={{ whiteSpace: 'normal' }}>{u.notas || '—'}</span>,
               <Button variant="ghost" size="sm" onClick={() => devolver(u)}>Quitar</Button>] }
-          }), ...(costo > 0 ? [{ key: 'costo', celdas: [<strong>Costo de insumos</strong>, '', <strong>{fmtQ(costo)}</strong>, '', '', '', ''] }] : [])]}
+          }), ...(costos && costo > 0 ? [{ key: 'costo', celdas: [<strong>Costo de insumos</strong>, '', <strong>{fmtQ(costo)}</strong>, '', '', '', ''] }] : [])]}
         />
       )}
       {paquete && <UsarPaqueteModal inv={inv} paciente={paciente} citas={citas} sedeInicial={paciente.sede_id || usos[0]?.sede_id}

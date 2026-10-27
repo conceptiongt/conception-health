@@ -12,16 +12,21 @@ import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
 import { toast } from '../components/ui/Toast'
+import { puede } from '../lib/permisos'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal } from '../components/inventario/Formularios'
 import { CategoriasModal } from '../components/inventario/Selectores'
 import { Paquetes, ConteoModal } from '../components/inventario/Paquetes'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
+
+// costs, inventory value, purchase orders and suppliers: administrator, or assistants with the "costos" permission
+const useCostos = () => puede(useDatos().perfil, 'costos')
 
 export const lugarSede = (s) => [s.municipio, s.departamento].filter(Boolean).join(', ')
 const mesActual = () => new Date().toISOString().slice(0, 7)
 
 export function Inventario() {
   const { inv, recargar: recargarInv } = useInventario()
+  const costos = useCostos()
   const [movs, setMovs] = useState(null)
   const [tab, setTab] = useState('resumen')
   const [sedeFiltro, setSedeFiltro] = useState('')
@@ -87,7 +92,7 @@ export function Inventario() {
     await cargarCompras(); setTab('compras')
   }
 
-  const TABS = [
+  const TABS_TODAS = [
     { value: 'resumen', label: 'Resumen', icono: 'inicio' },
     { value: 'productos', label: 'Productos', icono: 'caja' },
     { value: 'reabastecer', label: `Reabastecer${reabastecer.length ? ` (${reabastecer.length})` : ''}`, icono: 'alerta' },
@@ -97,18 +102,19 @@ export function Inventario() {
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
     { value: 'historial', label: 'Historial', icono: 'actividad' },
   ]
+  const TABS = TABS_TODAS.filter(t => costos || !['compras', 'proveedores'].includes(t.value))
 
   return (
     <>
-      <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} · vale ${fmtQ(valorInventario(inv))}`}>
+      <Encabezado titulo="Inventario" subtitulo={`${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'} · ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} ${costos ? ` · vale ${fmtQ(valorInventario(inv))}` : ''}`}>
         <Button variant="ghost" icon="sede" onClick={() => setSede(null)}>Nueva sede</Button>
         <Button variant="ghost" icon="mas" onClick={() => setProducto(null)}>Nuevo producto</Button>
-        <Button icon="cartera" onClick={() => nuevaOrden()}>Nueva compra</Button>
+        {costos && <Button icon="cartera" onClick={() => nuevaOrden()}>Nueva compra</Button>}
       </Encabezado>
 
       {/* Everyday operations, like a warehouse dashboard */}
       <div className="inv-ops" style={{ marginBottom: 22 }}>
-        <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
+        {costos && <button className="op-tile" onClick={() => compras.ordenes.length ? setTab('compras') : nuevaOrden()} style={{
           display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 12, border: `1px solid ${C.line}`, background: C.lavender, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
         }}>
           <div style={{ width: 46, height: 46, borderRadius: 23, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="cartera" size={21} /></div>
@@ -117,7 +123,7 @@ export function Inventario() {
             <div style={{ fontSize: 12.5, color: C.g600, lineHeight: 1.35 }}>Órdenes a proveedores</div>
             {abiertas > 0 && <div style={{ fontSize: 11.5, fontWeight: 600, color: C.purple, marginTop: 3 }}>{abiertas} abiertas</div>}
           </div>
-        </button>
+        </button>}
         {OPERACIONES.map(o => {
           const n = movs.filter(m => m.tipo === o.tipo && m.fecha?.startsWith(mesActual()) && (o.tipo !== 'traslado' || m.delta > 0)).length
           const off = o.tipo === 'traslado' && sedes.length < 2
@@ -143,10 +149,10 @@ export function Inventario() {
         ? <Resumen inv={inv} movs={movs} sedes={sedes} productos={productos} reabastecer={reabastecer} vencen={vencen} operar={operar} verSede={verSede} irA={setTab} abrir={setDetalle} />
         : <Configurar sedes={sedes} productos={productos} onSede={() => setSede(null)} onProducto={() => setProducto(null)} />)}
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
-      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={crearOrdenes} />}
+      {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={costos ? crearOrdenes : null} />}
       {tab === 'paquetes' && <Paquetes inv={inv} onCambio={recargarInv} />}
-      {tab === 'compras' && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
-      {tab === 'proveedores' && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
+      {tab === 'compras' && costos && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
+      {tab === 'proveedores' && costos && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
       {tab === 'sedes' && <Sedes inv={inv} verSede={verSede} onEditar={setSede} />}
       {tab === 'historial' && <Historial inv={inv} movs={movs} onCambio={recargar} />}
 
@@ -208,6 +214,7 @@ function Kpi({ label, valor, sub, color, onClick }) {
 // ─── Overview ───
 function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, verSede, irA, abrir }) {
   const { pacientes } = useDatos()
+  const costos = useCostos()
   const conExistencia = productos.filter(p => sedes.some(s => existencia(inv, s.id, p.id) > 0)).length
   const usosMes = movs.filter(m => m.tipo === 'uso' && m.fecha?.startsWith(mesActual()))
   const atencion = [
@@ -219,7 +226,7 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
   return (
     <>
       <div className="inv-cuatro" style={{ marginBottom: 16 }}>
-        <Kpi label="Valor del inventario" valor={fmtQ(valorInventario(inv))} sub="Según el costo de cada producto" />
+        {costos && <Kpi label="Valor del inventario" valor={fmtQ(valorInventario(inv))} sub="Según el costo de cada producto" />}
         <Kpi label="Con existencia" valor={`${conExistencia} de ${productos.length}`} sub="productos" onClick={() => irA('productos')} />
         <Kpi label="Por reabastecer" valor={reabastecer.length} sub={reabastecer.length ? 'Bajo el mínimo' : 'Todo en orden'} color={reabastecer.length ? C.amber : null} onClick={() => irA('reabastecer')} />
         <Kpi label="Por vencer" valor={vencen.length} sub="En los próximos 60 días" color={vencen.length ? C.red : null} onClick={() => irA('reabastecer')} />
@@ -262,7 +269,7 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
                   <div style={{ fontWeight: 700, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
                   <div style={{ fontSize: 12.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{items} {items === 1 ? 'producto' : 'productos'}{bajos ? <span style={{ color: C.amber, fontWeight: 600 }}> · {bajos} por reabastecer</span> : ''}</div>
                 </div>
-                <div style={{ fontWeight: 700, color: C.black, whiteSpace: 'nowrap' }}>{fmtQ(valorInventario(inv, s.id))}</div>
+                {costos && <div style={{ fontWeight: 700, color: C.black, whiteSpace: 'nowrap' }}>{fmtQ(valorInventario(inv, s.id))}</div>}
                 <Icon name="flecha" size={15} style={{ color: C.g300 }} />
               </button>
             )
@@ -294,6 +301,7 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
 // ─── Products: cards (or list) with status and stock per location ───
 function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCategorias }) {
   const { clinica } = useDatos()
+  const costos = useCostos()
   const [buscar, setBuscar] = useState('')
   const [estado, setEstado] = useState('')
   const [categoria, setCategoria] = useState('')
@@ -315,7 +323,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
     excel: { archivo: 'inventario', hojas: [{ nombre: 'Existencias', columnas: [
       { header: 'Producto', key: 'p', width: 30 }, { header: 'Categoría', key: 'c', width: 16 }, { header: 'Unidad', key: 'u', width: 10 },
       ...visibles.map((s, i) => ({ header: s.nombre, key: 's' + i, width: 14 })), { header: 'Total', key: 't', width: 10 },
-      { header: 'Mínimo por sede', key: 'm', width: 14 }, { header: 'Costo', key: 'co', width: 12, moneda: true }, { header: 'Valor', key: 'v', width: 14, moneda: true }, { header: 'Estado', key: 'e', width: 14 },
+      { header: 'Mínimo por sede', key: 'm', width: 14 }, ...(costos ? [{ header: 'Costo', key: 'co', width: 12, moneda: true }, { header: 'Valor', key: 'v', width: 14, moneda: true }] : []), { header: 'Estado', key: 'e', width: 14 },
     ], filas: lista.map(({ p, e }) => ({ p: p.nombre, c: p.categoria, u: p.unidad, ...Object.fromEntries(visibles.map((s, i) => ['s' + i, existencia(inv, s.id, p.id)])),
       t: e.total, m: Number(p.stock_minimo), co: p.costo != null ? Number(p.costo) : null, v: e.total * (Number(p.costo) || 0), e: e.label })) }] },
   })
@@ -349,7 +357,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
           // one row per product: name, stock per location with its bar, total, price and status
           <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, boxShadow: SHADOW, overflow: 'hidden' }}>
             <div className="prod-fila prod-cab">
-              <span>Producto</span><span>Existencia por sede</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Precio</span><span>Estado</span>
+              <span>Producto</span><span>Existencia por sede</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>{costos ? 'Precio' : ''}</span><span>Estado</span>
             </div>
             {lista.map(({ p, e }) => (
               <button key={p.id} onClick={() => abrir(p)} className="prod-fila fila" style={{ opacity: p.activo ? 1 : 0.55 }}>
@@ -371,7 +379,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
                   })}
                 </div>
                 <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 15 }}>{fmtCant(e.total)}</div>
-                <div style={{ textAlign: 'right', color: p.costo != null ? C.black : C.g300 }}>{p.costo != null ? fmtQ(p.costo) : 'Sin precio'}</div>
+                <div style={{ textAlign: 'right', color: p.costo != null ? C.black : C.g300 }}>{!costos ? '' : p.costo != null ? fmtQ(p.costo) : 'Sin precio'}</div>
                 <div><Badge color={e.color} bg={e.bg}>{e.label}</Badge></div>
               </button>
             ))}
@@ -384,6 +392,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
 // ─── One product: stock per location, lots and its history ───
 function ProductoDetalle({ inv, movs, sedes, producto: p, onClose, operar, editar }) {
   const { pacientes } = useDatos()
+  const costos = useCostos()
   const e = estadoProducto(inv, sedes, p)
   const suyos = movs.filter(m => m.producto_id === p.id && (m.tipo !== 'traslado' || m.delta > 0))
   const lotes = movs.filter(m => m.producto_id === p.id && m.tipo === 'entrada' && (m.lote || m.vence) && existencia(inv, m.sede_id, p.id) > 0)
@@ -404,7 +413,7 @@ function ProductoDetalle({ inv, movs, sedes, producto: p, onClose, operar, edita
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
         {dato('EN TOTAL', `${fmtCant(e.total)} ${p.unidad}`)}
-        {dato('VALOR', p.costo != null ? fmtQ(e.total * Number(p.costo)) : '—')}
+        {costos && dato('VALOR', p.costo != null ? fmtQ(e.total * Number(p.costo)) : '—')}
         {dato('USADO ESTE MES', fmtCant(usado))}
         {dato('MÍNIMO POR SEDE', Number(p.stock_minimo) ? fmtCant(p.stock_minimo) : '—')}
       </div>
@@ -469,7 +478,7 @@ function Reabastecer({ filas, vencen, inv, operar, crearOrdenes }) {
   const crear = async () => { setBusy(true); await crearOrdenes(elegidas); setBusy(false) }
   return (
     <>
-      <Card title="Productos por reabastecer" right={pedibles.length > 0 && <Button icon="cartera" onClick={crear} disabled={busy || !elegidas.length}>{busy ? 'Creando…' : `Crear orden de compra (${elegidas.length})`}</Button>}>
+      <Card title="Productos por reabastecer" right={crearOrdenes && pedibles.length > 0 && <Button icon="cartera" onClick={crear} disabled={busy || !elegidas.length}>{busy ? 'Creando…' : `Crear orden de compra (${elegidas.length})`}</Button>}>
         <div style={{ fontSize: 13, color: C.g500, marginTop: -6, marginBottom: 14 }}>Se sugiere pedir lo necesario para llegar al máximo de cada producto (o al doble del mínimo si no tiene máximo), descontando lo que ya viene en camino. Se crea un borrador por sede y proveedor.</div>
         {filas.length === 0
           ? <Vacio icono="check" titulo="Nada por reabastecer" texto="Todas las sedes están sobre el mínimo de cada producto." />
@@ -500,6 +509,7 @@ function Reabastecer({ filas, vencen, inv, operar, crearOrdenes }) {
 
 // ─── Locations ───
 function Sedes({ inv, verSede, onEditar }) {
+  const costos = useCostos()
   if (inv.sedes.length === 0) return <Card><Vacio icono="sede" titulo="Aún no hay sedes" texto="Ej. «Zona 10» y «Zona 15» (de ciudad) y «Quetzaltenango» (departamental)."><Button icon="mas" onClick={() => onEditar(null)}>Nueva sede</Button></Vacio></Card>
   const productos = inv.productos.filter(p => p.activo)
   return (
@@ -519,7 +529,7 @@ function Sedes({ inv, verSede, onEditar }) {
             </div>
             {s.direccion && <div style={{ fontSize: 13, color: C.g600, marginTop: 10 }}>{s.direccion}</div>}
             <div style={{ display: 'flex', gap: 18, margin: '16px 0 14px' }}>
-              <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>VALOR</div><div style={{ fontWeight: 600, fontSize: 16 }}>{fmtQ(valorInventario(inv, s.id))}</div></div>
+              {costos && <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>VALOR</div><div style={{ fontWeight: 600, fontSize: 16 }}>{fmtQ(valorInventario(inv, s.id))}</div></div>}
               <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>PRODUCTOS</div><div style={{ fontWeight: 600, fontSize: 16 }}>{items}</div></div>
               <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em' }}>REABASTECER</div><div style={{ fontWeight: 600, fontSize: 16, color: bajos ? C.amber : C.green }}>{bajos}</div></div>
             </div>

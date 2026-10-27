@@ -17,6 +17,7 @@ import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
 import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
+import { Interruptor } from '../components/MensajePaciente'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
@@ -173,6 +174,24 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   const [cat, setCat] = useState('')
   const [nuevo, setNuevo] = useState({ categoria: 'Procedimiento', nombre: '', precio: '' })
   const [editando, setEditando] = useState(null) // { id, nombre, precio, categoria }
+  const [marcados, setMarcados] = useState(() => new Set()) // services selected for bulk actions
+  const marcar = (id, v) => setMarcados(m => { const n = new Set(m); v ? n.add(id) : n.delete(id); return n })
+
+  // the assistant sees this price (to charge the patient); without "finanzas" the rest stay hidden
+  const cambiarVisible = async (ids, v) => {
+    const { error } = await supabase.from('servicios').update({ visible_asistente: v }).in('id', ids)
+    if (error) { toast.error('No se pudo guardar'); return }
+    onCambio()
+  }
+  const eliminarVarios = async () => {
+    const ids = [...marcados]
+    if (!confirm(`¿Eliminar ${ids.length} ${ids.length === 1 ? 'tarifa' : 'tarifas'}? Las citas y cobros ya registrados no cambian.`)) return
+    const { error } = await supabase.from('servicios').delete().in('id', ids)
+    if (error) { toast.error('No se pudieron eliminar'); return }
+    toast.success(`${ids.length} ${ids.length === 1 ? 'tarifa eliminada' : 'tarifas eliminadas'}`)
+    setMarcados(new Set())
+    onCambio()
+  }
 
   const agregar = async () => {
     const n = nuevo.nombre.trim() || nuevo.categoria
@@ -200,6 +219,9 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   const lista = servicios
     .filter(s => (!cat || s.categoria === cat) && (!q || s.nombre.toLowerCase().includes(q) || s.categoria.toLowerCase().includes(q)))
     .sort((a, b) => TIPOS_CITA.indexOf(a.categoria) - TIPOS_CITA.indexOf(b.categoria) || a.nombre.localeCompare(b.nombre, 'es'))
+  const marcadosVisibles = lista.filter(s => marcados.has(s.id))
+  const todos = lista.length > 0 && marcadosVisibles.length === lista.length
+  const casilla = { width: 17, height: 17, accentColor: C.purple, cursor: 'pointer' }
   const btn = { width: 30, height: 30, borderRadius: 7, border: 'none', background: 'none', cursor: 'pointer', color: C.g500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
   const th = { padding: '9px 14px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, background: C.g50, borderBottom: `1px solid ${C.line}`, whiteSpace: 'nowrap' }
   const td = { padding: '8px 14px', borderTop: `1px solid ${C.g100}`, verticalAlign: 'middle' }
@@ -207,7 +229,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
 
   return (
     <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
-      <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14 }}>Al registrar una cita se llena el precio y se crea el cobro del paciente.</div>
+      <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14, lineHeight: 1.5 }}>Al registrar una cita se llena el precio y se crea el cobro del paciente. En la columna <strong>Asistente</strong> elija qué precios pueden ver sus asistentes para cobrar; los demás solo los ve usted.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0,1fr) 140px auto', gap: 8, alignItems: 'end', marginBottom: 16 }} className="tarifa-nueva">
         <Campo label="Tipo"><Select value={nuevo.categoria} onChange={v => setNuevo(p => ({ ...p, categoria: v }))}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></Campo>
@@ -224,28 +246,48 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
         <Segmentos valor={cat} onChange={setCat} opciones={[{ value: '', label: 'Todas', n: servicios.length }, ...TIPOS_CITA.map(t => ({ value: t, label: t, n: servicios.filter(s => s.categoria === t).length }))]} />
       </div>
 
+      {marcados.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 10, borderRadius: 12, background: C.purpleMid }}>
+          <strong style={{ fontSize: 13.5, marginRight: 'auto' }}>{marcados.size} {marcados.size === 1 ? 'seleccionada' : 'seleccionadas'}</strong>
+          <Button size="sm" variant="ghost" icon="ojo" onClick={() => cambiarVisible([...marcados], true)}>Mostrar precio al asistente</Button>
+          <Button size="sm" variant="ghost" icon="candado" onClick={() => cambiarVisible([...marcados], false)}>Ocultar al asistente</Button>
+          <Button size="sm" variant="danger" icon="eliminar" onClick={eliminarVarios}>Eliminar</Button>
+          <Button size="sm" variant="texto" onClick={() => setMarcados(new Set())}>Quitar selección</Button>
+        </div>
+      )}
+
       <div style={{ border: `1px solid ${C.line}`, borderRadius: 16, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-          <thead><tr><th style={th}>Servicio</th><th style={th}>Tipo</th><th style={{ ...th, textAlign: 'right' }}>Precio</th><th style={{ ...th, width: 80 }} /></tr></thead>
+          <thead><tr>
+            <th style={{ ...th, width: 34, paddingRight: 0 }}><input type="checkbox" aria-label="Seleccionar todas" checked={todos} onChange={e => setMarcados(e.target.checked ? new Set(lista.map(x => x.id)) : new Set())} style={casilla} /></th>
+            <th style={th}>Servicio</th><th style={th}>Tipo</th><th style={{ ...th, textAlign: 'right' }}>Precio</th>
+            <th style={{ ...th, textAlign: 'center' }} title="El asistente ve este precio">Asistente</th><th style={{ ...th, width: 80 }} />
+          </tr></thead>
           <tbody>
-            {lista.length === 0 && <tr><td colSpan={4} style={{ padding: 26, textAlign: 'center', color: C.g400 }}>{servicios.length ? 'Ninguna tarifa coincide' : 'Aún no hay tarifas'}</td></tr>}
+            {lista.length === 0 && <tr><td colSpan={6} style={{ padding: 26, textAlign: 'center', color: C.g400 }}>{servicios.length ? 'Ninguna tarifa coincide' : 'Aún no hay tarifas'}</td></tr>}
             {lista.map(s => {
               const grupo = !cat && !q && s.categoria !== previa
               previa = s.categoria
               return [
-                grupo && <tr key={'g' + s.categoria}><td colSpan={4} style={{ padding: '8px 14px 6px', fontSize: 12, color: C.purple, fontWeight: 500, background: '#fff', borderTop: `1px solid ${C.g100}` }}>{s.categoria}</td></tr>,
+                grupo && <tr key={'g' + s.categoria}><td colSpan={6} style={{ padding: '8px 14px 6px', fontSize: 12, color: C.purple, fontWeight: 500, background: '#fff', borderTop: `1px solid ${C.g100}` }}>{s.categoria}</td></tr>,
                 editando?.id === s.id ? (
                   <tr key={s.id}>
+                    <td style={td} />
                     <td style={td}><Input value={editando.nombre} onChange={v => setEditando(p => ({ ...p, nombre: v }))} /></td>
                     <td style={td}><Select value={editando.categoria} onChange={v => setEditando(p => ({ ...p, categoria: v }))}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></td>
                     <td style={td}><Input type="number" min="0" step="0.01" value={editando.precio} onChange={v => setEditando(p => ({ ...p, precio: v }))} /></td>
+                    <td style={td} />
                     <td style={{ ...td, whiteSpace: 'nowrap' }}><Button size="sm" onClick={guardar}>Guardar</Button> <Button size="sm" variant="texto" onClick={() => setEditando(null)}>Cancelar</Button></td>
                   </tr>
                 ) : (
-                  <tr key={s.id} className="fila">
+                  <tr key={s.id} className="fila" style={marcados.has(s.id) ? { background: C.purpleMid } : undefined}>
+                    <td style={{ ...td, paddingRight: 0 }}><input type="checkbox" aria-label={`Seleccionar ${s.nombre}`} checked={marcados.has(s.id)} onChange={e => marcar(s.id, e.target.checked)} style={casilla} /></td>
                     <td style={td}>{s.nombre}</td>
                     <td style={{ ...td, color: C.g500 }}>{s.categoria}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap' }}>{fmtQ(s.precio)}</td>
+                    <td style={{ ...td, textAlign: 'center' }} title={s.visible_asistente ? 'El asistente ve este precio' : 'Solo usted ve este precio'}>
+                      <span style={{ display: 'inline-flex' }}><Interruptor activo={!!s.visible_asistente} onChange={v => cambiarVisible([s.id], v)} /></span>
+                    </td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button style={btn} className="btn-ghost" title="Editar" onClick={() => setEditando({ id: s.id, nombre: s.nombre, precio: String(s.precio), categoria: s.categoria })}><Icon name="editar" size={15} /></button>
                       <button style={{ ...btn, color: C.red }} className="btn-ghost" title="Eliminar" onClick={() => eliminar(s)}><Icon name="eliminar" size={15} /></button>

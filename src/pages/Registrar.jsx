@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
-import { puede } from '../lib/permisos'
+import { puede, verPrecio } from '../lib/permisos'
 import { urlRegistro, codigoRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
 import { hoyISO, fmtFecha, fmtHora, fmtQ, linkWhatsAppSinNumero } from '../lib/formato'
@@ -64,7 +64,9 @@ export function Registrar() {
     }
     setBusy(false)
     toast.success('Paciente registrado')
-    setListo({ paciente, cita, cobro, precio: s.precio })
+    // the WhatsApp message only shows the price if this user may see it
+    const precioVisible = !s.servicio_id || verPrecio(perfil, servicios.find(x => x.id === s.servicio_id))
+    setListo({ paciente, cita, cobro, precio: precioVisible ? s.precio : 0 })
     setF({ ...vacio, fecha: f.fecha, sede: f.sede })
     setServ(servicioInicial(vacio.tipo, servicios))
     recargar()

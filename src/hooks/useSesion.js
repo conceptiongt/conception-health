@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 export function useSesion() {
   const [session, setSession] = useState(undefined)
   const [perfil, setPerfil] = useState(undefined) // undefined: loading, null: the account has no clinic access
-  const [clinica, setClinica] = useState(null)
+  const [clinica, setClinica] = useState(undefined) // undefined: loading
   const [recuperando, setRecuperando] = useState(false)
 
   useEffect(() => {
@@ -19,18 +19,17 @@ export function useSesion() {
   }, [])
 
   const cargar = useCallback(async () => {
-    if (!session) { setPerfil(undefined); setClinica(null); return }
+    if (!session) { setPerfil(undefined); setClinica(undefined); return }
     const { data: p } = await supabase.from('perfiles').select('*').eq('user_id', session.user.id).maybeSingle()
+    // the clinic is read before the profile is set, so the screen never shows a moment without the clinic's name, logo and plan
+    const c = p ? (await supabase.from('clinicas').select('*').eq('id', p.clinica_id).maybeSingle()).data : null
+    setClinica(c || null)
     setPerfil(p || null)
-    if (p) {
-      const { data: c } = await supabase.from('clinicas').select('*').eq('id', p.clinica_id).maybeSingle()
-      setClinica(c || null)
-    }
   }, [session])
 
   useEffect(() => { cargar() }, [cargar])
 
-  const cargando = session === undefined || (session && perfil === undefined)
+  const cargando = session === undefined || (session && (perfil === undefined || clinica === undefined))
   const planActivo = !!clinica?.plan_activo && (!clinica.plan_hasta || new Date(clinica.plan_hasta) > new Date())
   return { session, perfil, clinica, cargando, recuperando, setRecuperando, recargar: cargar, planActivo }
 }

@@ -1,12 +1,16 @@
 import { C } from '../lib/theme'
 import { fmtQ } from '../lib/formato'
 import { Campo, Input, Select } from './ui/Campos'
+import { useDatos } from '../hooks/useDatos'
+import { verPrecio } from '../lib/permisos'
 
 const OTRO = '__otro__'
 
 // Service picker for a consultation type: choose from the clinic's price list or type a new one; fills the price
 // valor = { servicioId, servicio, precio }
+// Assistants without "finanzas" only see the prices the administrator allowed in Tarifas (the price is still saved)
 export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = true, conPrecios = true }) {
+  const { perfil } = useDatos()
   const opciones = servicios.filter(s => s.activo && s.categoria === tipo)
   const detalle = tipo === 'Cirugía' ? 'Tipo de cirugía' : tipo === 'Procedimiento' ? 'Tipo de procedimiento' : 'Servicio'
   const escribiendo = valor.servicioId === OTRO || (!valor.servicioId && !!valor.servicio)
@@ -24,7 +28,7 @@ export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = t
         {opciones.length > 0 ? (
           <Select value={seleccion} onChange={elegir}>
             <option value="">Seleccione…</option>
-            {opciones.map(o => <option key={o.id} value={o.id}>{o.nombre}{conPrecios && Number(o.precio) ? ` — ${fmtQ(o.precio)}` : ''}</option>)}
+            {opciones.map(o => <option key={o.id} value={o.id}>{o.nombre}{verPrecio(perfil, o) && Number(o.precio) ? ` — ${fmtQ(o.precio)}` : ''}</option>)}
             <option value={OTRO}>Otro (escribir)…</option>
           </Select>
         ) : (
@@ -36,7 +40,7 @@ export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = t
           <Input value={valor.servicio} onChange={v => onChange({ ...valor, servicioId: OTRO, servicio: v })} />
         </Campo>
       )}
-      {conPrecio && (
+      {conPrecio && (escribiendo || !valor.servicioId || verPrecio(perfil, opciones.find(o => o.id === valor.servicioId))) && (
         <Campo label="Precio (Q)" ayuda={<span style={{ color: C.g400 }}>Se registra como cobro pendiente del paciente</span>}>
           <Input type="number" min="0" step="0.01" value={valor.precio} onChange={v => onChange({ ...valor, precio: v })} placeholder="0.00" />
         </Campo>

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 import { fmtQ, hoyISO } from '../../lib/formato'
 import { useDatos } from '../../hooks/useDatos'
+import { puede, verPrecio } from '../../lib/permisos'
 import { existencia, fmtCant, errorInventario } from '../../hooks/useInventario'
 import { Card, Vacio, Badge } from '../ui/Varios'
 import { Button } from '../ui/Button'
@@ -16,7 +17,8 @@ const itemsDe = (inv, paqueteId) => (inv.paqueteItems || []).filter(i => i.paque
 
 // ─── Packages tab: supplies always used together in a procedure ───
 export function Paquetes({ inv, onCambio }) {
-  const { servicios } = useDatos()
+  const { servicios, perfil } = useDatos()
+  const costos = puede(perfil, 'costos')
   const [editando, setEditando] = useState(undefined)
   const prod = (id) => inv.productos.find(p => p.id === id)
   const lista = inv.paquetes || []
@@ -53,7 +55,7 @@ export function Paquetes({ inv, onCambio }) {
                     </div>
                   ))}
                 </div>
-                {costo > 0 && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.g100}` }}>Costo de insumos: {fmtQ(costo)}</div>}
+                {costos && costo > 0 && <div style={{ fontSize: 12.5, color: C.g400, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.g100}` }}>Costo de insumos: {fmtQ(costo)}</div>}
               </div>
             )
           })}
@@ -65,7 +67,7 @@ export function Paquetes({ inv, onCambio }) {
 }
 
 function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
-  const { servicios } = useDatos()
+  const { servicios, perfil } = useDatos()
   const [nombre, setNombre] = useState(paquete?.nombre || '')
   const [servicio, setServicio] = useState(paquete?.servicio_id || '')
   const [activo, setActivo] = useState(paquete?.activo ?? true)
@@ -109,7 +111,7 @@ function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
       <Grid min={220}>
         <Campo label="Nombre *"><Input value={nombre} onChange={setNombre} placeholder="Ej. Aplicación de toxina" /></Campo>
         <Campo label="Tarifa vinculada (opcional)" ayuda="Para crear el cobro al usarlo">
-          <Select value={servicio} onChange={setServicio}><option value="">—</option>{opciones.map(s => <option key={s.id} value={s.id}>{s.categoria} · {s.nombre} — {fmtQ(s.precio)}</option>)}</Select>
+          <Select value={servicio} onChange={setServicio}><option value="">—</option>{opciones.map(s => <option key={s.id} value={s.id}>{s.categoria} · {s.nombre}{verPrecio(perfil, s) ? ` — ${fmtQ(s.precio)}` : ''}</option>)}</Select>
         </Campo>
       </Grid>
       <div style={{ fontSize: 13.5, fontWeight: 500, margin: '18px 0 8px' }}>Insumos</div>
@@ -215,7 +217,7 @@ export function UsarPaqueteModal({ inv, paciente, citas, sedeInicial, onClose, o
       {servicio && (
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, marginTop: 12, cursor: 'pointer' }}>
           <input type="checkbox" checked={cobrar} onChange={e => setCobrar(e.target.checked)} />
-          Crear también el cobro de «{servicio.nombre}» por {fmtQ(servicio.precio)}
+          Crear también el cobro de «{servicio.nombre}»{verPrecio(perfil, servicio) ? ` por ${fmtQ(servicio.precio)}` : ''}
         </label>
       )}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>

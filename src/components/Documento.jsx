@@ -8,6 +8,7 @@ import { urlLogo, iniciales } from '../lib/marca'
 import { COLOR_BASE, mezclar, valido } from '../lib/theme'
 import { generarPdf, verPdf } from './DocumentoPaciente'
 import { nombreArchivo } from '../lib/ficha'
+import { puede } from '../lib/permisos'
 
 const INK = '#1C1C1E', MUTED = '#6B6963', LINE = '#E3E1DB', SOFT = '#F7F6F3'
 
@@ -105,6 +106,7 @@ function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onRea
 // "Excel", "Ver PDF" (opens in another window, where it can be downloaded) and "Imprimir" buttons.
 // `preparar()` returns { titulo, subtitulo, secciones, excel: { hojas, archivo } } (may be async)
 export function Exportar({ clinica, preparar, size = 'sm' }) {
+  const datos = useDatos()
   const [doc, setDoc] = useState(null)
   const [pdf, setPdf] = useState(null) // document being turned into a PDF
   const [busy, setBusy] = useState(false)
@@ -149,6 +151,8 @@ export function Exportar({ clinica, preparar, size = 'sm' }) {
   }
   useEffect(() => { if (pdf && refPdf.current) esperaPdf.current?.() }, [pdf])
 
+  // assistants without the "exportar" permission do not see Excel / PDF / Imprimir
+  if (datos?.perfil && !puede(datos.perfil, 'exportar')) return null
   return (
     <>
       <Button variant="ghost" size={size} onClick={excel} disabled={busy} icon="excel">Excel</Button>

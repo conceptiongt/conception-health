@@ -13,12 +13,12 @@ import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
-import { Modal } from '../components/ui/Modal'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
 export const abrirCitasCon = (f) => { filtroPendiente = f }
 
+const ELIMINADAS = '__eliminadas' // the "Eliminadas" button: shows the deleted appointments history as the list
 const PLURAL_ESTADO = { Pendiente: 'Pendientes', Confirmada: 'Confirmadas', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas' }
 
 export function Citas() {
@@ -27,11 +27,10 @@ export function Citas() {
   const [buscar, setBuscar] = useState('')
   const [periodo, setPeriodo] = useState(inicial.periodo || { mes: '', anio: '', desde: '', hasta: '' })
   const [sede, setSede] = useState(inicial.sede || '')
-  const [estado, setEstado] = useState(inicial.estado || '')
+  const [estado, setEstado] = useState(inicial.eliminadas ? ELIMINADAS : inicial.estado || '')
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
   const [editando, setEditando] = useState(null)
-  const [historial, setHistorial] = useState(!!inicial.eliminadas)
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
 
   const q = buscar.trim().toLowerCase()
@@ -46,6 +45,17 @@ export function Citas() {
     if (origen && p.origen !== origen) return false
     return true
   })
+  // deleted appointments (who deleted each one and why), with the same month / location / type / search filters
+  const [eliminadas, setEliminadas] = useState([])
+  useEffect(() => {
+    supabase.from('citas_eliminadas').select('id, paciente_nombre, fecha, hora, tipo, motivo, eliminado_por_nombre, eliminado_at, sede:datos->>sede_id')
+      .order('eliminado_at', { ascending: false }).limit(1000)
+      .then(({ data }) => setEliminadas(data || []))
+  }, [citas])
+  const eliminadasVisibles = eliminadas.filter(r => enPeriodo(r.fecha, periodo) && (!sede || r.sede === sede) && (!tipo || r.tipo === tipo)
+    && (!q || [r.paciente_nombre, r.motivo, r.eliminado_por_nombre].some(x => (x || '').toLowerCase().includes(q))))
+  const verEliminadas = estado === ELIMINADAS
+
   const visibles = sinEstado.filter(c => !estado || c.estado === estado)
     .sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
 
@@ -56,10 +66,21 @@ export function Citas() {
   }
 
   const conPeriodo = periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta
-  const filtroTexto = [conPeriodo && textoPeriodo(periodo), sede && nombreSede(sedes, sede), estado, tipo, origen && origenLabel(origen), q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
+  const filtroTexto = [conPeriodo && textoPeriodo(periodo), sede && nombreSede(sedes, sede), verEliminadas ? 'Eliminadas' : estado, tipo, origen && origenLabel(origen), q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
   const deSede = (id) => citas.filter(c => (!id || c.sede_id === id) && enPeriodo(c.fecha, periodo)).length
 
-  const preparar = () => ({
+  const cuandoEliminada = (t) => new Date(t).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const prepararEliminadas = () => ({
+    titulo: 'Citas eliminadas', subtitulo: filtroTexto,
+    secciones: [{ tabla: { headers: ['Fecha de la cita', 'Paciente', 'Tipo', 'Motivo', 'Eliminada por', 'Eliminada el'],
+      filas: eliminadasVisibles.map(r => [fmtFechaCorta(r.fecha), r.paciente_nombre || '—', r.tipo || '—', r.motivo, r.eliminado_por_nombre || '—', cuandoEliminada(r.eliminado_at)]) } }],
+    excel: { archivo: `citas_eliminadas_${slug(filtroTexto)}`, hojas: [{ nombre: 'Eliminadas', columnas: [
+      { header: 'Fecha de la cita', key: 'f', width: 14 }, { header: 'Paciente', key: 'p', width: 28 }, { header: 'Tipo', key: 't', width: 18 },
+      { header: 'Motivo', key: 'm', width: 40 }, { header: 'Eliminada por', key: 'u', width: 22 }, { header: 'Eliminada el', key: 'e', width: 20 },
+    ], filas: eliminadasVisibles.map(r => ({ f: r.fecha, p: r.paciente_nombre, t: r.tipo, m: r.motivo, u: r.eliminado_por_nombre, e: cuandoEliminada(r.eliminado_at) })) }] },
+  })
+
+  const preparar = () => verEliminadas ? prepararEliminadas() : ({
     titulo: 'Citas',
     subtitulo: filtroTexto,
     secciones: [{ tabla: {
@@ -84,7 +105,7 @@ export function Citas() {
 
   return (
     <>
-      <Encabezado titulo="Citas" subtitulo={`${visibles.length} ${visibles.length === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
+      <Encabezado titulo="Citas" subtitulo={`${verEliminadas ? eliminadasVisibles.length : visibles.length} ${(verEliminadas ? eliminadasVisibles.length : visibles.length) === 1 ? 'cita' : 'citas'} · ${filtroTexto}`}>
         <AgregarAnio />
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
@@ -101,9 +122,22 @@ export function Citas() {
         <RangoFechas valor={periodo} onChange={setPeriodo} />
       </div>
 
-      <BotonesEstado citas={sinEstado} valor={estado} onChange={setEstado} onEliminadas={() => setHistorial(true)} />
+      <BotonesEstado citas={sinEstado} valor={estado} onChange={setEstado} eliminadas={eliminadasVisibles.length} />
 
-      <Tabla
+      {verEliminadas ? (
+        <Tabla
+          columnas={['Fecha de la cita', 'Paciente', 'Tipo', 'Motivo', 'Eliminada por', 'Fecha y hora de eliminación']}
+          vacio="No hay citas eliminadas con estos filtros"
+          filas={eliminadasVisibles.map(r => ({ key: r.id, celdas: [
+            `${fmtFechaCorta(r.fecha)}${r.hora ? ` · ${fmtHora(r.hora)}` : ''}`,
+            <span style={{ fontWeight: 500, color: C.black }}>{r.paciente_nombre || '—'}</span>,
+            r.tipo || '—',
+            <span style={{ whiteSpace: 'normal', display: 'inline-block', minWidth: 180, maxWidth: 320 }}>{r.motivo}</span>,
+            r.eliminado_por_nombre || '—',
+            cuandoEliminada(r.eliminado_at),
+          ] }))}
+        />
+      ) : <Tabla
         columnas={['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', '']}
         vacio="No hay citas con estos filtros"
         filas={visibles.map(c => {
@@ -127,52 +161,13 @@ export function Citas() {
             </div>,
           ] }
         })}
-      />
-      {historial && <CitasEliminadas onClose={() => setHistorial(false)} />}
+      />}
     </>
   )
 }
 
-// Every deleted appointment with who deleted it and why; the whole clinic (admin and assistants) sees the same list
-function CitasEliminadas({ onClose }) {
-  const [filas, setFilas] = useState(null)
-  const [buscar, setBuscar] = useState('')
-  useEffect(() => {
-    supabase.from('citas_eliminadas').select('id, paciente_nombre, fecha, hora, tipo, estado, sede_nombre, motivo, eliminado_por_nombre, eliminado_at')
-      .order('eliminado_at', { ascending: false }).limit(500)
-      .then(({ data, error }) => { if (error) toast.error('No se pudo cargar el historial'); setFilas(data || []) })
-  }, [])
-  const q = buscar.trim().toLowerCase()
-  const visibles = (filas || []).filter(r => !q || [r.paciente_nombre, r.motivo, r.eliminado_por_nombre].some(x => (x || '').toLowerCase().includes(q)))
-  const cuando = (t) => new Date(t).toLocaleString('es-GT', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-  return (
-    <Modal title="Citas eliminadas" subtitle="Quién eliminó cada cita y por qué" onClose={onClose} maxWidth={720}>
-      {filas === null ? <div style={{ color: C.g400, fontSize: 14 }}>Cargando…</div>
-        : !filas.length ? <div style={{ color: C.g500, fontSize: 14, lineHeight: 1.6 }}>Aún no se ha eliminado ninguna cita. Cuando alguien elimine una, aquí verá la fecha de la cita, el paciente, quién la eliminó y el motivo.</div>
-        : <>
-          <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente, motivo o usuario…" style={{ ...filtroStyle, width: '100%', boxSizing: 'border-box', marginBottom: 12 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {visibles.map(r => (
-              <div key={r.id} style={{ border: `1px solid ${C.g200}`, borderRadius: 14, padding: '12px 14px' }}>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                  <strong style={{ fontWeight: 500, fontSize: 14.5 }}>{r.paciente_nombre || 'Paciente'}</strong>
-                  <span style={{ fontSize: 13, color: C.g500 }}>Cita del {fmtFechaCorta(r.fecha)}{r.hora ? ` · ${fmtHora(r.hora)}` : ''}{r.tipo ? ` · ${r.tipo}` : ''}{r.sede_nombre ? ` · ${r.sede_nombre}` : ''}</span>
-                </div>
-                <div style={{ fontSize: 14, color: C.g700, marginTop: 6, lineHeight: 1.5 }}><span style={{ color: C.g500 }}>Motivo:</span> {r.motivo}</div>
-                <div style={{ fontSize: 12.5, color: C.g400, marginTop: 6 }}>
-                  Eliminada por <strong style={{ fontWeight: 500, color: C.g600 }}>{r.eliminado_por_nombre || 'usuario'}</strong> el {cuando(r.eliminado_at)}
-                </div>
-              </div>
-            ))}
-            {!visibles.length && <div style={{ color: C.g500, fontSize: 14 }}>Nada coincide con la búsqueda.</div>}
-          </div>
-        </>}
-    </Modal>
-  )
-}
-
-// Status buttons above the list: one tap shows only that status; "Eliminadas" opens the deleted appointments history
-function BotonesEstado({ citas, valor, onChange, onEliminadas }) {
+// Status buttons above the list: one tap shows only that status; "Eliminadas" shows the deleted appointments history
+function BotonesEstado({ citas, valor, onChange, eliminadas }) {
   const boton = (activo, color, bg, label, n, onClick, key) => (
     <button key={key} onClick={onClick} style={{
       display: 'inline-flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 160, cursor: 'pointer',
@@ -188,7 +183,7 @@ function BotonesEstado({ citas, valor, onChange, onEliminadas }) {
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       {boton(!valor, C.purple, C.purpleMid, 'Todas', citas.length, () => onChange(''), 'todas')}
       {ESTADOS_CITA.map(e => boton(valor === e.value, e.color, e.bg, PLURAL_ESTADO[e.value] || e.value, citas.filter(c => c.estado === e.value).length, () => onChange(valor === e.value ? '' : e.value), e.value))}
-      {boton(false, C.red, C.redLight, 'Eliminadas', null, onEliminadas, 'eliminadas')}
+      {boton(valor === ELIMINADAS, C.red, C.redLight, 'Eliminadas', eliminadas, () => onChange(valor === ELIMINADAS ? '' : ELIMINADAS), 'eliminadas')}
     </div>
   )
 }

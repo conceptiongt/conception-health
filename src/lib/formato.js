@@ -48,12 +48,22 @@ export function mensajeConfirmacion(paciente, cita, clinica, extras = {}) {
     + `\n\nSi necesita reprogramar, por favor avísenos con anticipación. ¡Le esperamos!`
 }
 
+// WhatsApp (mostly the computer app) turns 4-byte emojis such as 📅 or 👋 into "?" when they come in a link.
+// Before building the link we swap them for symbols that do arrive (✅ ⏰ ☎ ✉ …) or drop them.
+const EMOJI_SEGURO = { '📝': '✍', '📞': '☎', '📱': '☎', '📧': '✉', '📩': '✉', '👉': '➡', '💳': '✔', '💜': '♥', '🩺': '✚', '🏥': '✚' }
+export function textoParaWhatsApp(texto) {
+  return String(texto ?? '')
+    // emoji sequences outside the basic plane (with skin tones, joiners and variation selectors)
+    .replace(/[\u{1F000}-\u{1FFFF}][\u{1F3FB}-\u{1F3FF}\u{FE0F}]*(\u{200D}[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}][\u{FE0F}]*)*/gu, m => EMOJI_SEGURO[m] ?? EMOJI_SEGURO[[...m][0]] ?? '')
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/ {2,}/g, ' ').trim()
+}
+
 // WhatsApp link; Guatemala numbers without country code get +502.
-// api.whatsapp.com/send keeps emojis intact (the wa.me redirect turns them into "?" on some computers)
-export const linkWhatsAppSinNumero = (texto) => `https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`
+export const linkWhatsAppSinNumero = (texto) => `https://api.whatsapp.com/send?text=${encodeURIComponent(textoParaWhatsApp(texto))}`
 export function linkWhatsApp(telefono, texto) {
   const digitos = (telefono || '').replace(/\D/g, '')
   if (!digitos) return null
   const numero = digitos.length === 8 ? `502${digitos}` : digitos
-  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(texto)}`
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(textoParaWhatsApp(texto))}`
 }

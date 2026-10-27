@@ -23,6 +23,7 @@ export async function enviarCorreoInvitacion(email) {
   return codigo || 'NO_SE_ENVIO'
 }
 const avisoCorreo = (email, motivo) => motivo === 'YA_ENTRA' ? `${email} ya tiene contraseña y puede entrar.`
+  : motivo === 'OTRA_CLINICA' ? `${email} ya tiene su propia cuenta en Conception Health. Invite otro correo.`
   : `No se pudo enviar el correo a ${email}. Envíele el enlace por WhatsApp.`
 
 // Link that opens "Crear cuenta" already filled in for an invited assistant
@@ -257,6 +258,12 @@ function InvitarModal({ clinica, onClose, onListo }) {
     // the email is sent right away; the WhatsApp link stays as a second way
     const motivo = await enviarCorreoInvitacion(e)
     setBusy(false)
+    if (motivo === 'OTRA_CLINICA') {
+      // that email is already the account of another clinic: it could never join this one
+      await supabase.from('invitaciones').delete().eq('id', data.id)
+      toast.error(`${e} ya tiene su propia cuenta en Conception Health. Use otro correo para su asistente.`)
+      return
+    }
     setLista({ ...data, correo: !motivo })
     onListo()
   }

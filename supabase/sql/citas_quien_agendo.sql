@@ -1,0 +1,2 @@
+-- Same as migration "citas_quien_agendo" (2026-10-27): citas.creado_por (auth.uid() by default) and citas.agendo_nombre
+-- (who booked; the user's name unless another name is typed; 'Lía' for Lía). Trigger citas_quien_agendo fills it on insert.

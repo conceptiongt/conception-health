@@ -14,6 +14,7 @@ import { Card, Encabezado } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../components/ServicioCampos'
 import { toast } from '../components/ui/Toast'
+import { QuienAgendo, nombreUsuario } from '../components/QuienAgendo'
 
 const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
 
@@ -49,6 +50,7 @@ export function Registrar() {
     const { data: cita, error: e2 } = await supabase.from('citas').insert({
       clinica_id: perfil.clinica_id, paciente_id: paciente.id, fecha: f.fecha, hora: f.hora || null,
       tipo: f.tipo || null, estado: f.estado, notas: f.notas.trim() || null, servicio_id: s.servicio_id, servicio: s.servicio, ...sede,
+      agendo_nombre: (f.agendo ?? nombreUsuario(perfil)).trim() || null,
     }).select().single()
     if (e2) {
       await supabase.from('pacientes').delete().eq('id', paciente.id) // keep data consistent
@@ -67,7 +69,7 @@ export function Registrar() {
     // the WhatsApp message only shows the price if this user may see it
     const precioVisible = !s.servicio_id || verPrecio(perfil, servicios.find(x => x.id === s.servicio_id))
     setListo({ paciente, cita, cobro, precio: precioVisible ? s.precio : 0 })
-    setF({ ...vacio, fecha: f.fecha, sede: f.sede })
+    setF({ ...vacio, fecha: f.fecha, sede: f.sede, agendo: f.agendo })
     setServ(servicioInicial(vacio.tipo, servicios))
     recargar()
   }
@@ -111,6 +113,7 @@ export function Registrar() {
             <Campo label="Hora" ayuda="Cada cita dura 1 hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
             <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
+            <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo ?? nombreUsuario(perfil)} onChange={set('agendo')} /></Campo>
             <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} />
             <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Opcional" /></Campo>
           </Grid>

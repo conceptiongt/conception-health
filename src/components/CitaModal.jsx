@@ -18,6 +18,7 @@ import { Icon } from './ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
 import { confirmar } from './ui/Confirmar'
+import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 
@@ -34,6 +35,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     fecha: cita?.fecha || hoyISO(), hora: cita?.hora?.slice(0, 5) || '', tipo: cita?.tipo || 'Seguimiento',
     estado: cita?.estado || 'Pendiente', peso: cita?.peso ?? '', talla: cita?.talla ?? '',
     procedimiento: cita?.procedimiento || '', notas: cita?.notas || '', datos: cita?.datos || {}, ficha: cita?.ficha || {},
+    agendo: cita ? cita.agendo_nombre || '' : nombreUsuario(perfil),
     portal: !!cita?.portal, sede: cita?.sede_id || paciente?.sede_id || (sedes.length === 1 ? sedes[0].id : ''),
   })
   const [serv, setServ] = useState(() => servicioInicial(cita?.tipo || 'Seguimiento', servicios, cita))
@@ -83,7 +85,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
-      fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado,
+      fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado, agendo_nombre: f.agendo.trim() || null,
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
@@ -187,6 +189,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
               <Campo label="Fecha *"><Input type="date" value={f.fecha} onChange={set('fecha')} /></Campo>
               <Campo label="Hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
               <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
+              <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
               <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
               <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita && finanzas} conPrecios={finanzas} />

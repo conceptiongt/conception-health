@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { C } from '../lib/theme'
+import { C, SHADOW } from '../lib/theme'
 import { TIPOS_CITA, ESTADOS_CITA, ORIGENES, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtFechaCorta, fmtHora, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import { SelectorPeriodo, RangoFechas, AgregarAnio, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
@@ -31,6 +31,7 @@ export function Citas() {
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
   const [editando, setEditando] = useState(null)
+  const [abierta, setAbierta] = useState(null) // appointment whose row is open
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
 
   const q = buscar.trim().toLowerCase()
@@ -84,22 +85,21 @@ export function Citas() {
     titulo: 'Citas',
     subtitulo: filtroTexto,
     secciones: [{ tabla: {
-      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen'],
-      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen)] }),
+      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Agendó'],
+      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')] }),
     } }],
     excel: { archivo: `citas_${slug(filtroTexto)}`, hojas: [{ nombre: 'Citas', columnas: [
       { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'Hora', key: 'hora', width: 8 }, { header: 'Paciente', key: 'paciente', width: 30 },
       { header: 'Teléfono', key: 'tel', width: 14 }, { header: 'Tipo', key: 'tipo', width: 18 }, { header: 'Estado', key: 'estado', width: 13 },
       { header: 'Origen', key: 'origen', width: 16 }, { header: 'Red social', key: 'red', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 },
-      { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Sede', key: 'sede', width: 16 }, { header: 'Notas', key: 'notas', width: 40 },
+      { header: 'Agendó', key: 'agendo', width: 20 }, { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Sede', key: 'sede', width: 16 }, { header: 'Notas', key: 'notas', width: 40 },
     ], filas: visibles.map(c => { const p = porId[c.paciente_id]; return {
       sede: nombreSede(sedes, c.sede_id), fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, estado: c.estado,
-      origen: origenLabel(p.origen), red: p.red, ref: p.referido_por, proc: c.procedimiento, notas: c.notas,
+      origen: origenLabel(p.origen), red: p.red, ref: p.referido_por, agendo: c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : ''), proc: c.procedimiento, notas: c.notas,
     } }) }] },
   })
 
   const sel = filtroStyle
-  const btnMini = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px', height: 30, borderRadius: 7, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 400, color: C.g700, fontFamily: 'inherit' }
 
   if (editando) return <CitaModal soloCita cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
 
@@ -137,31 +137,9 @@ export function Citas() {
             cuandoEliminada(r.eliminado_at),
           ] }))}
         />
-      ) : <Tabla
-        columnas={['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', '']}
-        vacio="No hay citas con estos filtros"
-        filas={visibles.map(c => {
-          const p = porId[c.paciente_id]
-          const e = estadoCita(c.estado)
-          const wa = linkWhatsApp(p.telefono, mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre))
-          const cal = linkCalendar(p, c)
-          return { key: c.id, celdas: [
-            fmtFechaCorta(c.fecha), fmtHora(c.hora),
-            <button onClick={() => ir('expedientes', p.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, color: C.black, fontSize: 13.5, fontFamily: 'inherit' }}>{p.nombre}</button>,
-            [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—',
-            <select value={c.estado} onChange={ev => cambiarEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
-              {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
-            </select>,
-            ...(sedes.length ? [nombreSede(sedes, c.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []),
-            p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen),
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button style={btnMini} onClick={() => setEditando(c)}><Icon name="editar" size={14} />Editar</button>
-              {wa && <button style={btnMini} onClick={() => window.open(wa, '_blank', 'noopener')}><Icon name="mensaje" size={14} />WhatsApp</button>}
-              {cal && <button style={btnMini} onClick={() => window.open(cal, '_blank', 'noopener')}><Icon name="calendarioMas" size={14} />Calendar</button>}
-            </div>,
-          ] }
-        })}
-      />}
+      ) : <ListaCitas citas={visibles} porId={porId} sedes={sedes} abierta={abierta} setAbierta={setAbierta}
+        onEstado={cambiarEstado} onEditar={setEditando} onExpediente={(p) => ir('expedientes', p.id)}
+        mensaje={(p, c) => mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre)} />}
     </>
   )
 }
@@ -184,6 +162,85 @@ function BotonesEstado({ citas, valor, onChange, eliminadas }) {
       {boton(!valor, C.purple, C.purpleMid, 'Todas', citas.length, () => onChange(''), 'todas')}
       {ESTADOS_CITA.map(e => boton(valor === e.value, e.color, e.bg, PLURAL_ESTADO[e.value] || e.value, citas.filter(c => c.estado === e.value).length, () => onChange(valor === e.value ? '' : e.value), e.value))}
       {boton(valor === ELIMINADAS, C.red, C.redLight, 'Eliminadas', eliminadas, () => onChange(valor === ELIMINADAS ? '' : ELIMINADAS), 'eliminadas')}
+    </div>
+  )
+}
+
+// Appointments list: tapping a row opens it downwards with its details and actions (file, edit, WhatsApp, Calendar)
+function ListaCitas({ citas, porId, sedes, abierta, setAbierta, onEstado, onEditar, onExpediente, mensaje }) {
+  const conSede = sedes.length > 0
+  // the open panel always fits the visible width, even when the table scrolls sideways
+  const caja = useRef(null)
+  const [ancho, setAncho] = useState(0)
+  useEffect(() => {
+    const medir = () => setAncho(caja.current?.clientWidth || 0)
+    medir(); window.addEventListener('resize', medir)
+    return () => window.removeEventListener('resize', medir)
+  }, [])
+  const columnas = ['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(conSede ? ['Sede'] : []), 'Origen', 'Agendó', '']
+  const th = { padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }
+  const td = { padding: '14px 18px', color: C.black, whiteSpace: 'nowrap', verticalAlign: 'middle' }
+  const accion = { display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 160, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: C.g700, fontFamily: 'inherit' }
+  const dato = (k, v) => v ? <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{k}</div><div style={{ fontSize: 14, color: C.black, marginTop: 3, whiteSpace: 'normal' }}>{v}</div></div> : null
+  return (
+    <div ref={caja} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, overflowX: 'auto', boxShadow: SHADOW }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <thead><tr>{columnas.map((c, i) => <th key={i} style={th}>{c}</th>)}</tr></thead>
+        <tbody>
+          {citas.length === 0 && <tr><td colSpan={columnas.length} style={{ padding: 40, textAlign: 'center', color: C.g400 }}>No hay citas con estos filtros</td></tr>}
+          {citas.map((c, i) => {
+            const p = porId[c.paciente_id]
+            const e = estadoCita(c.estado)
+            const abiertaEsta = abierta === c.id
+            const wa = linkWhatsApp(p.telefono, mensaje(p, c))
+            const cal = linkCalendar(p, c)
+            const agendo = c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')
+            return [
+              <tr key={c.id} className="fila" onClick={() => setAbierta(abiertaEsta ? null : c.id)}
+                style={{ borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', background: abiertaEsta ? C.g50 : undefined }}>
+                <td style={td}>{fmtFechaCorta(c.fecha)}</td>
+                <td style={td}>{fmtHora(c.hora)}</td>
+                <td style={{ ...td, fontWeight: 500 }}>{p.nombre}</td>
+                <td style={td}>{[c.tipo, c.servicio].filter(Boolean).join(' · ') || '—'}</td>
+                <td style={td} onClick={ev => ev.stopPropagation()}>
+                  <select value={c.estado} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
+                    {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
+                  </select>
+                </td>
+                {conSede && <td style={td}>{nombreSede(sedes, c.sede_id) || <span style={{ color: C.g300 }}>—</span>}</td>}
+                <td style={td}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
+                <td style={{ ...td, color: C.g600 }}>{agendo}</td>
+                <td style={{ ...td, color: C.g400, width: 30 }}><span style={{ display: 'inline-flex', transform: abiertaEsta ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}><Icon name="abajo" size={16} /></span></td>
+              </tr>,
+              abiertaEsta && (
+                <tr key={c.id + '-detalle'} style={{ background: C.g50 }}>
+                  <td colSpan={columnas.length} style={{ padding: '4px 0 20px' }}>
+                    <div style={{ position: 'sticky', left: 18, width: ancho ? ancho - 36 : undefined, boxSizing: 'border-box', background: '#fff', border: `1px solid ${C.g100}`, borderRadius: 18, padding: '18px 20px', animation: 'aparecer 0.2s ease' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))', gap: '14px 24px' }}>
+                        {dato('Paciente', p.nombre)}
+                        {dato('Teléfono', p.telefono)}
+                        {dato('Fecha y hora', `${fmtFechaCorta(c.fecha)}${c.hora ? ` · ${fmtHora(c.hora)}` : ''}`)}
+                        {dato('Tipo y servicio', [c.tipo, c.servicio].filter(Boolean).join(' · '))}
+                        {conSede && dato('Sede', nombreSede(sedes, c.sede_id))}
+                        {dato('Agendó', agendo)}
+                        {dato('Registrada el', c.created_at && new Date(c.created_at).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }))}
+                        {p.alergias && dato('Alergias', <span style={{ color: C.red }}>{p.alergias}</span>)}
+                      </div>
+                      {c.notas && <div style={{ marginTop: 14 }}>{dato('Notas', c.notas)}</div>}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.g100}` }}>
+                        <button style={accion} onClick={() => onExpediente(p)}><Icon name="expedientes" size={15} />Ver expediente</button>
+                        <button style={accion} onClick={() => onEditar(c)}><Icon name="editar" size={15} />Editar cita</button>
+                        {wa && <button style={accion} onClick={() => window.open(wa, '_blank', 'noopener')}><Icon name="mensaje" size={15} />WhatsApp</button>}
+                        {cal && <button style={accion} onClick={() => window.open(cal, '_blank', 'noopener')}><Icon name="calendarioMas" size={15} />Google Calendar</button>}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ),
+            ]
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

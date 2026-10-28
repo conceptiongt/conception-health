@@ -614,7 +614,7 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: u } = await db.auth.getUser(jwt)
     if (!u?.user) return json({ error: 'sin_sesion' }, 401)
-    const { data: perfil } = await db.from('perfiles').select('clinica_id').eq('user_id', u.user.id).maybeSingle()
+    const { data: perfil } = await db.from('perfiles').select('clinica_id, rol').eq('user_id', u.user.id).maybeSingle()
     if (!perfil) return json({ error: 'sin_sesion' }, 401)
     const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()
     const body = await req.json().catch(() => ({}))
@@ -665,6 +665,14 @@ Deno.serve(async (req) => {
           : { ok: false, texto: `No se pudo suscribir la cuenta a la app (${alta.j.error?.message || 'error'}).` })
       }
       return json({ pasos })
+    }
+    // The clinic's administrator disconnects the number: Lía stops answering it and the line is freed
+    if (body.accion === 'desconectar_whatsapp') {
+      if (perfil.rol !== 'dueno') return json({ error: 'permiso' }, 403)
+      await db.from('lia_whatsapp').delete().eq('clinica_id', clinica.id)
+      const { data: c } = await db.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+      if (c) await db.from('lia_config').update({ config: { ...c.config, whatsapp: { estado: 'sin_conectar', numero: '' } } }).eq('clinica_id', clinica.id)
+      return json({ ok: true })
     }
     if (body.accion !== 'probar') return json({ error: 'accion' }, 400)
     if (iaPausada()) return json({ error: 'pausada' }, 503)

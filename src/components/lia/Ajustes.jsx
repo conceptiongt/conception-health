@@ -10,6 +10,7 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { toast } from '../ui/Toast'
 import { supabase } from '../../lib/supabase'
+import { esAdmin } from '../../lib/permisos'
 import { Interruptor, Segmentos, Titulo, botonMini } from './Comunes'
 
 const quitarBtn = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', color: C.g400, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
@@ -18,17 +19,35 @@ const DURACIONES = [[15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1 hora
 
 export function Ajustes({ seccion }) {
   const { cfg, set, guardar } = useLia()
-  const { servicios, clinica, planActivo, ir } = useDatos()
+  const { servicios, clinica, planActivo, ir, perfil } = useDatos()
+  const admin = esAdmin(perfil)
   const nombreLia = cfg.nombre || 'Lía'
   const d = cfg.datos
   const [bloqueo, setBloqueo] = useState({ fecha: '', hasta_fecha: '', desde: '', hasta: '', motivo: '' })
   const [numero, setNumero] = useState(cfg.whatsapp?.numero || '')
   const [revision, setRevision] = useState(null)
+  const [cambiando, setCambiando] = useState(false)
+  const [nuevoNumero, setNuevoNumero] = useState('')
 
   const revisarWhatsApp = async () => {
     setRevision('cargando')
     const { data, error } = await supabase.functions.invoke('lia-responder', { body: { accion: 'revisar_whatsapp' } })
     setRevision(error || !data?.pasos ? [{ ok: false, texto: 'No se pudo revisar la conexión. Intente de nuevo.' }] : data.pasos)
+  }
+  // A new number is connected by Conception (Meta has to verify it), so this only leaves the request;
+  // Lía keeps answering on the current number until the new one is connected
+  const solicitarCambio = async () => {
+    if (nuevoNumero.replace(/\D/g, '').length < 8) { toast.error('Escriba el número nuevo'); return }
+    const ok = await guardar({ ...cfg, whatsapp: { estado: 'solicitado', numero: nuevoNumero.trim(), anterior: cfg.whatsapp?.numero || '', solicitado_at: new Date().toISOString() } })
+    if (ok) { toast.success('Solicitud de cambio enviada. Mientras tanto sigue contestando en el número actual.'); setCambiando(false); setNuevoNumero('') }
+    else toast.error('No se pudo enviar la solicitud')
+  }
+  const desconectarWhatsApp = async () => {
+    if (!window.confirm(`¿Desconectar ${nombreLia} del número ${cfg.whatsapp?.numero || ''}? Dejará de contestar los mensajes de WhatsApp.`)) return
+    const { data, error } = await supabase.functions.invoke('lia-responder', { body: { accion: 'desconectar_whatsapp' } })
+    if (error || !data?.ok) { toast.error('No se pudo desconectar. Intente de nuevo.'); return }
+    toast.success('WhatsApp desconectado')
+    window.location.reload()
   }
 
   useEffect(() => {
@@ -52,7 +71,7 @@ export function Ajustes({ seccion }) {
     else toast.error('No se pudo enviar la solicitud')
   }
   const cancelarWhatsApp = async () => {
-    const ok = await guardar({ ...cfg, whatsapp: { estado: 'sin_conectar', numero: '' } })
+    const ok = await guardar({ ...cfg, whatsapp: cfg.whatsapp?.anterior ? { estado: 'conectado', numero: cfg.whatsapp.anterior } : { estado: 'sin_conectar', numero: '' } })
     if (ok) { setNumero(''); toast.success('Solicitud cancelada') }
     else toast.error('No se pudo cancelar la solicitud')
   }
@@ -198,12 +217,27 @@ export function Ajustes({ seccion }) {
             <Button variant="brand" style={{ marginTop: 10 }} onClick={solicitarWhatsApp}>Solicitar conexión</Button>
           </>}
           {wa === 'solicitado' && <>
-            <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud enviada para el número <b>{cfg.whatsapp.numero}</b>. <b>Todavía no está conectado</b>: Conception le contactará para terminar la conexión.</div>
+            {cfg.whatsapp.anterior
+              ? <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud de cambio al número <b>{cfg.whatsapp.numero}</b>. Mientras Conception termina la conexión, {nombreLia} sigue contestando en <b>{cfg.whatsapp.anterior}</b>.</div>
+              : <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud enviada para el número <b>{cfg.whatsapp.numero}</b>. <b>Todavía no está conectado</b>: Conception le contactará para terminar la conexión.</div>}
             <button style={{ ...botonMini, marginTop: 10 }} onClick={cancelarWhatsApp}>Cancelar solicitud</button>
           </>}
           {wa === 'conectado' && <>
             <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Conectado al número <b>{cfg.whatsapp.numero}</b>.{cfg.activacion?.modo === 'palabra' && <> Por ahora solo contesta a quien escriba “{cfg.activacion.palabra}”.</>}</div>
-            <button style={{ ...botonMini, marginTop: 10 }} onClick={revisarWhatsApp} disabled={revision === 'cargando'}>{revision === 'cargando' ? 'Revisando…' : 'Revisar conexión'}</button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              <button style={botonMini} onClick={revisarWhatsApp} disabled={revision === 'cargando'}>{revision === 'cargando' ? 'Revisando…' : 'Revisar conexión'}</button>
+              {admin && !cambiando && <button style={botonMini} onClick={() => setCambiando(true)}>Cambiar número</button>}
+              {admin && <button style={{ ...botonMini, color: C.red }} onClick={desconectarWhatsApp}>Desconectar</button>}
+            </div>
+            {cambiando && <div style={{ marginTop: 12 }}>
+              <Campo label="Número nuevo de WhatsApp" ayuda={`Conception conecta el número nuevo con usted (Meta pide confirmarlo con un código). Mientras tanto ${nombreLia} sigue contestando en el número actual.`}>
+                <Input value={nuevoNumero} onChange={setNuevoNumero} placeholder="+502 5555 0000" />
+              </Campo>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <Button variant="brand" onClick={solicitarCambio}>Solicitar cambio</Button>
+                <button style={botonMini} onClick={() => { setCambiando(false); setNuevoNumero('') }}>Cancelar</button>
+              </div>
+            </div>}
             {Array.isArray(revision) && <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
               {revision.map((p, i) => <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: p.ok ? C.green : C.red }}>{p.ok ? '✓' : '✗'} {p.texto}</div>)}
             </div>}

@@ -13,6 +13,7 @@ const MODELO = Deno.env.get('LIA_MODELO') || 'claude-opus-5-5'
 const LIMITE_PRUEBAS_DIA = 80 // test replies per clinic and day (each one costs API usage)
 const OFFSET_GT = -6 // Guatemala is UTC-6 all year
 const GRAPH = 'https://graph.facebook.com/v23.0'
+const APP_ID = Deno.env.get('WHATSAPP_APP_ID') || '3080365948836514' // Conception's Meta app (public id)
 const ESPERA_MS = 4000 // patients often send several messages in a row: Lía answers once, after the last one
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -656,12 +657,13 @@ Deno.serve(async (req) => {
       pasos.push({ ok: true, texto: `Token válido. Número ${num.j.display_phone_number || linea.numero}${num.j.verified_name ? ` (${num.j.verified_name})` : ''}.` })
       if (!linea.waba_id) { pasos.push({ ok: false, texto: 'Falta el identificador de la cuenta de WhatsApp.' }); return json({ pasos }) }
       const subs = await leer(await fetch(`${GRAPH}/${linea.waba_id}/subscribed_apps`, { headers: cabecerasWa() }))
-      const apps = (subs.j.data || []).map((a: any) => a.whatsapp_business_api_data?.name || a.whatsapp_business_api_data?.id).filter(Boolean)
-      if (subs.ok && apps.length) pasos.push({ ok: true, texto: `La cuenta ya envía los mensajes a la app (${apps.join(', ')}).` })
+      // other apps can be subscribed too (Meta's own test app is): what matters is that ours is
+      const nuestra = (subs.j.data || []).find((a: any) => String(a.whatsapp_business_api_data?.id) === APP_ID)
+      if (subs.ok && nuestra) pasos.push({ ok: true, texto: `La cuenta ya envía los mensajes a la app de Conception (${nuestra.whatsapp_business_api_data?.name || APP_ID}).` })
       else {
         const alta = await leer(await fetch(`${GRAPH}/${linea.waba_id}/subscribed_apps`, { method: 'POST', headers: cabecerasWa() }))
         pasos.push(alta.ok
-          ? { ok: true, texto: 'La cuenta no estaba enviando los mensajes a la app: ya quedó suscrita.' }
+          ? { ok: true, texto: 'La cuenta no estaba enviando los mensajes a la app de Conception: ya quedó suscrita. Escriba de nuevo para probar.' }
           : { ok: false, texto: `No se pudo suscribir la cuenta a la app (${alta.j.error?.message || 'error'}).` })
       }
       return json({ pasos })

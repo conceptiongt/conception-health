@@ -35,7 +35,7 @@ const aMin = (h: string) => { const [a, b] = String(h || '').split(':').map(Numb
 const aHora = (m: number) => pad(Math.floor(m / 60)) + ':' + pad(m % 60)
 const fechaLarga = (f: string) => { const d = new Date(f + 'T00:00:00Z'); return `${DIAS[d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}` }
 const fmtQ = (n: number) => n > 0 ? 'Q' + n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : 'precio a confirmar con el consultorio'
-const norm = (s: unknown) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+const norm = (s: unknown) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
 
 // ---------- settings ----------
 const HORARIO_BASE = { 0: [], 1: [['08:00', '13:00'], ['14:30', '18:00']], 2: [['08:00', '13:00'], ['14:30', '18:00']], 3: [['08:00', '13:00'], ['14:30', '18:00']], 4: [['08:00', '13:00'], ['14:30', '18:00']], 5: [['08:00', '13:00'], ['14:30', '18:00']], 6: [['08:00', '12:00']] }
@@ -638,6 +638,33 @@ Deno.serve(async (req) => {
       await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'd', texto })
       await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString() }).eq('id', conv.id)
       return json({ ok: true, enviado: !!linea })
+    }
+    // Checks the clinic's WhatsApp line from the server (token, number, app subscription) and
+    // subscribes the number's WhatsApp account to the app when it is missing, so Meta sends the messages
+    if (body.accion === 'revisar_whatsapp') {
+      const { data: linea } = await db.from('lia_whatsapp').select('*').eq('clinica_id', clinica.id).maybeSingle()
+      if (!linea) return json({ pasos: [{ ok: false, texto: 'Este consultorio no tiene un número de WhatsApp conectado.' }] })
+      const pasos: { ok: boolean, texto: string }[] = []
+      const leer = async (r: Response) => { const j = await r.json().catch(() => ({})); return { ok: r.ok && !j.error, j } }
+      if (!Deno.env.get('WHATSAPP_TOKEN')) return json({ pasos: [{ ok: false, texto: 'Falta el token de WhatsApp en el servidor.' }] })
+      const num = await leer(await fetch(`${GRAPH}/${linea.phone_number_id}?fields=display_phone_number,verified_name,status,quality_rating`, { headers: cabecerasWa() }))
+      if (!num.ok) {
+        const vencido = num.j.error?.code === 190
+        pasos.push({ ok: false, texto: vencido ? 'El token de WhatsApp venció o no es válido: hay que generar uno nuevo.' : `Meta no reconoce el número (${num.j.error?.message || 'error'}).` })
+        return json({ pasos })
+      }
+      pasos.push({ ok: true, texto: `Token válido. Número ${num.j.display_phone_number || linea.numero}${num.j.verified_name ? ` (${num.j.verified_name})` : ''}.` })
+      if (!linea.waba_id) { pasos.push({ ok: false, texto: 'Falta el identificador de la cuenta de WhatsApp.' }); return json({ pasos }) }
+      const subs = await leer(await fetch(`${GRAPH}/${linea.waba_id}/subscribed_apps`, { headers: cabecerasWa() }))
+      const apps = (subs.j.data || []).map((a: any) => a.whatsapp_business_api_data?.name || a.whatsapp_business_api_data?.id).filter(Boolean)
+      if (subs.ok && apps.length) pasos.push({ ok: true, texto: `La cuenta ya envía los mensajes a la app (${apps.join(', ')}).` })
+      else {
+        const alta = await leer(await fetch(`${GRAPH}/${linea.waba_id}/subscribed_apps`, { method: 'POST', headers: cabecerasWa() }))
+        pasos.push(alta.ok
+          ? { ok: true, texto: 'La cuenta no estaba enviando los mensajes a la app: ya quedó suscrita.' }
+          : { ok: false, texto: `No se pudo suscribir la cuenta a la app (${alta.j.error?.message || 'error'}).` })
+      }
+      return json({ pasos })
     }
     if (body.accion !== 'probar') return json({ error: 'accion' }, 400)
     if (iaPausada()) return json({ error: 'pausada' }, 503)

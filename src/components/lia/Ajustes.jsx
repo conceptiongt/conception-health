@@ -9,6 +9,7 @@ import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { toast } from '../ui/Toast'
+import { supabase } from '../../lib/supabase'
 import { Interruptor, Segmentos, Titulo, botonMini } from './Comunes'
 
 const quitarBtn = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', color: C.g400, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
@@ -22,6 +23,13 @@ export function Ajustes({ seccion }) {
   const d = cfg.datos
   const [bloqueo, setBloqueo] = useState({ fecha: '', hasta_fecha: '', desde: '', hasta: '', motivo: '' })
   const [numero, setNumero] = useState(cfg.whatsapp?.numero || '')
+  const [revision, setRevision] = useState(null)
+
+  const revisarWhatsApp = async () => {
+    setRevision('cargando')
+    const { data, error } = await supabase.functions.invoke('lia-responder', { body: { accion: 'revisar_whatsapp' } })
+    setRevision(error || !data?.pasos ? [{ ok: false, texto: 'No se pudo revisar la conexión. Intente de nuevo.' }] : data.pasos)
+  }
 
   useEffect(() => {
     if (!seccion) return
@@ -193,7 +201,13 @@ export function Ajustes({ seccion }) {
             <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Solicitud enviada para el número <b>{cfg.whatsapp.numero}</b>. <b>Todavía no está conectado</b>: Conception le contactará para terminar la conexión.</div>
             <button style={{ ...botonMini, marginTop: 10 }} onClick={cancelarWhatsApp}>Cancelar solicitud</button>
           </>}
-          {wa === 'conectado' && <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Conectado al número <b>{cfg.whatsapp.numero}</b>.{cfg.activacion?.modo === 'palabra' && <> Por ahora solo contesta a quien escriba “{cfg.activacion.palabra}”.</>}</div>}
+          {wa === 'conectado' && <>
+            <div style={{ fontSize: 13, color: C.g600, lineHeight: 1.55 }}>Conectado al número <b>{cfg.whatsapp.numero}</b>.{cfg.activacion?.modo === 'palabra' && <> Por ahora solo contesta a quien escriba “{cfg.activacion.palabra}”.</>}</div>
+            <button style={{ ...botonMini, marginTop: 10 }} onClick={revisarWhatsApp} disabled={revision === 'cargando'}>{revision === 'cargando' ? 'Revisando…' : 'Revisar conexión'}</button>
+            {Array.isArray(revision) && <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+              {revision.map((p, i) => <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: p.ok ? C.green : C.red }}>{p.ok ? '✓' : '✗'} {p.texto}</div>)}
+            </div>}
+          </>}
         </Card>
         <Card>
           <Conexion icono="citas" titulo="Google Calendar" estado={['Próximamente', C.g500, C.g100]} />

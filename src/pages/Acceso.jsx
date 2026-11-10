@@ -40,7 +40,7 @@ const ERRORES_CREAR = {
 }
 
 export function Acceso() {
-  const [modo, setModo] = useState(params.get('crear') ? 'crear' : 'entrar') // entrar | crear | olvido
+  const [modo, setModo] = useState(params.get('crear') ? 'crear' : 'enlace') // enlace (sin contraseña) | entrar | crear | olvido
   const asistente = params.get('asistente') === '1'
   const [nombre, setNombre] = useState('')
   const [esp, setEsp] = useState('')
@@ -87,6 +87,17 @@ export function Acceso() {
     else if (params.get('crear')) window.history.replaceState(null, '', window.location.pathname)
   }
 
+  // sign in without a password: a one-time link to the email (only for accounts that already exist)
+  const enlace = async (e) => {
+    e.preventDefault()
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { shouldCreateUser: false, emailRedirectTo: redirect() } })
+    setBusy(false)
+    if (error && /not found|signups not allowed|Signups/i.test(error.message)) setMsg({ tipo: 'error', t: 'Ese correo no tiene cuenta. Use "Crear cuenta".' })
+    else if (error) setMsg({ tipo: 'error', t: 'No se pudo enviar el enlace. Espere un minuto e intente de nuevo.' })
+    else setMsg({ tipo: 'ok', t: `Listo. Revise ${email.trim()} (también spam) y toque el botón del correo para entrar.` })
+  }
+
   const olvido = async (e) => {
     e.preventDefault()
     setBusy(true); setMsg(null)
@@ -103,14 +114,26 @@ export function Acceso() {
     <Marco>
       {msg && <Aviso tipo={msg.tipo}>{msg.t}</Aviso>}
 
+      {modo === 'enlace' && (
+        <form onSubmit={enlace} style={campos}>
+          <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.5 }}>Escriba su correo y le enviaremos un enlace para entrar, sin contraseña.</div>
+          <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" placeholder="doctor@correo.com" /></Campo>
+          <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Enviarme el enlace para entrar'}</Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            {link('Entrar con contraseña', 'entrar')}
+            {link('Crear cuenta', 'crear')}
+          </div>
+        </form>
+      )}
+
       {modo === 'entrar' && (
         <form onSubmit={entrar} style={campos}>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" placeholder="doctor@correo.com" /></Campo>
           <Campo label="Contraseña"><Input type="password" value={password} onChange={setPassword} required autoComplete="current-password" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Iniciar sesión'}</Button>
           <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            {link('Entrar sin contraseña', 'enlace')}
             {link('¿Olvidó su contraseña?', 'olvido')}
-            {link('Crear cuenta', 'crear')}
           </div>
         </form>
       )}
@@ -133,7 +156,7 @@ export function Acceso() {
           <Campo label="Repita la contraseña"><Input type="password" value={password2} onChange={setPassword2} required autoComplete="new-password" /></Campo>
           <input value={sitio} onChange={e => setSitio(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0 }} />
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Creando su cuenta…' : 'Crear cuenta y entrar'}</Button>
-          <div>{link('Ya tengo cuenta', 'entrar')}</div>
+          <div>{link('Ya tengo cuenta', 'enlace')}</div>
         </form>
       )}
 
@@ -142,7 +165,7 @@ export function Acceso() {
           <div style={{ fontSize: 13.5, color: C.g600 }}>Escriba su correo y le enviaremos un enlace para crear una contraseña nueva.</div>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Enviar enlace'}</Button>
-          <div>{link('Volver a iniciar sesión', 'entrar')}</div>
+          <div>{link('Volver a iniciar sesión', 'enlace')}</div>
         </form>
       )}
     </Marco>

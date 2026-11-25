@@ -210,6 +210,7 @@ function Registro({ token }) {
   const enviar = async (e) => {
     e.preventDefault()
     if (!f.nombre?.trim() || !f.telefono?.trim()) { toast.error('Escriba su nombre y teléfono'); return }
+    if (f.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { toast.error('Revise su correo electrónico'); return }
     if (!acepta) { toast.error('Marque la casilla de autorización para continuar'); return }
     if (Object.values(f).some(v => typeof v === 'string' && PELIGRO.test(v))) { toast.error('Quite los signos < > de sus respuestas'); return }
     setBusy(true)
@@ -226,7 +227,7 @@ function Registro({ token }) {
         {d.completado ? 'Ya recibimos sus datos. Si necesita corregir algo, puede enviarlos de nuevo.' : 'Llene sus datos antes de su cita; así su médico tendrá todo listo. Toma unos 3 minutos.'}
       </div>
       <Caja>
-        <form onSubmit={enviar} className="form-grande">
+        <form noValidate onSubmit={enviar} className="form-grande">
           <Grid min={240}>
             {t('Sus datos')}
             <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} required maxLength={120} autoComplete="name" /></Campo>

@@ -62,12 +62,12 @@ function Ventana({ d, cerrar }) {
         )}
         <textarea value={detalle} onChange={e => setDetalle(e.target.value)} maxLength={400} rows={2} autoFocus={!opciones.length}
           placeholder={otro ? 'Escriba el motivo' : 'Detalle (opcional)'}
-          style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: `1px solid ${C.g200}`, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
       </>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
         <Button variant="ghost" onClick={() => fin(d.motivo ? null : false)}>{d.cancelar || 'Cancelar'}</Button>
         <Button onClick={aceptar} disabled={!listo}
-          style={d.peligro ? { background: C.red, color: '#fff', border: `1px solid ${C.red}` } : undefined}>
+          style={d.peligro ? { background: C.red, color: '#fff', border: `1px solid ${C.red}`, boxShadow: '0 6px 18px rgba(200,48,74,0.28)' } : undefined}>
           {d.aceptar || 'Aceptar'}
         </Button>
       </div>

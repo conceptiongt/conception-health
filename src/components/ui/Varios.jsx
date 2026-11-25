@@ -1,4 +1,4 @@
-import { C, SERIF, SHADOW } from '../../lib/theme'
+import { C, SANS, SERIF, SHADOW, GLASS } from '../../lib/theme'
 import { Icon } from './Icon'
 
 export function Spinner({ size = 24 }) {
@@ -6,6 +6,17 @@ export function Spinner({ size = 24 }) {
 }
 export function Cargando() {
   return <div style={{ display: 'flex', justifyContent: 'center', padding: 70 }}><Spinner size={28} /></div>
+}
+// Full-screen loading: the brand logo with a soft pulse (shown while the session loads)
+export function PantallaCarga() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22 }} role="status" aria-label="Cargando">
+      <div className="logo-pulso"><Logo height={64} /></div>
+      <div style={{ width: 120, height: 3, borderRadius: 3, background: 'rgba(30,36,51,0.08)', overflow: 'hidden' }}>
+        <div className="carga-barra" style={{ width: '40%', height: '100%', borderRadius: 3, background: C.grad }} />
+      </div>
+    </div>
+  )
 }
 
 export function Badge({ children, color = C.g600, bg = C.g100 }) {
@@ -18,7 +29,7 @@ export function Badge({ children, color = C.g600, bg = C.g100 }) {
 
 export function Card({ title, right, children, style = {} }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: 24, boxShadow: SHADOW, ...style }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: 24, boxShadow: SHADOW, ...style }}>
       {(title || right) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, fontSize: 17, fontWeight: 500, color: C.black, letterSpacing: '-0.015em' }}>{title}</div>
@@ -45,7 +56,7 @@ export function Vacio({ icono = 'archivo', titulo, texto, children }) {
 
 export function Stat({ icono, label, valor, sub, color = C.purple, bg = C.purpleMid }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '20px 22px', boxShadow: SHADOW, minWidth: 0 }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: '20px 22px', boxShadow: SHADOW, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {icono && <div style={{ width: 34, height: 34, borderRadius: 10, background: bg, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Icon name={icono} size={17} />
@@ -58,11 +69,15 @@ export function Stat({ icono, label, valor, sub, color = C.purple, bg = C.purple
   )
 }
 
-export function Encabezado({ titulo, subtitulo, children }) {
+// `acento` (optional): the part of `titulo` painted in the accent color, e.g. titulo="Citas de hoy" acento="hoy"
+export function Encabezado({ titulo, subtitulo, children, acento }) {
+  let contenido = titulo
+  const i = typeof titulo === 'string' && acento ? titulo.indexOf(acento) : -1
+  if (i >= 0) contenido = <>{titulo.slice(0, i)}<span style={{ color: 'var(--acento-fuerte)' }}>{acento}</span>{titulo.slice(i + acento.length)}</>
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
       <div style={{ flex: 1, minWidth: 220 }}>
-        <h1 style={{ fontFamily: SERIF, fontSize: 34, fontWeight: 400, color: C.black, margin: 0, letterSpacing: '-0.03em', lineHeight: 1.15 }}>{titulo}</h1>
+        <h1 style={{ fontFamily: SERIF, fontSize: 'clamp(28px, 3.2vw, 40px)', fontWeight: 400, color: C.black, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.12 }}>{contenido}</h1>
         {subtitulo && <div style={{ fontSize: 14, color: C.g500, marginTop: 6 }}>{subtitulo}</div>}
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{children}</div>
@@ -73,11 +88,11 @@ export function Encabezado({ titulo, subtitulo, children }) {
 // Responsive table: scrolls sideways on phones
 export function Tabla({ columnas, filas, onFila, vacio = 'Sin registros' }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, overflowX: 'auto', boxShadow: SHADOW }}>
+    <div style={{ ...GLASS, borderRadius: 24, overflowX: 'auto', boxShadow: SHADOW }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr>
-            {columnas.map((c, i) => <th key={i} style={{ padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }}>{c}</th>)}
+            {columnas.map((c, i) => <th key={i} style={{ padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: 'rgba(237,241,249,0.6)', borderBottom: `1px solid ${C.line}` }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -98,12 +113,13 @@ export function Tabla({ columnas, filas, onFila, vacio = 'Sin registros' }) {
 // Pill-style tab switcher
 export function Pestanas({ opciones, valor, onChange }) {
   return (
-    <div style={{ display: 'inline-flex', gap: 4, padding: 4, background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, flexWrap: 'wrap' }}>
+    <div style={{ ...GLASS, display: 'inline-flex', gap: 4, padding: 4, borderRadius: 24, flexWrap: 'wrap', maxWidth: '100%' }}>
       {opciones.map(o => (
-        <button key={o.value} onClick={() => onChange(o.value)} style={{
+        <button key={o.value} className="pestana" onClick={() => onChange(o.value)} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 160, border: 'none', cursor: 'pointer',
           fontSize: 14, fontWeight: 500, fontFamily: 'inherit',
           background: valor === o.value ? C.purple : 'transparent', color: valor === o.value ? C.onPurple : C.g600,
+          boxShadow: valor === o.value ? '0 4px 14px var(--acento-sombra)' : 'none',
         }}>{o.icono && <Icon name={o.icono} size={16} />}{o.label}</button>
       ))}
     </div>
@@ -116,7 +132,7 @@ export function Logo({ variant = 'dark', height = 36 }) {
   return (
     <span role="img" aria-label="Conception Health" style={{ position: 'relative', display: 'block', height, width: height * 900 / 377, flexShrink: 0 }}>
       <img src={variant === 'light' ? '/logo-light.png' : '/logo-dark.png'} alt="" style={{ height, width: 'auto', display: 'block', clipPath: SIN_LEMA }} />
-      <span style={{ position: 'absolute', left: '52.5%', top: '16%', height: '30%', display: 'flex', alignItems: 'center', fontSize: height * 0.2, fontWeight: 500, letterSpacing: '0.32em', color: variant === 'light' ? '#fff' : '#111', fontFamily: 'Poppins, sans-serif', lineHeight: 1 }}>HEALTH</span>
+      <span style={{ position: 'absolute', left: '52.5%', top: '16%', height: '30%', display: 'flex', alignItems: 'center', fontSize: height * 0.2, fontWeight: 500, letterSpacing: '0.32em', color: variant === 'light' ? '#fff' : '#111', fontFamily: SANS, lineHeight: 1 }}>HEALTH</span>
     </span>
   )
 }
@@ -141,13 +157,14 @@ export function Indicadores({ items, style }) {
 // Pill segmented buttons: "Todas | Guatemala | Petén"
 export function Segmentos({ opciones, valor, onChange }) {
   return (
-    <div style={{ display: 'inline-flex', gap: 4, padding: 4, background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, flexWrap: 'wrap' }}>
+    <div style={{ ...GLASS, display: 'inline-flex', gap: 4, padding: 4, borderRadius: 24, flexWrap: 'wrap', maxWidth: '100%' }}>
       {opciones.map(o => {
         const activo = valor === o.value
         return (
-          <button key={o.value} onClick={() => onChange(o.value)} style={{
+          <button key={o.value} className="pestana" onClick={() => onChange(o.value)} style={{
             padding: '7px 15px', borderRadius: 160, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
             fontWeight: 500, background: activo ? C.purple : 'transparent', color: activo ? C.onPurple : C.g600,
+            boxShadow: activo ? '0 4px 14px var(--acento-sombra)' : 'none',
           }}>{o.label}{o.n != null && <span style={{ marginLeft: 6, opacity: 0.7 }}>{o.n}</span>}</button>
         )
       })}

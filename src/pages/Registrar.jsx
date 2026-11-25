@@ -38,6 +38,7 @@ export function Registrar() {
     e.preventDefault()
     if (!f.nombre.trim() || !f.fecha || !f.origen) { toast.error('Complete nombre, fecha y cómo nos encontró'); return }
     if (conSedes && !f.sede) { toast.error('Elija la sede de la cita'); return }
+    if (f.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { toast.error('Revise el correo electrónico'); return }
     const sede = conSedes ? { sede_id: f.sede } : {}
     const s = servicioParaGuardar(serv)
     setBusy(true)
@@ -95,7 +96,7 @@ export function Registrar() {
   }
 
   return (
-    <form onSubmit={guardar}>
+    <form noValidate onSubmit={guardar}>
       <Encabezado titulo="Registrar paciente" subtitulo="Datos del paciente y su primera cita" />
       <EnlaceRegistro token={codigoRegistro(clinica)} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

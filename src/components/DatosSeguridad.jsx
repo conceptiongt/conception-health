@@ -1,0 +1,36 @@
+import { C } from '../lib/theme'
+import { Card } from './ui/Varios'
+import { Icon } from './ui/Icon'
+
+// Read-only facts about where and how the clinic's data is stored (shown in Configuración)
+const DATOS = [
+  ['Dónde se guarda', 'En servidores de Supabase sobre Amazon Web Services, región Oregón (EE. UU.).'],
+  ['Cifrado', 'La información viaja cifrada (TLS) y se guarda cifrada en disco (AES-256).'],
+  ['Separación por clínica', 'Cada clínica solo puede ver sus propios datos; la base de datos lo aplica en cada consulta.'],
+  ['Archivos y fotos', 'Se guardan en un almacén privado; solo se abren con enlaces temporales.'],
+  ['Usuarios y permisos', 'Usted decide qué puede ver y hacer cada asistente.'],
+  ['Historial', 'Las citas e inventario eliminados quedan registrados con quién, cuándo y por qué.'],
+  ['Sus datos son suyos', 'Puede exportarlos o eliminar su cuenta cuando quiera.'],
+  ['Acceso de Conception', 'El equipo de Conception no consulta ni usa la información de sus pacientes. El acceso técnico es solo para mantenimiento y soporte.'],
+]
+
+export function DatosSeguridad() {
+  return (
+    <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ width: 34, height: 34, borderRadius: 11, background: C.purpleMid, color: 'var(--acento-fuerte)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="escudo" size={18} /></span>
+      Seguridad y almacenamiento de sus datos
+    </span>}>
+      <div className="datos-seguridad">
+        {DATOS.map(([titulo, texto]) => (
+          <div key={titulo} style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: C.black }}>{titulo}</div>
+            <div style={{ fontSize: 13.5, color: C.g500, lineHeight: 1.55, marginTop: 2 }}>{texto}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 18, fontSize: 13 }}>
+        <a href="/privacidad" target="_blank" rel="noopener" style={{ color: 'var(--acento-fuerte)', fontWeight: 600 }}>Política de privacidad</a>
+      </div>
+    </Card>
+  )
+}

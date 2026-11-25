@@ -8,6 +8,7 @@ import { Acceso, CrearPassword } from './pages/Acceso'
 import { Inicio } from './pages/Inicio'
 import { Registrar } from './pages/Registrar'
 import { Citas } from './pages/Citas'
+import { Calendario } from './pages/Calendario'
 import { Expedientes } from './pages/Expedientes'
 import { Suscripcion } from './pages/Suscripcion'
 import { Configuracion } from './pages/Configuracion'
@@ -35,6 +36,7 @@ const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
   { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
+  { id: 'calendario', label: 'Calendario', icono: 'calendario' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
   { id: 'finanzas', label: 'Finanzas', icono: 'actividad', soloAdmin: true },
@@ -52,10 +54,13 @@ const NAV_CUENTA = [
 // what each user can open (the administrator decides for assistants in Configuración)
 const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
-// "#/expedientes/<id>" → { vista: 'expedientes', id }
+// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }
 function leerRuta() {
   const [, v, id] = window.location.hash.split('/')
-  return TODAS.some(n => n.id === v) ? { vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null } : {}
+  return TODAS.some(n => n.id === v) ? {
+    vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
+    fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
+  } : {}
 }
 
 
@@ -86,8 +91,9 @@ function Aplicacion({ sesion }) {
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(() => leerRuta().id)
+  const [fechaCal, setFechaCal] = useState(() => leerRuta().fecha) // day the calendar opens on (#/calendario/AAAA-MM-DD)
   useEffect(() => {
-    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setMenu(false) } }
+    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setFechaCal(r.fecha); setMenu(false) } }
     window.addEventListener('hashchange', fn)
     return () => window.removeEventListener('hashchange', fn)
   }, [])
@@ -123,7 +129,8 @@ function Aplicacion({ sesion }) {
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
-    const ruta = `#/${v}${v === 'expedientes' && extra ? '/' + extra : ''}`
+    setFechaCal(v === 'calendario' ? extra ?? null : null)
+    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario') && extra ? '/' + extra : ''}`
     if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
@@ -238,6 +245,7 @@ function Aplicacion({ sesion }) {
             : vista === 'inicio' ? <Inicio />
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
+            : vista === 'calendario' ? <Calendario fechaInicial={fechaCal} />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
             : vista === 'pagos' ? <Pagos />
             : vista === 'finanzas' ? <Finanzas />

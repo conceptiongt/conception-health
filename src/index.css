@@ -127,6 +127,11 @@ button { transition: background-color .16s, border-color .16s, color .16s; }
 .indicadores > * { background: rgba(255,255,255,0.72); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,0.85); border-radius: 24px; box-shadow: 0 10px 40px rgba(31,72,160,0.08); }
 .indicadores > .fila:hover { background: rgba(255,255,255,0.95); }
 /* Full-screen forms (appointment) */
+.cal-dia { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .cal-dia { grid-template-columns: minmax(0, 1fr); } }
+.registrar-dos { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.registrar-resumen { position: sticky; top: 24px; border-radius: 24px; padding: 24px; background: linear-gradient(160deg, var(--acento-oscuro), color-mix(in srgb, var(--acento) 90%, #000)); box-shadow: 0 18px 50px var(--acento-sombra); }
+@media (max-width: 1099px) { .registrar-dos { grid-template-columns: minmax(0, 1fr); } .registrar-resumen { position: static; } .registrar-boton { display: none; } }
 .cita-pagina { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 1100px) { .cita-pagina { grid-template-columns: minmax(0, 1fr); } }
 .bloque { background: rgba(255,255,255,0.72); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,0.85); border-radius: 24px; padding: 22px 24px 24px; box-shadow: 0 10px 40px rgba(31,72,160,0.08); }

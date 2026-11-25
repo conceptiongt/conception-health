@@ -27,16 +27,21 @@ export const enMes = (iso, m) => !!iso && Number(iso.slice(0, 4)) === m.year && 
 export const totalCobro = (c) => Math.max(0, (Number(c.precio) || 0) - (Number(c.descuento) || 0))
 export const saldo = (c) => Math.max(0, totalCobro(c) - (Number(c.pagado) || 0))
 
-// Google Calendar "add event" link for a consultation (1 hour long)
+// Google Calendar "add event" link for a consultation; lasts `cita.duracion` minutes (1 hour when it has none)
 export function linkCalendar(paciente, cita) {
   if (!cita.fecha) return null
-  const d = cita.fecha.replace(/-/g, '')
   const [h, m] = (cita.hora || '09:00').slice(0, 5).split(':').map(Number)
+  const dur = Number(cita.duracion) > 0 ? Number(cita.duracion) : 60
+  const fin = h * 60 + m + dur
+  const [y, mes, dia] = cita.fecha.slice(0, 10).split('-').map(Number)
   const pad = (n) => String(n).padStart(2, '0')
-  const inicio = `${d}T${pad(h)}${pad(m)}00`
-  const fin = `${d}T${pad((h + 1) % 24)}${pad(m)}00`
+  const fechaDe = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`
+  const inicio = `${fechaDe(new Date(Date.UTC(y, mes - 1, dia)))}T${pad(h)}${pad(m)}00`
+  // the end can pass midnight: move the date too
+  const finDia = new Date(Date.UTC(y, mes - 1, dia + Math.floor(fin / 1440)))
+  const finTexto = `${fechaDe(finDia)}T${pad(Math.floor(fin / 60) % 24)}${pad(fin % 60)}00`
   const texto = `Cita: ${paciente.nombre}${cita.tipo ? ' — ' + cita.tipo : ''}`
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(texto)}&dates=${inicio}/${fin}&ctz=America/Guatemala`
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(texto)}&dates=${inicio}/${finTexto}&ctz=America/Guatemala`
 }
 
 // extras: { pago: { monto, pct, link }, formulario: url }

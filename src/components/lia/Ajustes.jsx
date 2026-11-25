@@ -9,6 +9,7 @@ import { Campo, Input, Select, Textarea, Grid } from '../ui/Campos'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { toast } from '../ui/Toast'
+import { confirmar } from '../ui/Confirmar'
 import { supabase } from '../../lib/supabase'
 import { esAdmin } from '../../lib/permisos'
 import { Interruptor, Segmentos, Titulo, botonMini } from './Comunes'
@@ -43,7 +44,7 @@ export function Ajustes({ seccion }) {
     else toast.error('No se pudo enviar la solicitud')
   }
   const desconectarWhatsApp = async () => {
-    if (!window.confirm(`¿Desconectar ${nombreLia} del número ${cfg.whatsapp?.numero || ''}? Dejará de contestar los mensajes de WhatsApp.`)) return
+    if (!await confirmar(`¿Desconectar ${nombreLia} del número ${cfg.whatsapp?.numero || ''}? Dejará de contestar los mensajes de WhatsApp.`)) return
     const { data, error } = await supabase.functions.invoke('lia-responder', { body: { accion: 'desconectar_whatsapp' } })
     if (error || !data?.ok) { toast.error('No se pudo desconectar. Intente de nuevo.'); return }
     toast.success('WhatsApp desconectado')

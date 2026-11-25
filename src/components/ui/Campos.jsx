@@ -1,9 +1,9 @@
-import { C } from '../../lib/theme'
+import { C, RADIO } from '../../lib/theme'
 
 const base = {
-  width: '100%', padding: '11px 13px', border: `1px solid ${C.g200}`, borderRadius: 6,
-  fontSize: 14, color: C.black, background: '#fff', fontFamily: 'inherit', boxSizing: 'border-box',
-  transition: 'border-color 0.15s, box-shadow 0.15s',
+  width: '100%', padding: '11px 14px', border: `1px solid ${C.g200}`, borderRadius: RADIO.input,
+  fontSize: 14, color: C.black, background: 'rgba(255,255,255,0.9)', fontFamily: 'inherit', boxSizing: 'border-box',
+  transition: 'border-color 150ms, box-shadow 150ms, background 150ms',
 }
 
 export function Campo({ label, children, full, ayuda }) {
@@ -32,5 +32,5 @@ export function Grid({ children, min = 220 }) {
 
 // Small select / search input used in filter bars
 export const filtroStyle = {
-  padding: '10px 12px', borderRadius: 6, border: `1px solid ${C.g200}`, fontSize: 13.5, background: '#fff', color: C.black, fontFamily: 'inherit',
+  padding: '10px 12px', borderRadius: RADIO.input, border: `1px solid ${C.g200}`, fontSize: 13.5, background: 'rgba(255,255,255,0.9)', color: C.black, fontFamily: 'inherit',
 }

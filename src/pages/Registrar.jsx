@@ -1,20 +1,22 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, SHADOW } from '../lib/theme'
-import { ESTADOS_CITA, ORIGENES, REDES } from '../lib/constantes'
+import { C, SERIF } from '../lib/theme'
+import { ESTADOS_CITA, ORIGENES, REDES, estadoCita } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
 import { puede, verPrecio } from '../lib/permisos'
 import { urlRegistro, codigoRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
 import { hoyISO, fmtFecha, fmtHora, fmtQ, linkWhatsAppSinNumero } from '../lib/formato'
+import { fechaLarga, textoDuracion, DURACION_DEFECTO } from '../lib/calendario'
 import { useDatos, mensajeError } from '../hooks/useDatos'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
-import { Card, Encabezado } from '../components/ui/Varios'
+import { Card, Encabezado, Badge } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../components/ServicioCampos'
 import { toast } from '../components/ui/Toast'
 import { QuienAgendo, nombreUsuario } from '../components/QuienAgendo'
+import { SelectorFechaHora } from '../components/SelectorFechaHora'
 
 const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
 
@@ -29,15 +31,11 @@ export function Registrar() {
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios)) }
 
-  const ocupada = f.fecha && f.hora
-    ? citas.find(c => c.fecha === f.fecha && c.hora?.slice(0, 5) === f.hora && !['No asistió', 'Reagendada'].includes(c.estado))
-    : null
-  const nombreOcupada = ocupada ? pacientes.find(p => p.id === ocupada.paciente_id)?.nombre : null
-
   const guardar = async (e) => {
     e.preventDefault()
     if (!f.nombre.trim() || !f.fecha || !f.origen) { toast.error('Complete nombre, fecha y cómo nos encontró'); return }
     if (conSedes && !f.sede) { toast.error('Elija la sede de la cita'); return }
+    if (f.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { toast.error('Revise el correo electrónico'); return }
     const sede = conSedes ? { sede_id: f.sede } : {}
     const s = servicioParaGuardar(serv)
     setBusy(true)
@@ -95,10 +93,11 @@ export function Registrar() {
   }
 
   return (
-    <form onSubmit={guardar}>
+    <form noValidate onSubmit={guardar}>
       <Encabezado titulo="Registrar paciente" subtitulo="Datos del paciente y su primera cita" />
       <EnlaceRegistro token={codigoRegistro(clinica)} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="registrar-dos">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         <Card title="Datos del paciente">
           <Grid>
             <Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} required /></Campo>
@@ -109,20 +108,13 @@ export function Registrar() {
         <Card title="Cita">
           <Grid>
             {conSedes && <Campo label="Sede *"><Select value={f.sede} onChange={set('sede')}><option value="">Seleccione…</option>{sedes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}</Select></Campo>}
-            <Campo label="Fecha *"><Input type="date" value={f.fecha} onChange={set('fecha')} required /></Campo>
-            <Campo label="Hora" ayuda="Cada cita dura 1 hora"><Input type="time" value={f.hora} onChange={set('hora')} /></Campo>
+            <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} sedeId={conSedes && f.sede ? f.sede : undefined} />
             <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
             <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo ?? nombreUsuario(perfil)} onChange={set('agendo')} /></Campo>
             <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} />
             <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Opcional" /></Campo>
           </Grid>
-          {ocupada && (
-            <div style={{ marginTop: 14, background: C.amberLight, color: C.amber, borderRadius: 24, padding: '11px 14px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center' }}>
-              <Icon name="alerta" size={17} />
-              <span>Ya hay una cita a esa hora con <strong>{nombreOcupada || 'otro paciente'}</strong>. Puede guardar de todas formas o elegir otra hora.</span>
-            </div>
-          )}
         </Card>
         <Card title="¿Cómo nos encontró? *">
           <Grid>
@@ -135,9 +127,52 @@ export function Registrar() {
             {f.origen === 'referido' && <Campo label="¿Referido por quién?"><Input value={f.referido_por} onChange={set('referido_por')} /></Campo>}
           </Grid>
         </Card>
-        <div><Button type="submit" size="lg" variant="brand" icon="check" disabled={busy}>{busy ? 'Guardando…' : 'Registrar paciente'}</Button></div>
+        <div className="registrar-boton"><Button type="submit" size="lg" variant="brand" icon="check" disabled={busy}>{busy ? 'Guardando…' : 'Registrar paciente'}</Button></div>
+      </div>
+      <ResumenCita f={f} serv={serv} servicios={servicios} sedes={conSedes ? sedes : []} perfil={perfil} busy={busy} />
       </div>
     </form>
+  )
+}
+
+// Live summary of the appointment being booked (sticky on wide screens, below the form on narrow ones)
+function ResumenCita({ f, serv, servicios, sedes, perfil, busy }) {
+  const e = estadoCita(f.estado)
+  const sede = sedes.find(x => x.id === f.sede)?.nombre
+  const servicio = serv.servicio || ''
+  // same rule as ServicioCampos: assistants only see the prices the administrator allowed
+  const opcion = servicios.find(x => x.id === serv.servicioId)
+  const precioVisible = Number(serv.precio) > 0 && (!opcion || verPrecio(perfil, opcion))
+  const fila = (icono, titulo, valor) => (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      <span style={{ width: 34, height: 34, borderRadius: 12, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name={icono} size={17} /></span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{titulo}</div>
+        <div style={{ fontSize: 14.5, fontWeight: 600, marginTop: 2, overflowWrap: 'anywhere' }}>{valor}</div>
+      </div>
+    </div>
+  )
+  return (
+    <aside className="registrar-resumen" aria-label="Resumen de la cita" style={{ color: C.onPurple }}>
+      <div style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 500, letterSpacing: '-0.015em' }}>Resumen de la cita</div>
+      <div style={{ background: 'rgba(255,255,255,0.16)', borderRadius: 18, padding: '14px 16px', marginTop: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Paciente</div>
+        <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600, marginTop: 2, overflowWrap: 'anywhere' }}>{f.nombre.trim() || 'Paciente nuevo'}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 16 }}>
+        {fila('citas', 'Fecha', fechaLarga(f.fecha) || '—')}
+        {fila('reloj', 'Hora', f.hora ? `${f.hora} · ${textoDuracion(DURACION_DEFECTO)}` : 'Sin hora definida')}
+        {fila('estetoscopio', 'Consulta', [f.tipo, servicio].filter(Boolean).join(' · ') || '—')}
+        {precioVisible && fila('cartera', 'Precio', fmtQ(Number(serv.precio)))}
+        {sedes.length > 0 && fila('sede', 'Sede', sede || 'Sin elegir')}
+        {fila('usuarios', 'Agendó', (f.agendo ?? nombreUsuario(perfil)).trim() || '—')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Estado</span>
+          <Badge color={e.color === C.purple ? 'var(--acento-fuerte)' : e.color} bg="#fff">{f.estado}</Badge>
+        </div>
+      </div>
+      <Button type="submit" size="lg" variant="ghost" icon="check" disabled={busy} style={{ width: '100%', marginTop: 22, background: '#fff', color: C.black, fontWeight: 600 }}>{busy ? 'Guardando…' : 'Registrar paciente'}</Button>
+    </aside>
   )
 }
 

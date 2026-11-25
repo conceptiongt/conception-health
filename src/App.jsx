@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { C, SERIF, SHADOW } from './lib/theme'
+import { C, SERIF, SHADOW, GLASS } from './lib/theme'
 import { LIMITE_PRUEBA, liaVisible, accesos, nombrePlan } from './lib/constantes'
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
@@ -8,6 +8,7 @@ import { Acceso, CrearPassword } from './pages/Acceso'
 import { Inicio } from './pages/Inicio'
 import { Registrar } from './pages/Registrar'
 import { Citas } from './pages/Citas'
+import { Calendario } from './pages/Calendario'
 import { Expedientes } from './pages/Expedientes'
 import { Suscripcion } from './pages/Suscripcion'
 import { Configuracion } from './pages/Configuracion'
@@ -23,7 +24,7 @@ import { aplicarMarca } from './lib/theme'
 import { usePendientesLia } from './hooks/useLia'
 import { ToastContainer } from './components/ui/Toast'
 import { ConfirmarContainer } from './components/ui/Confirmar'
-import { Cargando, Logo } from './components/ui/Varios'
+import { Cargando, Logo, PantallaCarga } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
@@ -35,6 +36,7 @@ const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
   { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
+  { id: 'calendario', label: 'Calendario', icono: 'calendario' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
   { id: 'finanzas', label: 'Finanzas', icono: 'actividad', soloAdmin: true },
@@ -52,10 +54,13 @@ const NAV_CUENTA = [
 // what each user can open (the administrator decides for assistants in Configuración)
 const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
-// "#/expedientes/<id>" → { vista: 'expedientes', id }
+// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }
 function leerRuta() {
   const [, v, id] = window.location.hash.split('/')
-  return TODAS.some(n => n.id === v) ? { vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null } : {}
+  return TODAS.some(n => n.id === v) ? {
+    vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
+    fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
+  } : {}
 }
 
 
@@ -68,7 +73,7 @@ export default function App() {
 function AppPrivada() {
   const s = useSesion()
   let contenido
-  if (s.cargando) contenido = <div style={{ minHeight: '100vh' }}><Cargando /></div>
+  if (s.cargando) contenido = <PantallaCarga />
   else if (!s.session) contenido = <Acceso />
   else if (!s.perfil) contenido = <SinAcceso />
   else if (s.recuperando || !s.perfil?.password_creada) {
@@ -86,8 +91,9 @@ function Aplicacion({ sesion }) {
   const pendientesLia = usePendientesLia(acc.lia)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(() => leerRuta().id)
+  const [fechaCal, setFechaCal] = useState(() => leerRuta().fecha) // day the calendar opens on (#/calendario/AAAA-MM-DD)
   useEffect(() => {
-    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setMenu(false) } }
+    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setFechaCal(r.fecha); setMenu(false) } }
     window.addEventListener('hashchange', fn)
     return () => window.removeEventListener('hashchange', fn)
   }, [])
@@ -123,7 +129,8 @@ function Aplicacion({ sesion }) {
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
-    const ruta = `#/${v}${v === 'expedientes' && extra ? '/' + extra : ''}`
+    setFechaCal(v === 'calendario' ? extra ?? null : null)
+    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario') && extra ? '/' + extra : ''}`
     if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
@@ -136,46 +143,45 @@ function Aplicacion({ sesion }) {
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
-  const grupos = [['', NAV.filter(n => n.id !== 'inventario' || acc.inventario || !planActivo || true)], ['Recepcionista', NAV_LIA], ['Cuenta', NAV_CUENTA]]
 
   return (
     <DatosContext.Provider value={ctx}>
-      <div className="layout">
+      <div className="layout app-entra">
         <div className="topbar">
           <button onClick={() => setMenu(true)} aria-label="Menú" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', padding: 4 }}><Icon name="menu" size={22} /></button>
-          <span style={{ background: '#fff', borderRadius: 10, padding: '5px 9px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <span style={{ background: '#fff', borderRadius: 12, padding: '5px 9px', display: 'flex', alignItems: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(31,72,160,0.10)' }}>
             {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ height: 26, maxWidth: 120, objectFit: 'contain' }} /> : <Logo variant="dark" height={24} />}
           </span>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', lineHeight: 1.25, minWidth: 0 }}>CONCEPTION<br />HEALTH</span>
         </div>
-        {menu && <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(11,17,32,0.45)', zIndex: 140 }} />}
+        {menu && <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,35,70,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 140 }} />}
 
         <aside className={`sidebar${menu ? ' abierta' : ''}`}>
           <div style={{ padding: '22px 18px 18px' }}>
-            <div style={{ background: '#fff', borderRadius: 18, padding: '16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 92, boxShadow: '0 6px 20px rgba(0,0,0,0.10)' }}>
+            <div className="logo-hover" style={{ background: '#fff', borderRadius: 20, padding: '16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 92, boxShadow: '0 8px 24px rgba(31,72,160,0.10)' }}>
               {logo ? <img src={logo} alt={`Logo de ${nombreClinica}`} style={{ maxHeight: 64, maxWidth: '100%', objectFit: 'contain', display: 'block' }} /> : <Logo variant="dark" height={46} />}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 }}>
               <span style={{ height: 3, width: 22, borderRadius: 3, background: C.prism }} />
-              <span style={{ color: 'var(--menu-texto)', fontSize: 11, fontWeight: 600, letterSpacing: '0.24em' }}>CONCEPTION HEALTH</span>
+              <span style={{ color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.24em' }}>CONCEPTION HEALTH</span>
             </div>
           </div>
 
-          <div style={{ margin: '0 16px 18px', padding: 12, borderRadius: 16, background: 'var(--menu-tarjeta)', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 20, background: '#fff', color: C.purpleDark, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+          <div style={{ margin: '0 16px 18px', padding: 12, borderRadius: 18, background: 'var(--menu-tarjeta)', border: '1px solid rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 20, background: C.grad, color: C.onPurple, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
               {iniciales(nombreClinica)}
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: 'var(--menu-texto)', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClinica}</div>
               <div style={{ color: 'var(--menu-suave)', fontSize: 12, marginTop: 1, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                <span style={{ width: 7, height: 7, borderRadius: 4, flexShrink: 0, background: planActivo ? '#5BE08F' : '#FFC94D', boxShadow: '0 0 0 2px rgba(255,255,255,0.5)' }} />
+                <span style={{ width: 7, height: 7, borderRadius: 4, flexShrink: 0, background: planActivo ? '#5BE08F' : '#FFC94D', boxShadow: '0 0 0 2px rgba(255,255,255,0.9)' }} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{plan}</span>
               </div>
               {clinica?.especialidad && <div style={{ color: 'var(--menu-suave)', fontSize: 11.5, marginTop: 2, lineHeight: 1.3 }}>{especialidad(clinica.especialidad).label}</div>}
             </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
@@ -183,10 +189,10 @@ function Aplicacion({ sesion }) {
                   {items.filter(n => permitido(perfil, n)).map(n => {
                     const activo = vista === n.id
                     return (
-                      <button key={n.id} className="nav-item" onClick={() => ir(n.id)} style={{
-                        position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                        textAlign: 'left', fontSize: 14, fontWeight: activo ? 600 : 400, letterSpacing: '-0.01em', fontFamily: 'inherit',
-                        background: activo ? 'var(--menu-activo)' : 'none', color: activo ? 'var(--menu-texto)' : 'var(--menu-suave)',
+                      <button key={n.id} className={`nav-item${activo ? ' activo' : ''}`} onClick={() => ir(n.id)} style={{
+                        position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px 10px 18px', borderRadius: 14, border: 'none', cursor: 'pointer',
+                        textAlign: 'left', fontSize: 14, fontWeight: activo ? 600 : 500, letterSpacing: '-0.01em', fontFamily: 'inherit',
+                        background: activo ? 'var(--menu-activo)' : 'none', color: activo ? 'var(--acento-fuerte)' : 'var(--menu-suave)',
                       }}>
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
                         {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
@@ -200,12 +206,12 @@ function Aplicacion({ sesion }) {
             ))}
           </div>
 
-          <div style={{ margin: 16, padding: '12px 14px', borderRadius: 16, border: '1px solid var(--menu-linea)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ margin: 16, padding: '12px 14px', borderRadius: 18, border: '1px solid var(--menu-linea)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: 'var(--menu-titulo)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em' }}>SESIÓN</div>
               <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
             </button>
           </div>
@@ -220,7 +226,7 @@ function Aplicacion({ sesion }) {
           )}
           {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
           {enPrueba && (
-            <div style={{ background: C.lavender, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>Versión de prueba · {usados} de {LIMITE_PRUEBA} pacientes</div>
@@ -229,6 +235,7 @@ function Aplicacion({ sesion }) {
               {esAdmin(perfil) && <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>}
             </div>
           )}
+          <div key={vista} className="vista-anim">
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
             : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
@@ -238,11 +245,13 @@ function Aplicacion({ sesion }) {
             : vista === 'inicio' ? <Inicio />
             : vista === 'registrar' ? <Registrar />
             : vista === 'citas' ? <Citas />
+            : vista === 'calendario' ? <Calendario fechaInicial={fechaCal} />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
             : vista === 'pagos' ? <Pagos />
             : vista === 'finanzas' ? <Finanzas />
             : vista === 'configuracion' ? <Configuracion />
             : <Suscripcion />}
+          </div>
         </main>
       </div>
     </DatosContext.Provider>
@@ -253,7 +262,7 @@ function Aplicacion({ sesion }) {
 // An assistant opening a page the administrator has not allowed
 function SinPermiso() {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
       <div style={{ fontSize: 20, fontWeight: 600, color: C.black, marginBottom: 6 }}>Esta sección necesita permiso</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 440, margin: '0 auto', lineHeight: 1.6 }}>Pida al administrador de su clínica que se la habilite en Configuración → Usuarios y permisos.</div>
@@ -264,8 +273,8 @@ function SinPermiso() {
 // The account exists but is not linked to a clinic (e.g. the administrator removed the user)
 function SinAcceso() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: C.bgApp }}>
-      <div style={{ background: '#fff', borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
         <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario no tiene acceso</div>
         <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Este correo no está vinculado a ninguna clínica. Si trabaja en un consultorio, pida al administrador que le invite de nuevo.</div>
         <Button variant="ghost" icon="salir" onClick={() => supabase.auth.signOut()}>Cerrar sesión</Button>
@@ -277,7 +286,7 @@ function SinAcceso() {
 // Shown to "Lía" plan accounts when they open a Conception Health page
 function SoloHealth({ ir }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Esta sección es parte de Conception Health</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>
@@ -294,7 +303,7 @@ function SoloHealth({ ir }) {
 // Lía is being finished on its own; shown instead of the receptionist until it is ready
 function LiaProximamente() {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '56px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: '56px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="lia" size={26} /></div>
       <div style={{ fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em', marginBottom: 6 }}>PRÓXIMAMENTE</div>
       <div style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 700, color: C.black, marginBottom: 8 }}>Estamos trabajando en Lía</div>
@@ -308,7 +317,7 @@ function LiaProximamente() {
 // Shown to accounts whose plan does not include inventory
 function SoloMax({ ir }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
+    <div style={{ ...GLASS, borderRadius: 24, padding: '48px 24px', textAlign: 'center', boxShadow: SHADOW }}>
       <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="caja" size={26} /></div>
       <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.black, marginBottom: 6 }}>Inventario por sede</div>
       <div style={{ fontSize: 14, color: C.g500, maxWidth: 480, margin: '0 auto 20px', lineHeight: 1.6 }}>

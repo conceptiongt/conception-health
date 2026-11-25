@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, COLOR_BASE, aplicarMarca } from '../lib/theme'
+import { C, colorMarca, aplicarMarca } from '../lib/theme'
 import { TIPOS_CITA } from '../lib/constantes'
 import { fmtQ } from '../lib/formato'
 import { urlLogo, iniciales } from '../lib/marca'
@@ -17,6 +17,7 @@ import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
 import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
+import { DatosSeguridad } from '../components/DatosSeguridad'
 import { Interruptor } from '../components/MensajePaciente'
 import { confirmar } from '../components/ui/Confirmar'
 
@@ -27,6 +28,7 @@ export function Configuracion() {
       <Encabezado titulo="Configuración" subtitulo="Marca, usuarios, ficha clínica, pagos, sedes y tarifas" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Marca />
+        <DatosSeguridad />
         <Usuarios />
         <FichaClinica />
         <PagosYRegistro />
@@ -44,11 +46,11 @@ function Marca() {
   const { clinica, recargarSesion, servicios, recargar } = useDatos()
   const [nombre, setNombre] = useState(clinica?.nombre || '')
   const [esp, setEsp] = useState(clinica?.especialidad || '')
-  const [color, setColor] = useState(clinica?.color || COLOR_BASE)
+  const [color, setColor] = useState(colorMarca(clinica?.color))
   const [busy, setBusy] = useState(false)
   const [subiendo, setSubiendo] = useState(false)
   const logo = urlLogo(clinica)
-  const cambiado = nombre.trim() !== (clinica?.nombre || '') || esp !== (clinica?.especialidad || '') || color.toUpperCase() !== (clinica?.color || COLOR_BASE).toUpperCase()
+  const cambiado = nombre.trim() !== (clinica?.nombre || '') || esp !== (clinica?.especialidad || '') || color.toUpperCase() !== (colorMarca(clinica?.color)).toUpperCase()
 
   const elegirColor = (c) => { setColor(c); aplicarMarca(c) } // live preview
   const guardar = async () => {
@@ -66,7 +68,7 @@ function Marca() {
     toast.success('Marca actualizada')
     recargarSesion()
   }
-  const descartar = () => { setNombre(clinica?.nombre || ''); setEsp(clinica?.especialidad || ''); setColor(clinica?.color || COLOR_BASE); aplicarMarca(clinica?.color) }
+  const descartar = () => { setNombre(clinica?.nombre || ''); setEsp(clinica?.especialidad || ''); setColor(colorMarca(clinica?.color)); aplicarMarca(clinica?.color) }
 
   const subirLogo = async (e) => {
     const file = e.target.files?.[0]

@@ -1,21 +1,56 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C } from '../lib/theme'
+import { C, SERIF, GLASS, SHADOW } from '../lib/theme'
 import { APP_NOMBRE } from '../lib/constantes'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select } from '../components/ui/Campos'
 import { ESPECIALIDADES } from '../lib/especialidades'
 import { Logo } from '../components/ui/Varios'
+import { Icon } from '../components/ui/Icon'
+import { toast } from '../components/ui/Toast'
 
 const redirect = () => window.location.origin
+const CORREO_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+//-field checks use the platform's own toast (no browser validation bubbles)
+const falta = (t) => { toast.error(t); return false }
+const revisarCorreo = (v) => (!v.trim() ? falta('Escriba su correo electrónico.') : !CORREO_OK.test(v.trim()) ? falta('Revise el correo electrónico.') : true)
+
+// Cover: soft blue mesh (from the body), brand message on the left (desktop only) and the glass form card on the right
+const CHIPS = [['citas', 'Citas y calendario'], ['expedientes', 'Expedientes clínicos'], ['cartera', 'Pagos y saldos']]
+const SIN_LEMA = 'polygon(0 0, 50.5% 0, 50.5% 50%, 100% 50%, 100% 100%, 0 100%)' // hides the agency tagline of the logo image
 
 function Marco({ children }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: `linear-gradient(135deg, #0D1B2E 0%, #1a0a3c 100%)` }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: '32px 28px', width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.35)' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}><Logo height={56} /></div>
-        <div style={{ textAlign: 'center', fontSize: 12.5, color: C.g500, marginBottom: 22 }}>Expedientes, citas y cobros de su clínica</div>
-        {children}
+    <div className="acceso">
+      <div className="acceso-cuerpo">
+        <div className="acceso-hero">
+          <Logo height={54} />
+          <div style={{ ...GLASS, display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 36, padding: '7px 14px', borderRadius: 160, fontSize: 13, fontWeight: 600, color: 'var(--acento-fuerte)' }}>
+            <span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--acento)' }} />Plataforma para clínicas y consultorios
+          </div>
+          <h1 className="acceso-titular">Su clínica, <span style={{ color: 'var(--acento)' }}>en orden</span> y en un solo lugar</h1>
+          <p style={{ fontSize: 16, color: C.g500, lineHeight: 1.6, maxWidth: 480, margin: '0 0 34px' }}>Expedientes, citas, cobros e inventario, con la información de sus pacientes protegida.</p>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            {CHIPS.map(([icono, texto]) => (
+              <span key={texto} className="acceso-chip">
+                <span style={{ width: 30, height: 30, borderRadius: 10, background: C.purpleMid, color: 'var(--acento-fuerte)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icono} size={16} /></span>
+                {texto}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="acceso-tarjeta" style={{ ...GLASS, background: 'rgba(255,255,255,0.8)', borderRadius: 28, padding: '32px 28px', boxShadow: SHADOW }}>
+          <div className="acceso-logo-movil" style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}><Logo height={56} /></div>
+          <div style={{ textAlign: 'center', fontFamily: SERIF, fontSize: 13.5, color: C.g500, marginBottom: 22, letterSpacing: '0.01em' }}>Expedientes, citas y cobros de su clínica</div>
+          {children}
+        </div>
+      </div>
+      <div className="acceso-pie">
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          Desarrollado por
+          <img src="/logo-dark.png" alt="Conception" style={{ height: 24, width: 'auto', display: 'block', clipPath: SIN_LEMA }} />
+        </span>
+        <a href="/privacidad">Política de privacidad</a>
       </div>
     </div>
   )
@@ -56,6 +91,8 @@ export function Acceso() {
 
   const entrar = async (e) => {
     e.preventDefault()
+    if (!revisarCorreo(email)) return
+    if (!password) { falta('Escriba su contraseña.'); return }
     setBusy(true); setMsg(null)
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     setBusy(false)
@@ -66,6 +103,7 @@ export function Acceso() {
     e.preventDefault()
     if (!asistente && !nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor o de la clínica.' }); return }
     if (!asistente && !esp) { setMsg({ tipo: 'error', t: 'Elija su especialidad.' }); return }
+    if (!revisarCorreo(email)) return
     if (password.length < 8) { setMsg({ tipo: 'error', t: 'La contraseña debe tener al menos 8 caracteres.' }); return }
     if (password !== password2) { setMsg({ tipo: 'error', t: 'Las contraseñas no coinciden.' }); return }
     setBusy(true); setMsg(null)
@@ -90,6 +128,7 @@ export function Acceso() {
   // sign in without a password: a one-time link to the email (only for accounts that already exist)
   const enlace = async (e) => {
     e.preventDefault()
+    if (!revisarCorreo(email)) return
     setBusy(true); setMsg(null)
     const { error } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { shouldCreateUser: false, emailRedirectTo: redirect() } })
     setBusy(false)
@@ -100,6 +139,7 @@ export function Acceso() {
 
   const olvido = async (e) => {
     e.preventDefault()
+    if (!revisarCorreo(email)) return
     setBusy(true); setMsg(null)
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect() })
     setBusy(false)
@@ -115,7 +155,7 @@ export function Acceso() {
       {msg && <Aviso tipo={msg.tipo}>{msg.t}</Aviso>}
 
       {modo === 'enlace' && (
-        <form onSubmit={enlace} style={campos}>
+        <form noValidate onSubmit={enlace} style={campos}>
           <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.5 }}>Escriba su correo y le enviaremos un enlace para entrar, sin contraseña.</div>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" placeholder="doctor@correo.com" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Enviarme el enlace para entrar'}</Button>
@@ -127,7 +167,7 @@ export function Acceso() {
       )}
 
       {modo === 'entrar' && (
-        <form onSubmit={entrar} style={campos}>
+        <form noValidate onSubmit={entrar} style={campos}>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" placeholder="doctor@correo.com" /></Campo>
           <Campo label="Contraseña"><Input type="password" value={password} onChange={setPassword} required autoComplete="current-password" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Iniciar sesión'}</Button>
@@ -139,7 +179,7 @@ export function Acceso() {
       )}
 
       {modo === 'crear' && (
-        <form onSubmit={crear} style={campos}>
+        <form noValidate onSubmit={crear} style={campos}>
           <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.5 }}>
             {asistente
               ? <>Le invitaron a trabajar en una clínica. Cree su contraseña para entrar.</>
@@ -161,7 +201,7 @@ export function Acceso() {
       )}
 
       {modo === 'olvido' && (
-        <form onSubmit={olvido} style={campos}>
+        <form noValidate onSubmit={olvido} style={campos}>
           <div style={{ fontSize: 13.5, color: C.g600 }}>Escriba su correo y le enviaremos un enlace para crear una contraseña nueva.</div>
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required autoComplete="email" /></Campo>
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Enviando…' : 'Enviar enlace'}</Button>
@@ -198,7 +238,7 @@ export function CrearPassword({ perfil, onListo }) {
         {perfil ? <>Hola, <strong>{perfil.nombre}</strong>. </> : null}La usará junto con su correo para entrar desde cualquier computadora o teléfono.
       </div>
       {msg && <Aviso tipo="error">{msg}</Aviso>}
-      <form onSubmit={guardar} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form noValidate onSubmit={guardar} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Campo label="Nueva contraseña" ayuda="Mínimo 8 caracteres"><Input type="password" value={p1} onChange={setP1} required autoComplete="new-password" /></Campo>
         <Campo label="Repita la contraseña"><Input type="password" value={p2} onChange={setP2} required autoComplete="new-password" /></Campo>
         <Button type="submit" size="lg" disabled={busy}>{busy ? 'Guardando…' : 'Guardar y entrar'}</Button>

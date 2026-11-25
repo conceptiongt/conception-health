@@ -15,7 +15,12 @@ export const NO_OCUPAN = ['Cancelada', 'No asistió', 'Reagendada']
 const pad = (n) => String(n).padStart(2, '0')
 export const isoDe = (y, mes0, d) => `${y}-${pad(mes0 + 1)}-${pad(d)}`
 export const partesISO = (iso) => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return { y, m: m - 1, d } }
-export const esISO = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(new Date(`${s}T00:00:00Z`).getTime())
+// Round-trip check rejects impossible dates such as 2026-02-31
+export const esISO = (s) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false
+  const f = new Date(`${s}T00:00:00Z`)
+  return !Number.isNaN(f.getTime()) && f.toISOString().slice(0, 10) === s
+}
 
 // Add days with UTC math (no daylight-saving surprises)
 export function sumarDias(iso, n) {
@@ -156,8 +161,9 @@ export function leerPreferencias(clinica) {
 export async function guardarPreferencias(clinica, prefs) {
   const limpio = normalizarPrefs(prefs)
   if (clinica && 'calendario' in clinica) {
-    const { error } = await supabase.from('clinicas').update({ calendario: limpio }).eq('id', clinica.id)
-    if (!error) return { remoto: true, fallo: false, prefs: limpio }
+    // .select('id') so we can tell when RLS let 0 rows through (update silently ignored)
+    const { data, error } = await supabase.from('clinicas').update({ calendario: limpio }).eq('id', clinica.id).select('id')
+    if (!error && data && data.length > 0) return { remoto: true, fallo: false, prefs: limpio }
     guardarLocal(clinica, limpio)
     toast.error('No se pudo guardar para toda la clínica; los colores quedaron guardados en este equipo')
     return { remoto: false, fallo: true, prefs: limpio }

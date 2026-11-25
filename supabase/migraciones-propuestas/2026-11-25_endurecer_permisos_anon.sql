@@ -1,3 +1,6 @@
+-- NOTA: es un PRIMER PASO, no cierra todo. Las RPC `cita_eliminar`, `inventario_eliminar`, `orden_recibir`,
+--   `categoria_renombrar` y `mi_clinica` siguen ejecutables por anon/PUBLIC por grant (revisan internamente la clínica de quien
+--   llama). Hay que verificarlo contra pg_proc / pg_policies y probar todo en una rama de Supabase antes de aplicar.
 -- PROPUESTA (NO APLICADA) · 2026-11-25 · REVISIÓN OBLIGATORIA (toca permisos de base de datos)
 -- Qué hace: defensa en profundidad. Hoy todas las tablas tienen RLS y políticas basadas en mi_clinica(), pero el rol `anon`
 --   (la llave pública del navegador, sin sesión) todavía conserva privilegios sobre las tablas y EXECUTE sobre funciones
@@ -37,6 +40,8 @@
 --   2. Las tablas heredadas `patients`, `profiles` y `expedientes` (políticas con auth.uid() = user_id) parecen sin uso en la app.
 --      Revisar más adelante si se pueden eliminar. NO se borra nada en esta propuesta.
 
+begin;
+
 -- 1) El rol anon no necesita tablas ni secuencias de public
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
@@ -53,7 +58,10 @@ grant execute on function
   public.es_admin(), public.tiene_permiso(text), public.puede_eliminar_citas(), public.puede_eliminar_inventario()
   to authenticated, service_role;
 
--- 4) Lo que se cree en el futuro tampoco nace abierto para anon
-alter default privileges in schema public revoke all on tables from anon;
-alter default privileges in schema public revoke all on sequences from anon;
-alter default privileges in schema public revoke all on functions from anon;
+-- 4) Lo que cree el rol postgres en el futuro tampoco nace abierto para anon (tablas) ni para PUBLIC/anon (funciones;
+--    en Postgres las funciones nuevas dan EXECUTE a PUBLIC por defecto, por eso se revoca de PUBLIC también)
+alter default privileges for role postgres in schema public revoke all on tables from anon;
+alter default privileges for role postgres in schema public revoke all on sequences from anon;
+alter default privileges for role postgres in schema public revoke execute on functions from public, anon;
+
+commit;

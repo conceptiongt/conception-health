@@ -3,7 +3,7 @@ import { Icon } from './Icon'
 
 // Pill buttons: the clinic accent is the single action color (gradient + soft glow); secondary actions are glass.
 // Hover / active / glow live in index.css (.btn, .btn-primary, .btn-ghost) so they can use :hover.
-const PRIMARIO = { background: 'linear-gradient(135deg, var(--acento), color-mix(in srgb, var(--acento) 70%, #38BDF8))', color: C.onPurple, border: '1px solid transparent' }
+const PRIMARIO = { color: C.onPurple, border: '1px solid transparent' }
 const VARIANTS = {
   primary: PRIMARIO,
   brand: PRIMARIO,

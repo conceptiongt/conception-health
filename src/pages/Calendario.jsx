@@ -354,7 +354,8 @@ function Grilla({ dias, porDia, porId, colorDe, hoy, nombreCorto, onCita, onDia,
               )}
               {eventos[di].map(e => {
                 const col = colorDe(e.c)
-                const h = Math.max((e.fin - e.ini) / 60 * PX_HORA - 2, 22)
+                const tope = alto - ((e.ini - desde * 60) / 60 * PX_HORA + 1) // stay inside the grid (e.g. cita crossing midnight)
+                const h = Math.min(Math.max((e.fin - e.ini) / 60 * PX_HORA - 2, 22), Math.max(tope, 22))
                 const nombre = porId[e.c.paciente_id]?.nombre || ''
                 return (
                   <button key={e.c.id} type="button" onClick={() => onCita(e.c)} title={`${fmtHora(e.c.hora)} · ${nombre}`} style={{

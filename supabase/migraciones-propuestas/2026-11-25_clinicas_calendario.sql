@@ -18,6 +18,7 @@
 alter table public.clinicas
   add column if not exists calendario jsonb not null default '{}'::jsonb;
 
+alter table public.clinicas drop constraint if exists clinicas_calendario_valido;
 alter table public.clinicas
   add constraint clinicas_calendario_valido
-  check (jsonb_typeof(calendario) = 'object' and pg_column_size(calendario) < 8192);
+  check (jsonb_typeof(calendario) = 'object' and octet_length(calendario::text) < 8192);

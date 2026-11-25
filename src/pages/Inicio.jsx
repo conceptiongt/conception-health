@@ -200,7 +200,7 @@ export function Inicio() {
             </div>
           ))}
         </Card>
-        <CalendarioInicio citas={citas} onDia={(iso) => ir('calendario', iso)} onAbrir={() => ir('calendario')} />
+        <CalendarioInicio citas={citas} pacientes={todosP} onDia={(iso) => ir('calendario', iso)} onAbrir={() => ir('calendario')} />
         {finanzas && <Card title="Pagos vencidos" right={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 500 }}>{fmtQ(pendienteTotal)}</strong></span>}>
           {vencidos.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay pagos vencidos</div> : vencidos.slice(0, 6).map((c, i) => (
             <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 10, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>

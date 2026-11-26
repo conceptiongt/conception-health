@@ -56,7 +56,7 @@ const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permis
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
 // "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }
 function leerRuta() {
-  const [, v, id] = window.location.hash.split('/')
+  const [, v, id] = window.location.hash.split('?')[0].split('/') // a query like ?google=ok is not part of the route
   return TODAS.some(n => n.id === v) ? {
     vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
     fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,

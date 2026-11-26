@@ -18,6 +18,7 @@ import { Modal } from '../components/ui/Modal'
 import { toast } from '../components/ui/Toast'
 import { CitaModal } from '../components/CitaModal'
 import { SelectorColor } from '../components/SelectorColor'
+import { TarjetaGoogle } from '../components/TarjetaGoogle'
 
 const PX_HORA = 56 // height of one hour in the time grids
 
@@ -121,17 +122,7 @@ export function Calendario({ fechaInicial }) {
         </div>
       )}
 
-      <Card style={{ marginTop: 18, padding: '18px 22px' }}>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-          <span style={{ width: 38, height: 38, borderRadius: 12, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="calendarioMas" size={19} /></span>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 500, color: C.black }}>Google Calendar</div>
-            <div style={{ fontSize: 13.5, color: C.g500, marginTop: 4, lineHeight: 1.55, maxWidth: 720 }}>
-              Este calendario es el de su clínica. Puede pasar cualquier cita a su Google Calendar con el botón "Agregar a Google Calendar". La sincronización automática con su cuenta de Google está en preparación.
-            </div>
-          </div>
-        </div>
-      </Card>
+      <TarjetaGoogle perfil={perfil} />
 
       {abierta && (
         <DetalleCita cita={abierta} paciente={porId[abierta.paciente_id]} sedes={sedes} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}

@@ -15,10 +15,15 @@ export const PERMISOS = [
 export const permisosIniciales = () => Object.fromEntries(PERMISOS.map(p => [p.k, p.defecto]))
 
 export const esAdmin = (perfil) => perfil?.rol === 'dueno'
+// Temporary Conception support session (opened with a code the clinic generated). Mirrors tiene_permiso() in the database.
+export const esSoporte = (perfil) => perfil?.rol === 'soporte'
+// Allowlist: must match tiene_permiso() in the database (everything except eliminar, eliminar_citas, eliminar_inventario, exportar)
+const PERMITIDOS_SOPORTE = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'configuracion']
 // permissions added later fall back to their default for assistants saved before them
 // ('compras' used to be part of 'costos', so it inherits it)
 export const puede = (perfil, k) => {
   if (esAdmin(perfil)) return true
+  if (esSoporte(perfil)) return PERMITIDOS_SOPORTE.includes(k)
   const p = perfil?.permisos || {}
   if (k in p) return !!p[k]
   if (k === 'compras' && 'costos' in p) return !!p.costos

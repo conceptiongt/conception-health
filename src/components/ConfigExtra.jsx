@@ -183,10 +183,11 @@ export function Usuarios() {
     await supabase.from('invitaciones').delete().eq('id', i.id); cargar()
   }
 
-  const asistentes = (usuarios || []).filter(u => u.rol !== 'dueno')
+  const asistentes = (usuarios || []).filter(u => u.rol !== 'dueno' && u.rol !== 'soporte')
+  const soportes = (usuarios || []).filter(u => u.rol === 'soporte') // temporary Conception support sessions: shown, never editable
   const admin = (usuarios || []).find(u => u.rol === 'dueno')
   const permitidos = USUARIOS_INCLUIDOS + (clinica?.usuarios_extra || 0)
-  const ocupados = (usuarios || []).length + invitaciones.length
+  const ocupados = (usuarios || []).length - soportes.length + invitaciones.length // support sessions are not seats
   const lleno = usuarios !== null && ocupados >= permitidos
   return (
     <Card title="Usuarios y permisos" right={<Button size="sm" icon="mas" onClick={() => lleno ? setExtra(true) : setInvitar(true)}>Invitar asistente</Button>}>
@@ -203,9 +204,14 @@ export function Usuarios() {
       {admin && <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}` }}>
         <Icon name="escudo" size={18} style={{ color: C.purple }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{admin.nombre}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{admin.email}</div></div><Badge color={C.purpleDark} bg={C.purpleMid}>Administrador</Badge>
       </div>}
+      {soportes.map(u => (
+        <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}`, flexWrap: 'wrap' }}>
+          <Icon name="escudo" size={18} style={{ color: C.amber }} /><div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 500 }}>Soporte Conception (temporal)</div><div style={{ fontSize: 12.5, color: C.g500 }}>Entró con su código de soporte. Para cerrar su acceso use «Cancelar acceso» en Acceso de soporte.</div></div><Badge color={C.amber} bg={C.amberLight}>Temporal</Badge>
+        </div>
+      ))}
       {usuarios === null ? <div style={{ color: C.g400, padding: 10 }}>Cargando…</div> : asistentes.map(u => (
         <div key={u.user_id} style={{ padding: '14px 0', borderBottom: `1px solid ${C.g100}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
             <Icon name="usuarios" size={18} style={{ color: C.g500 }} /><div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>{u.nombre}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{u.email}</div></div>
             {!u.password_creada && <>
               <Badge color={C.amber} bg={C.amberLight}>Aún no crea su contraseña</Badge>

@@ -96,12 +96,14 @@ for (let m = 0; m < 6; m++) {
 const DB = {
   citas_eliminadas: [],
   perfiles: [
-    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
+    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
   clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
+  // fictional support-code history (the real database never exposes the hash column)
+  soporte_accesos: [{ id: 'demo-sa1', clinica_id: cid, creado_por: uid, creado_nombre: 'Dra. Andrea Molina', creado_at: `${dias(-9)}T15:20:00Z`, vence_at: `${dias(-8)}T15:20:00Z`, usado_at: `${dias(-9)}T15:42:00Z`, usado_por: 'demo-agente', usado_nombre: 'Soporte Demo', revocado_at: null, terminado_at: `${dias(-9)}T16:30:00Z` }],
   categorias_inventario: ['Medicamentos', 'Insumos', 'Equipo'].map(nombre => ({ id: id(), clinica_id: cid, nombre })),
   proveedores: [{ id: 'demo-pv1', clinica_id: cid, nombre: 'Distribuidora Médica Ejemplo', contacto: 'Luis', telefono: '55550000', activo: true }],
   ordenes_compra: [], ordenes_compra_lineas: [], paquetes: [], paquete_items: [],
@@ -230,6 +232,20 @@ async function rpc(fn, a) {
     const pendiente = DB.ordenes_compra_lineas.filter(x => x.orden_id === o.id).reduce((n, x) => n + Math.max(0, x.cantidad - x.recibido), 0)
     o.estado = pendiente ? 'parcial' : 'recibida'
     return { data: o.estado, error: null }
+  }
+  if (fn === 'soporte_generar') {
+    const ahora = Date.now()
+    DB.soporte_accesos.forEach(x => { if (!x.revocado_at && !x.terminado_at && new Date(x.vence_at).getTime() > ahora) x.revocado_at = new Date(ahora).toISOString() })
+    DB.soporte_accesos.unshift({ id: id(), clinica_id: cid, creado_por: uid, creado_nombre: DB.perfiles[0].nombre, creado_at: new Date(ahora).toISOString(), vence_at: new Date(ahora + 24 * 3600 * 1000).toISOString(), usado_at: null, usado_por: null, usado_nombre: null, revocado_at: null, terminado_at: null })
+    return { data: 'DEMO7-K2M9Q', error: null }
+  }
+  if (fn === 'soporte_revocar') {
+    DB.soporte_accesos.forEach(x => { if (!x.revocado_at && !x.terminado_at) x.revocado_at = new Date().toISOString() })
+    return { data: null, error: null }
+  }
+  if (fn === 'soporte_estado') { // ?rol=soporte in the address previews the support session
+    const soporte = DB.perfiles[0].rol === 'soporte'
+    return { data: { agente: soporte, sesion: soporte ? { clinica_id: cid, clinica_nombre: DB.clinicas[0].nombre, vence_at: new Date(Date.now() + 3 * 3600 * 1000).toISOString() } : null }, error: null }
   }
   return { data: null, error: null }
 }

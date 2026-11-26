@@ -18,24 +18,28 @@ import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
 import { DatosSeguridad } from '../components/DatosSeguridad'
+import { SoporteAcceso } from '../components/SoporteAcceso'
+import { esSoporte } from '../lib/permisos'
 import { Interruptor } from '../components/MensajePaciente'
 import { confirmar } from '../components/ui/Confirmar'
 
 export function Configuracion() {
   const { servicios, perfil, recargar, acc } = useDatos()
+  const soporte = esSoporte(perfil) // a support session cannot link Studio or delete the account
   return (
     <>
       <Encabezado titulo="Configuración" subtitulo="Marca, usuarios, ficha clínica, pagos, sedes y tarifas" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Marca />
         <DatosSeguridad />
+        <SoporteAcceso />
         <Usuarios />
         <FichaClinica />
         <PagosYRegistro />
         {acc?.inventario && <Sedes />}
         <Tarifas servicios={servicios} clinicaId={perfil.clinica_id} onCambio={recargar} />
-        <VinculoStudio />
-        <EliminarCuenta />
+        {!soporte && <VinculoStudio />}
+        {!soporte && <EliminarCuenta />}
       </div>
     </>
   )
@@ -231,7 +235,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   let previa = null
 
   return (
-    <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
+    <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos} style={{ whiteSpace: 'normal', textAlign: 'center' }}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
       <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14, lineHeight: 1.5 }}>Al registrar una cita se llena el precio y se crea el cobro del paciente. En la columna <strong>Asistente</strong> elija qué precios pueden ver sus asistentes para cobrar; los demás solo los ve usted.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0,1fr) 140px auto', gap: 8, alignItems: 'end', marginBottom: 16 }} className="tarifa-nueva">

@@ -28,9 +28,10 @@ import { Cargando, Logo, PantallaCarga } from './components/ui/Varios'
 import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
-import { esAdmin, puede } from './lib/permisos'
+import { esAdmin, esSoporte, puede } from './lib/permisos'
 import { MODO_DEMO } from './lib/config'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
+import { SoporteEntrada, BannerSoporte, useEsAgente } from './components/SoporteSesion'
 
 const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
@@ -75,7 +76,7 @@ function AppPrivada() {
   let contenido
   if (s.cargando) contenido = <PantallaCarga />
   else if (!s.session) contenido = <Acceso />
-  else if (!s.perfil) contenido = <SinAcceso />
+  else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} />
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
@@ -103,7 +104,7 @@ function Aplicacion({ sesion }) {
   // first entry with a specialty: fill Tarifas with its suggested services (once)
   const sugiriendo = useRef(false)
   useEffect(() => {
-    if (!datos || !puede(perfil, 'configuracion') || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
+    if (!datos || esSoporte(perfil) || !puede(perfil, 'configuracion') || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
     sugiriendo.current = true
     cargarSugeridos(clinica, datos.servicios).then(() => { recargar(); recargarSesion() })
   }, [datos, clinica, recargar, recargarSesion])
@@ -139,7 +140,7 @@ function Aplicacion({ sesion }) {
   const enPrueba = !planActivo
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = (esAdmin(perfil) ? '' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
+  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
@@ -218,6 +219,7 @@ function Aplicacion({ sesion }) {
         </aside>
 
         <main className="main">
+          {esSoporte(perfil) && <BannerSoporte clinica={clinica} onSalir={recargarSesion} />}
           {MODO_DEMO && (
             <div style={{ background: C.amberLight, color: C.amber, borderRadius: 16, padding: '10px 16px', marginBottom: 18, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <Icon name="estrella" size={16} />
@@ -270,8 +272,12 @@ function SinPermiso() {
   )
 }
 
-// The account exists but is not linked to a clinic (e.g. the administrator removed the user)
-function SinAcceso() {
+// The account exists but is not linked to a clinic (e.g. the administrator removed the user).
+// Conception's support agents land here too: they get the code screen instead.
+function SinAcceso({ recargar }) {
+  const agente = useEsAgente()
+  if (agente === null) return <PantallaCarga />
+  if (agente) return <SoporteEntrada onListo={recargar} />
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>

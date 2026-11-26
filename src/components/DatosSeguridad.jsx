@@ -11,7 +11,7 @@ const DATOS = [
   ['Usuarios y permisos', 'Usted decide qué puede ver y hacer cada asistente.'],
   ['Historial', 'Las citas e inventario eliminados quedan registrados con quién, cuándo y por qué.'],
   ['Sus datos son suyos', 'Puede exportar sus listados a Excel o PDF y eliminar su cuenta cuando quiera.'],
-  ['Acceso de Conception', 'Conception tiene acceso técnico de administración y lo usa solo para mantenimiento y soporte. No usa la información de sus pacientes para ningún otro fin.'],
+  ['Acceso de Conception', 'Conception solo entra a su clínica con un código de soporte que usted genera y que vence en 24 horas. Cada acceso queda en el historial. Quien administra el servidor conserva acceso técnico a la infraestructura y se compromete a no usarlo sin su código.'],
 ]
 
 export function DatosSeguridad() {

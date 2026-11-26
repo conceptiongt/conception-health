@@ -30,6 +30,7 @@ import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, puede } from './lib/permisos'
 import { MODO_DEMO } from './lib/config'
+import { limpiarGoogle } from './lib/google'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
 
 const NAV = [
@@ -56,7 +57,7 @@ const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permis
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
 // "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }
 function leerRuta() {
-  const [, v, id] = window.location.hash.split('/')
+  const [, v, id] = window.location.hash.split('?')[0].split('/') // a query like ?google=ok is not part of the route
   return TODAS.some(n => n.id === v) ? {
     vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
     fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
@@ -211,7 +212,7 @@ function Aplicacion({ sesion }) {
               <div style={{ color: 'var(--menu-titulo)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em' }}>SESIÓN</div>
               <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={() => { limpiarGoogle(); supabase.auth.signOut() }} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
             </button>
           </div>
@@ -277,7 +278,7 @@ function SinAcceso() {
       <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
         <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario no tiene acceso</div>
         <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Este correo no está vinculado a ninguna clínica. Si trabaja en un consultorio, pida al administrador que le invite de nuevo.</div>
-        <Button variant="ghost" icon="salir" onClick={() => supabase.auth.signOut()}>Cerrar sesión</Button>
+        <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); supabase.auth.signOut() }}>Cerrar sesión</Button>
       </div>
     </div>
   )

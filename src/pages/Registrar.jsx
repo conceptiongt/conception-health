@@ -17,6 +17,7 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../compone
 import { toast } from '../components/ui/Toast'
 import { QuienAgendo, nombreUsuario } from '../components/QuienAgendo'
 import { SelectorFechaHora } from '../components/SelectorFechaHora'
+import { sincronizarCita } from '../lib/google'
 
 const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
 
@@ -63,6 +64,7 @@ export function Registrar() {
       else await supabase.from('cobros').insert(fila)
     }
     setBusy(false)
+    sincronizarCita(cita.id) // mirror to the clinic's Google Calendar (silent)
     toast.success('Paciente registrado')
     // the WhatsApp message only shows the price if this user may see it
     const precioVisible = !s.servicio_id || verPrecio(perfil, servicios.find(x => x.id === s.servicio_id))

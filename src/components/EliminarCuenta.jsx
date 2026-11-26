@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { useDatos } from '../hooks/useDatos'
 import { esAdmin } from '../lib/permisos'
+import { limpiarGoogle } from '../lib/google'
 import { Card } from './ui/Varios'
 import { Button } from './ui/Button'
 import { Modal } from './ui/Modal'
@@ -64,6 +65,7 @@ function Asistente({ admin, clinica, onClose }) {
       return
     }
     toast.success(admin ? 'Su cuenta fue eliminada' : 'Su usuario fue eliminado')
+    limpiarGoogle()
     await supabase.auth.signOut()
   }
 

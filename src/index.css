@@ -273,15 +273,20 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .in-tabla tbody tr:hover td { background: rgba(255,255,255,0.95); }
 
 /* ───────── Pagos y saldos ───────── */
-.pg-resumen { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); margin-bottom: 22px; }
+.pg-resumen { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); margin-bottom: 18px; }
 .pg-resumen .in-kpi-n { font-size: clamp(30px, 8vw, 40px); }
 @media (min-width: 1100px) { .pg-resumen { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } .pg-resumen .in-kpi-n { font-size: clamp(22px, 2vw, 30px); } .pg-tres { gap: 22px 20px; } }
 @media (min-width: 1600px) { .pg-resumen .in-kpi-n { font-size: clamp(30px, 2.2vw, 40px); } }
+@media (min-width: 720px) and (max-width: 1099px) { .pg-resumen .in-kpi-n { font-size: clamp(24px, 3vw, 32px); } }
 .pg-tres { display: grid; gap: 22px 32px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 720px) { .pg-tres { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.pg-dos { display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 560px) and (max-width: 1099px) { .pg-dos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pg-dos { display: grid; gap: 22px 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 419px) { .pg-dos { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 559px) { .pg-dos .in-kpi-n { font-size: clamp(22px, 6.4vw, 28px); white-space: nowrap; } }
+.pg-resumen { align-items: stretch; }
 .pg-cifra { min-width: 0; border-radius: 16px; }
+.pg-resumen .in-kpi-n { margin: 8px 0 10px; }
+.pg-resumen .in-kpi-s { margin-top: 6px; }
 .pg-cifra .k-barra { height: 8px; }
 .pg-barra-roja { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.5) 0 3px, transparent 3px 7px), linear-gradient(90deg, #F2A0AE, #C8304A); }
 .pg-filtros { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
@@ -339,3 +344,14 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .pg-btn.linea { background: transparent; color: #fff; border-color: rgba(255,255,255,0.55); }
 .pg-btn.linea:hover { background: rgba(255,255,255,0.12); }
 .pg-vacio { padding: 36px 16px; text-align: center; color: #C6D3E8; font-size: 14px; }
+
+/* Calendario: Google card — one row on desktop, action at the right */
+.tg-fila { display: flex; align-items: center; gap: 14px 20px; flex-wrap: wrap; }
+.tg-lado { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; max-width: 100%; justify-content: flex-end; flex-wrap: nowrap; }
+.tg-lado > .btn, .tg-lado > button { flex-shrink: 0; }
+@media (max-width: 699px) {
+  .tg-fila { align-items: stretch; }
+  .tg-lado { flex: 1 1 100%; flex-wrap: wrap; justify-content: stretch; }
+  .tg-lado > * { flex: 1 1 100%; justify-content: center; }
+  .tg-debajo { padding-left: 0 !important; }
+}

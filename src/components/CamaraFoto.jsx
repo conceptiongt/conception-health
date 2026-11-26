@@ -30,6 +30,8 @@ const tipoError = (e) => {
 // Live camera window: returns a normal JPEG File through onFoto, which feeds the existing upload handler.
 export function CamaraFoto({ onFoto, onClose, onElegirArchivo }) {
   const videoRef = useRef(null)
+  const cajaRef = useRef(null)
+  const vivo = useRef(true) // false once the window is gone
   const [deviceId, setDeviceId] = useState(null)
   const [camaras, setCamaras] = useState([])
   const [listo, setListo] = useState(false)
@@ -81,6 +83,8 @@ export function CamaraFoto({ onFoto, onClose, onElegirArchivo }) {
     }
   }, [corriendo, deviceId, intento])
 
+  useEffect(() => { vivo.current = true; return () => { vivo.current = false } }, [])
+
   // Hidden tab: release the camera; reopen when visible again
   useEffect(() => {
     const fn = () => setPausa(document.visibilityState === 'hidden')
@@ -99,7 +103,9 @@ export function CamaraFoto({ onFoto, onClose, onElegirArchivo }) {
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height) // drawn unmirrored: the mirror is CSS-only
     const ahora = new Date()
     c.toBlob((blob) => {
-      if (!blob) { setError('otro'); return }
+      c.width = 0 // releases the canvas memory (Safari)
+      if (!vivo.current) return // the window was closed meanwhile
+      if (!blob) { setError('otro'); setPausa(true); return } // pausa releases the stream: the camera never stays on behind the error
       const file = new File([blob], nombreFoto(ahora), { type: 'image/jpeg', lastModified: ahora.getTime() })
       setFoto({ file, url: URL.createObjectURL(blob) })
     }, 'image/jpeg', 0.9)
@@ -114,12 +120,18 @@ export function CamaraFoto({ onFoto, onClose, onElegirArchivo }) {
   }
 
   const fase = error ? 'error' : foto ? 'revisar' : listo ? 'vivo' : 'abriendo'
+  // Move focus to the primary button of each new phase
+  useEffect(() => {
+    if (fase === 'abriendo') return
+    cajaRef.current?.querySelector('.btn-primary:not([disabled])')?.focus({ preventScroll: true })
+  }, [fase])
   const marco = { position: 'relative', width: '100%', minHeight: 200, borderRadius: 16, background: '#0F1624', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }
 
   return (
     <Modal title="Tomar foto" onClose={onClose} maxWidth={640}>
+      <div ref={cajaRef}>
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-        {fase === 'abriendo' ? 'Abriendo la cámara' : fase === 'vivo' ? 'Cámara lista' : fase === 'revisar' ? 'Foto tomada' : MENSAJES[error]}
+        {fase === 'abriendo' ? 'Abriendo la cámara' : fase === 'vivo' ? 'Cámara lista' : fase === 'revisar' ? 'Foto tomada' : ''}
       </div>
       {fase === 'error' ? (
         <div role="alert" style={{ padding: '24px 8px', textAlign: 'center', color: C.g600, fontSize: 14, lineHeight: 1.5 }}>
@@ -128,18 +140,19 @@ export function CamaraFoto({ onFoto, onClose, onElegirArchivo }) {
       ) : (
         <div style={marco}>
           <video ref={videoRef} autoPlay playsInline muted className="cam-video" style={{ display: foto ? 'none' : 'block', transform: espejo ? 'scaleX(-1)' : 'none' }} />
-          {foto && <img src={foto.url} alt="Foto tomada" className="cam-video" />}
+          {foto && <img src={foto.url} alt="Foto tomada" className="cam-video" style={{ transform: espejo ? 'scaleX(-1)' : 'none' }} />}
           {fase === 'abriendo' && <div style={{ position: 'absolute', color: '#fff', fontSize: 14 }}>Abriendo la cámara…</div>}
         </div>
       )}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 16 }}>
         {fase === 'error' && <Button variant="primary" size="lg" onClick={() => { onClose(); onElegirArchivo() }} style={{ minHeight: 48 }}>Elegir un archivo</Button>}
-        {fase === 'error' && error !== 'permiso' && error !== 'nocamara' && <Button variant="ghost" size="lg" onClick={() => setIntento(n => n + 1)} style={{ minHeight: 48 }}>Reintentar</Button>}
+        {fase === 'error' && error !== 'permiso' && error !== 'nocamara' && <Button variant="ghost" size="lg" onClick={() => { setError(null); setPausa(false); setIntento(n => n + 1) }} style={{ minHeight: 48 }}>Reintentar</Button>}
         {fase === 'vivo' && camaras.length > 1 && <Button variant="ghost" size="lg" icon="camara" onClick={cambiar} style={{ minHeight: 48 }}>Cambiar cámara</Button>}
         {fase === 'revisar' && <Button variant="ghost" size="lg" onClick={repetir} style={{ minHeight: 48 }}>Repetir</Button>}
         <Button variant="ghost" size="lg" onClick={onClose} style={{ minHeight: 48 }}>Cancelar</Button>
         {fase === 'revisar' && <Button variant="primary" size="lg" onClick={usar} style={{ minHeight: 48 }}>Usar esta foto</Button>}
         {(fase === 'vivo' || fase === 'abriendo') && <Button variant="primary" size="lg" icon="camara" onClick={tomar} disabled={fase !== 'vivo'} style={{ minHeight: 48 }}>Tomar foto</Button>}
+      </div>
       </div>
     </Modal>
   )

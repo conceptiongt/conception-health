@@ -12,7 +12,7 @@ import { EnlaceMeet } from './EnlaceMeet'
 import { Interruptor } from './MensajePaciente'
 import { hoyISO } from '../lib/formato'
 import { NO_OCUPAN, aMinutos, deMinutos, duracionCita, esISO } from '../lib/calendario'
-import { MAX_NOTA, MAX_TITULO, TITULOS_RAPIDOS, guardarAgenda, guardarMeetUrl, limpiarNota, limpiarTitulo, mismaEntrada, nuevoId, esIdValido, esMeetUrl, validarEntrada } from '../lib/agenda'
+import { MAX_NOTA, MAX_TITULO, TITULOS_RAPIDOS, indiceEntrada, guardarAgenda, guardarMeetUrl, limpiarNota, limpiarTitulo, mismaEntrada, nuevoId, esIdValido, esMeetUrl, validarEntrada } from '../lib/agenda'
 import { sincronizarEvento } from '../lib/google'
 
 // 06:00 … 22:00 every 30 minutes
@@ -83,7 +83,7 @@ export function EventoModal({ entrada, fechaInicial, horaInicial, citas = [], cl
     setBusy(true)
     let lista
     try {
-      lista = await guardarAgenda(clinica, (l) => editando ? l.map(x => mismaEntrada(x, entrada) ? nuevo : x) : [...l, nuevo])
+      lista = await guardarAgenda(clinica, (l) => editando ? (() => { const i = indiceEntrada(l, entrada); return l.map((x, k) => k === i ? nuevo : x) })() : [...l, nuevo])
     } catch (e) { toast.error(e.message || 'No se pudo guardar el evento'); setBusy(false); return }
     onGuardado(lista)
     if (!quiereMeet) {
@@ -108,7 +108,7 @@ export function EventoModal({ entrada, fechaInicial, horaInicial, citas = [], cl
     if (!await confirmar(`¿Quitar el evento${entrada.motivo ? ` «${entrada.motivo}»` : ''}?${entrada.bloquea ? ' Esas fechas volverán a quedar libres para agendar.' : ''}`)) return
     setBusy(true)
     try {
-      const lista = await guardarAgenda(clinica, (l) => l.filter(x => !mismaEntrada(x, entrada)))
+      const lista = await guardarAgenda(clinica, (l) => { const i = indiceEntrada(l, entrada); return l.filter((_, k) => k !== i) })
       toast.success('Evento quitado')
       onGuardado(lista)
       if (esIdValido(entrada.id)) sincronizarEvento(entrada.id) // the function finds no entry and deletes the Google event
@@ -130,7 +130,7 @@ export function EventoModal({ entrada, fechaInicial, horaInicial, citas = [], cl
 
   const interruptor = (id, activo, onChange, deshabilitado, texto, ayuda) => (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', opacity: deshabilitado ? 0.55 : 1 }}>
-      <span style={{ pointerEvents: deshabilitado ? 'none' : 'auto', display: 'inline-flex' }}><Interruptor activo={activo && !deshabilitado} onChange={onChange} titulo={texto} /></span>
+      <span style={{ pointerEvents: deshabilitado ? 'none' : 'auto', display: 'inline-flex' }}><Interruptor activo={activo && !deshabilitado} onChange={onChange} titulo={texto} disabled={deshabilitado} /></span>
       <div style={{ minWidth: 0 }}>
         <div id={id} style={{ fontSize: 14, fontWeight: 500, color: C.black }}>{texto}</div>
         {ayuda && <div style={{ fontSize: 12.5, color: C.g500, marginTop: 2, lineHeight: 1.45 }}>{ayuda}</div>}

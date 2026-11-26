@@ -44,6 +44,15 @@ export const avisosGoogle = () => avisos
 const AVISO = 'ch-google-aviso'
 export const alAvisoGoogle = (fn) => { window.addEventListener(AVISO, fn); return () => window.removeEventListener(AVISO, fn) }
 
+const ENLACE_GOOGLE = /^https:\/\/(www\.google\.com\/calendar\/|calendar\.google\.com\/)/
+const limpiarEvento = (x) => ({
+  ...x,
+  titulo: String(x.titulo ?? '').slice(0, 140),
+  calendario: String(x.calendario ?? '').slice(0, 60),
+  color: typeof x.color === 'string' && /^#[0-9a-f]{6}$/i.test(x.color) ? x.color : null,
+  enlace: typeof x.enlace === 'string' && ENLACE_GOOGLE.test(x.enlace) ? x.enlace : null,
+})
+
 // → { eventos: [{ id, titulo, fecha, hora, finFecha, finHora, todoElDia, calendario, color, enlace }], faltaPermiso? } — never throws
 export async function eventosGoogle(desde, hasta) {
   const vacio = { eventos: [] }
@@ -55,7 +64,8 @@ export async function eventosGoogle(desde, hasta) {
     const previo = cacheEventos.get(llave)
     if (previo && Date.now() - previo.t < TTL_EVENTOS) return previo.valor
     const d = await llamar('eventos', { desde, hasta })
-    const valor = { eventos: Array.isArray(d?.eventos) ? d.eventos : [], faltaPermiso: !!d?.faltaPermiso }
+    // defence in depth: the function already filters these, but nothing from the network is trusted as-is on screen
+    const valor = { eventos: (Array.isArray(d?.eventos) ? d.eventos : []).filter(x => x && typeof x === 'object').map(limpiarEvento), faltaPermiso: !!d?.faltaPermiso }
     cacheEventos.set(llave, { t: Date.now(), valor })
     if (cacheEventos.size > 12) cacheEventos.delete(cacheEventos.keys().next().value)
     const nuevo = { faltaPermiso: valor.faltaPermiso }
@@ -109,7 +119,7 @@ export async function sincronizarTodas(alProgreso) {
     d = await llamar('sync-todas', inicio ? { inicio } : {})
     if (d?.inicio) inicio = d.inicio
     if (d?.sincronizado && alProgreso) alProgreso(d)
-    if (!d?.sincronizado || !(d.pendientes > 0)) break // pendientes already includes the failed ones, so the next round retries them
+    if (!d?.sincronizado || !(d.pendientes > 0 || d.eventosPendientes > 0)) break // pendientes already includes the failed ones, so the next round retries them; eventosPendientes = own events the time budget left out
   }
   cache = null
   return d

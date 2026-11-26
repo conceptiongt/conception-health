@@ -58,7 +58,9 @@ export function useCargarLia(clinica) {
     // (If the blocks WERE edited here from a stale copy, this save still wins: the settings screen is hidden today.)
     const sinTocar = (k) => JSON.stringify(datos[k] || []) === JSON.stringify(guardada?.[k] || [])
     if (sinTocar('bloqueos') || sinTocar('eventos')) {
-      const { data: actual } = await supabase.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+      const { data: actual, error: eLeer } = await supabase.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+      // never write from a stale copy when the current settings could not be read
+      if (eLeer) { setGuardando(false); return false } // the caller (pages/Lia.jsx) shows the save-error toast on false
       for (const k of ['bloqueos', 'eventos']) if (sinTocar(k) && Array.isArray(actual?.config?.[k])) datos = { ...datos, [k]: actual.config[k] }
     }
     const { error: e } = await supabase.from('lia_config').upsert({ clinica_id: clinica.id, config: datos, updated_at: new Date().toISOString() })

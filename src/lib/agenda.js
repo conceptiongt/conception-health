@@ -35,6 +35,8 @@ export const nuevoId = () => Array.from(crypto.getRandomValues(new Uint8Array(16
 export const tituloDe = (e) => (e?.motivo || '').trim() || (e?.bloquea === false ? 'Evento' : 'Bloqueo')
 const claveEntrada = (b) => [b.fecha, b.hasta_fecha || '', b.desde || '', b.hasta || '', b.motivo || ''].join('|')
 // same entry: by id when both have one, otherwise by content (blocks made in Lía's settings have no id)
+// First entry matching `b` (by id, or by content when a legacy entry has no id). Used to touch ONLY that one when several identical legacy entries exist.
+export const indiceEntrada = (l, b) => l.findIndex(x => mismaEntrada(x, b))
 export const mismaEntrada = (a, b) => !!a && !!b && (a.id && b.id ? a.id === b.id : claveEntrada(a) === claveEntrada(b))
 
 const finDe = (b) => (b.hasta_fecha || b.fecha)

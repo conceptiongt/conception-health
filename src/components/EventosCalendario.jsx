@@ -2,7 +2,7 @@ import { C } from '../lib/theme'
 import { MESES } from '../lib/constantes'
 import { hoyISO } from '../lib/formato'
 import { DIAS_CORTOS, diaSemana, partesISO } from '../lib/calendario'
-import { COLOR_BLOQUEO, RAYADO, esTodoElDia, guardarAgenda, mismaEntrada, tituloDe, esIdValido, esMeetUrl } from '../lib/agenda'
+import { COLOR_BLOQUEO, RAYADO, esTodoElDia, guardarAgenda, indiceEntrada, tituloDe, esIdValido, esMeetUrl } from '../lib/agenda'
 import { sincronizarEvento } from '../lib/google'
 import { Card } from './ui/Varios'
 import { Icon } from './ui/Icon'
@@ -129,7 +129,7 @@ export function TarjetaEventos({ agenda, clinica, editable, onEditar, onCambio }
   const quitar = async (b) => {
     if (!await confirmar(`¿Quitar el evento${b.motivo ? ` «${b.motivo}»` : ''}?${b.bloquea ? ' Esas fechas volverán a quedar libres para agendar.' : ''}`)) return
     try {
-      onCambio(await guardarAgenda(clinica, (l) => l.filter(x => !mismaEntrada(x, b))))
+      onCambio(await guardarAgenda(clinica, (l) => { const i = indiceEntrada(l, b); return l.filter((_, k) => k !== i) }))
       toast.success('Evento quitado')
       if (esIdValido(b.id)) sincronizarEvento(b.id) // silent: the function deletes the Google event
     } catch (e) { toast.error(e.message || 'No se pudo quitar el evento') }

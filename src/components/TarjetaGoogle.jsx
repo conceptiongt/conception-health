@@ -53,6 +53,7 @@ export function TarjetaGoogle({ perfil }) {
         const n = Math.max(r.pendientes || 0, r.fallidas || 0)
         toast.error(`Quedaron ${n} citas sin enviar. Toque "Sincronizar ahora" para reintentar.`)
       }
+      else if (r?.eventosPendientes > 0) toast.error(`Quedaron ${r.eventosPendientes} eventos sin enviar. Toque "Sincronizar ahora" para reintentar.`)
       else toast.success(r?.total ? `${r.sincronizadas} de ${r.total} citas al día en Google Calendar` : 'No hay citas próximas que enviar')
     } catch { toast.error('No se pudo sincronizar. Intente de nuevo.') }
     setProgreso(''); setBusy(false); cargar()
@@ -99,7 +100,7 @@ export function TarjetaGoogle({ perfil }) {
   } else if (!est.conectada) {
     cuerpo = (
       <>
-        <div style={texto}>Conecte la cuenta de Google de su clínica: sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google, y los eventos de ese calendario se verán aquí.</div>
+        <div style={texto}>Conecte la cuenta de Google de su clínica: sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google, y los eventos de ese calendario se verán aquí. Todos los usuarios de su clínica verán el título y la hora de los eventos de los calendarios de esa cuenta de Google.</div>
         {!dueno && <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que conecte Google Calendar.</div>}
       </>
     )
@@ -118,7 +119,7 @@ export function TarjetaGoogle({ perfil }) {
         {sinConfirmar && (
           <div role="alert" style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: `1px solid ${C.g200}`, color: C.black, fontSize: 13.5, lineHeight: 1.55 }}>
             {dueno
-              ? <>Se conectó la cuenta <strong style={{ overflowWrap: 'anywhere' }}>{est.google_email || 'de Google'}</strong>. ¿Enviar las citas de su clínica a ese calendario de Google?
+              ? <>Se conectó la cuenta <strong style={{ overflowWrap: 'anywhere' }}>{est.google_email || 'de Google'}</strong>. ¿Enviar las citas de su clínica a ese calendario de Google? Todos los usuarios de su clínica verán el título y la hora de los eventos de los calendarios de esa cuenta de Google.
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                     <Button size="sm" onClick={confirmarCuenta} disabled={busy}>Sí, usar esta cuenta</Button>
                     <Button variant="ghost" size="sm" onClick={desconectar} disabled={busy}>No, desconectar</Button>

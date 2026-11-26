@@ -215,13 +215,22 @@ async function quitarEvento(ctx: Contexto, citaId: string, conocido?: string | n
 }
 
 // Sets start/end to null on the other representation: PATCH merges objects, so a timed → all-day change would otherwise keep both
+// PATCH never carries `reminders` (the user's own reminder edits in Google are kept). `recurrence` is sent as-is when the event has the key:
+// null clears a previous recurrence (a range-with-hours entry that became a single one); events without the key (citas) are untouched.
 const paraPatch = (ev: any) => {
   const t = (x: any) => x?.date ? { ...x, dateTime: null, timeZone: null } : { ...x, date: null }
-  return { ...ev, start: t(ev.start), end: t(ev.end) }
+  const { reminders: _r, ...resto } = ev
+  return { ...resto, start: t(ev.start), end: t(ev.end) }
+}
+// PUT/POST replace or create the whole event: a null recurrence is simply omitted (nothing to clear)
+const paraPut = (ev: any) => {
+  if (ev && 'recurrence' in ev && !(Array.isArray(ev.recurrence) && ev.recurrence.length)) { const { recurrence: _x, ...resto } = ev; return resto }
+  return ev
 }
 const URL_MEET = /^https:\/\/meet\.google\.com\//
 const enlaceMeet = (d: any): string | null => typeof d?.hangoutLink === 'string' && URL_MEET.test(d.hangoutLink) ? d.hangoutLink : null
-const crearMeet = (requestId: string) => ({ createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } })
+// the requestId carries a time suffix: Google ignores a createRequest whose requestId it has already seen, so a reused id could never create a new link
+const crearMeet = (requestId: string) => ({ createRequest: { requestId: `${requestId}-${Date.now().toString(36)}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } })
 
 // Shared create-or-update ladder (cita events and own events). `conocido`: event id stored for it, `det`: the deterministic id.
 //  0. read the event (only id/status/link): it tells whether a Meet link exists and whether Google still has it
@@ -239,13 +248,13 @@ async function subirEvento(ctx: Contexto, evento: any, conocido: string | undefi
   if (ver.ok) {
     r = enlaceMeet(ver.data)
       ? await gcal(ctx.token, 'PATCH', `${base}/${objetivo}?conferenceDataVersion=0`, paraPatch(evento))
-      : await gcal(ctx.token, 'PUT', `${base}/${objetivo}${qMeet}`, { ...evento, ...conMeet })
+      : await gcal(ctx.token, 'PUT', `${base}/${objetivo}${qMeet}`, { ...paraPut(evento), ...conMeet })
   }
   if (!r || r.status === 404 || r.status === 410) {
-    r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...evento, ...conMeet, id: det })
+    r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...paraPut(evento), ...conMeet, id: det })
     if (r.status === 409) {
-      r = await gcal(ctx.token, 'PUT', `${base}/${det}${qMeet}`, { ...evento, ...conMeet })
-      if (r.status === 404 || r.status === 410) r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...evento, ...conMeet })
+      r = await gcal(ctx.token, 'PUT', `${base}/${det}${qMeet}`, { ...paraPut(evento), ...conMeet })
+      if (r.status === 404 || r.status === 410) r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...paraPut(evento), ...conMeet })
     }
   }
   if (!r.ok || !r.data?.id) throw new Error(`GCAL_${r.status}`)
@@ -434,15 +443,20 @@ function construirEventoPropio(e: Entrada) {
   const nota = String(e.nota).replace(/[<>]/g, '').replace(/\r/g, '').trim().slice(0, 300)
   let tiempo: Record<string, unknown>
   const ini = e.desde || (e.hasta ? '00:00' : ''), fin = e.hasta || (e.desde ? '23:59' : '')
-  // timed when it has hours (and they make sense); otherwise all-day with Google's exclusive end date
-  if (ini && fin && (ultimo > e.fecha || fin > ini)) {
-    tiempo = { start: { dateTime: `${e.fecha}T${ini}:00`, timeZone: TZ }, end: { dateTime: `${ultimo}T${fin}:00`, timeZone: TZ } }
+  // Hours + a date range mean «those hours on EACH day» (same as Lía and src/lib/agenda.js): first day's start/end plus a daily recurrence
+  // (COUNT = days of the range, max 366). A whole-day range stays ONE multi-day all-day event. `recurrence` is always present (null = single)
+  // so a PATCH clears a recurrence that no longer applies.
+  let recurrence: string[] | null = null
+  if (ini && fin && fin > ini) {
+    tiempo = { start: { dateTime: `${e.fecha}T${ini}:00`, timeZone: TZ }, end: { dateTime: `${e.fecha}T${fin}:00`, timeZone: TZ } }
+    if (ultimo > e.fecha) recurrence = [`RRULE:FREQ=DAILY;COUNT=${Math.min(366, dias(e.fecha, ultimo) + 1)}`]
   } else {
     tiempo = { start: { date: e.fecha }, end: { date: sumarDias(ultimo, 1) } }
   }
   return {
     summary: resumen, description: [nota, 'Creado desde Conception Health'].filter(Boolean).join('\n'), status: 'confirmed', ...tiempo,
     transparency: e.bloquea ? 'opaque' : 'transparent',
+    recurrence,
     reminders: { useDefault: true },
     extendedProperties: { private: { ch_evento: e.id } },
   }
@@ -530,7 +544,7 @@ async function meetCita(req: Request, p: Perfil) {
         }
       }
     }
-    await marcarBien(p.clinica_id)
+    if (crear) await marcarBien(p.clinica_id) // a plain read changes nothing in the connection state
     return json(req, { meet_url: enlaceMeet(data), sincronizado: true })
   } catch (e) {
     if (e instanceof Reconectar) { await marcarError(p.clinica_id); return json(req, { meet_url: null, sincronizado: false, reconectar: true }) }
@@ -618,7 +632,7 @@ async function sincronizarTodas(req: Request, p: Perfil) {
 
     // own events that end today or later, only once every cita was visited (so the client's extra rounds do not repeat them). Counted apart: a failed
     // own event never keeps the citas rounds going. No remote reconciliation (see the header).
-    let propiosOk = 0, propiosFallidos = 0
+    let propiosOk = 0, propiosFallidos = 0, propiosPendientes = 0
     if (pendientes === 0) {
       const agenda = await leerAgendaPropia(cid)
       const vigentes = (agenda || []).filter(x => (x.hasta_fecha || x.fecha) >= hoy)
@@ -631,9 +645,10 @@ async function sincronizarTodas(req: Request, p: Perfil) {
         if (res.includes('reconectar')) throw new Reconectar()
         propiosOk += res.filter(x => x === 'ok').length; propiosFallidos += res.filter(x => x === 'fallo').length
       }
+      propiosPendientes = vigentes.length - k // the time budget ended first: the client asks for another round
     }
     await marcarBien(cid)
-    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes: pendientes + fallidas, retiradas, eventos: propiosOk, eventosFallidos: propiosFallidos, inicio })
+    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes: pendientes + fallidas, retiradas, eventos: propiosOk, eventosFallidos: propiosFallidos, ...(propiosPendientes > 0 ? { eventosPendientes: propiosPendientes } : {}), inicio })
   } catch (e) {
     if (e instanceof Reconectar) { await marcarError(cid); return json(req, { sincronizado: false, reconectar: true }) }
     console.error('google-calendar sync-todas', e instanceof Error ? e.message : 'error')
@@ -656,11 +671,13 @@ function aGT(dateTime: unknown): { fecha: string, hora: string } | null {
   const iso = new Date(ms + OFFSET_GT * 3600e3).toISOString()
   return { fecha: iso.slice(0, 10), hora: iso.slice(11, 16) }
 }
+// instances of one of the clinic's own recurring events (range with hours): '0e' + 32 hex, the parent's id
+const ID_RECURRENTE_PROPIO = /^0e[0-9a-f]{32}$/
 const HEX = /^#[0-9a-fA-F]{6}$/
 const ENLACE_OK = /^https:\/\/(www\.google\.com\/calendar\/|calendar\.google\.com\/)/
 
 // Minimal projection of one Google event: no description, attendees, location or emails ever leave this function.
-function proyectar(ev: any, cal: { nombre: string, color: string | null }, idx: number) {
+function proyectar(ev: any, cal: { nombre: string, color: string | null, primary: boolean }, idx: number) {
   let fecha: string, hora: string | null = null, finFecha: string, finHora: string | null = null, todoElDia = false
   if (ev?.start?.date && esFechaISO(ev.start.date)) {
     todoElDia = true
@@ -675,7 +692,8 @@ function proyectar(ev: any, cal: { nombre: string, color: string | null }, idx: 
     fecha = a.fecha; hora = a.hora; finFecha = b.fecha; finHora = b.hora
   }
   const titulo = limpiar(ev?.summary, 140) || 'Sin título'
-  const enlace = typeof ev?.htmlLink === 'string' && ENLACE_OK.test(ev.htmlLink) ? ev.htmlLink : null
+  // htmlLink of a non-primary calendar encodes that calendar's address (often an email): only the primary calendar's link is sent
+  const enlace = cal.primary && typeof ev?.htmlLink === 'string' && ENLACE_OK.test(ev.htmlLink) ? ev.htmlLink : null
   return { id: `${idx}-${String(ev?.id || '').slice(0, 200)}`, titulo, fecha, hora, finFecha, finHora, todoElDia, calendario: cal.nombre, color: cal.color, enlace }
 }
 
@@ -697,7 +715,7 @@ async function eventosGoogle(req: Request, p: Perfil) {
 
     // calendars: the owner's visible ones; without the calendar-list permission fall back to the primary calendar only
     let faltaPermiso = false
-    let cals: { id: string, nombre: string, color: string | null }[] = []
+    let cals: { id: string, nombre: string, color: string | null, primary: boolean }[] = []
     const lista = await gcal(ctx.token, 'GET', '/users/me/calendarList?minAccessRole=reader&maxResults=50')
     if (lista.ok && Array.isArray(lista.data?.items)) {
       cals = lista.data.items
@@ -708,16 +726,23 @@ async function eventosGoogle(req: Request, p: Perfil) {
           // the primary calendar is named after the account email: never send an email to the screen
           nombre: c.primary || String(c.summaryOverride || c.summary || '').includes('@') ? 'Principal' : limpiar(c.summaryOverride || c.summary, 60) || 'Calendario',
           color: HEX.test(String(c.backgroundColor || '')) ? c.backgroundColor : null,
+          primary: c.primary === true,
         }))
-    } else if (lista.status === 403 || lista.status === 404) {
-      faltaPermiso = true
-      cals = [{ id: 'primary', nombre: 'Principal', color: null }]
+    } else if (lista.status === 403 || lista.status === 404 || lista.status === 429 || lista.status >= 500) {
+      // «missing permission» ONLY when Google says the scope is insufficient; any other 403/429/5xx is a transient or unrelated failure:
+      // fall back to the primary calendar without telling the user to reconnect
+      const err = lista.data?.error
+      const motivo = String(err?.errors?.[0]?.reason || '')
+      if (lista.status === 403 && motivo === 'insufficientPermissions') faltaPermiso = true
+      cals = [{ id: 'primary', nombre: 'Principal', color: null, primary: true }]
     } else throw new Error(`GCAL_${lista.status}`)
+    // a list without any primary entry (filtered out) still shows events with links only for the real primary calendar
+
 
     const timeMin = `${desde}T00:00:00-06:00`, timeMax = `${sumarDias(hasta, 1)}T00:00:00-06:00`
     const q = new URLSearchParams({
       singleEvents: 'true', orderBy: 'startTime', timeMin, timeMax, maxResults: '250',
-      fields: 'nextPageToken,items(id,status,summary,start,end,htmlLink,extendedProperties/private,eventType)',
+      fields: 'nextPageToken,items(id,status,summary,start,end,htmlLink,extendedProperties/private,eventType,recurringEventId)',
     })
     const eventos: any[] = []
     let omitidos = 0, truncado = false
@@ -736,7 +761,7 @@ async function eventosGoogle(req: Request, p: Perfil) {
         for (const ev of x.items) {
           if (!ev || ev.status === 'cancelled' || ev.eventType === 'workingLocation') continue
           // the platform's own events (citas and the clinic's own events) are already drawn locally
-          if (ev.extendedProperties?.private?.cita_id || ev.extendedProperties?.private?.ch_evento || propios.has(String(ev.id))) continue
+          if (ev.extendedProperties?.private?.cita_id || ev.extendedProperties?.private?.ch_evento || propios.has(String(ev.id)) || ID_RECURRENTE_PROPIO.test(String(ev.recurringEventId || ''))) continue
           const e = proyectar(ev, x.cal, x.idx)
           if (!e || e.finFecha < desde || e.fecha > hasta) continue
           eventos.push(e)

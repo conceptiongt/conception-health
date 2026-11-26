@@ -92,10 +92,21 @@ export function agruparGoogle(eventos, desde, hasta) {
       const fin = esISO(ev.finFecha) && ev.finFecha > ev.fecha ? ev.finFecha : ev.fecha
       let d = ev.fecha < desde ? desde : ev.fecha
       for (let n = 0; d <= fin && d <= hasta && n < 70; n++, d = sumarDias(d, 1)) (g[d] ||= []).push({ ...ev, g: true, hora: null, clave: `${ev.id}|${d}` })
-    } else if (ev.fecha >= desde && ev.fecha <= hasta) {
-      const ini = aMinutos(ev.hora) ?? 0
-      const fin = ev.finFecha === ev.fecha && ev.finHora ? aMinutos(ev.finHora) : 1440
-      ;(g[ev.fecha] ||= []).push({ ...ev, g: true, duracion: Math.max(fin - ini, 15), clave: `${ev.id}|${ev.fecha}` })
+    } else {
+      if (ev.fecha >= desde && ev.fecha <= hasta) {
+        const ini = aMinutos(ev.hora) ?? 0
+        const fin = ev.finFecha === ev.fecha && ev.finHora ? aMinutos(ev.finHora) : 1440
+        ;(g[ev.fecha] ||= []).push({ ...ev, g: true, duracion: Math.max(fin - ini, 15), clave: `${ev.id}|${ev.fecha}` })
+      }
+      // a timed event that crosses midnight / spans several days also shows on the following days as an all-day style chip «continúa: …»
+      // (it ends exactly at 00:00 → the last day is not covered)
+      if (esISO(ev.finFecha) && ev.finFecha > ev.fecha) {
+        const ultimo = ev.finHora === '00:00' ? sumarDias(ev.finFecha, -1) : ev.finFecha
+        let d = sumarDias(ev.fecha, 1) < desde ? desde : sumarDias(ev.fecha, 1)
+        for (let n = 0; d <= ultimo && d <= hasta && n < 70; n++, d = sumarDias(d, 1)) {
+          (g[d] ||= []).push({ ...ev, g: true, todoElDia: true, hora: null, finHora: null, finFecha: d, fecha: d, titulo: `continúa: ${ev.titulo}`, clave: `${ev.id}|${d}|c` })
+        }
+      }
     }
   }
   for (const k in g) g[k].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))

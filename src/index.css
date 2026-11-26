@@ -19,6 +19,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--acento) !importa
 ::selection { background: var(--acento-claro); }
 button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 button { transition: background-color .16s, border-color .16s, color .16s; }
+.desplegable-btn:not(:disabled):hover, .desplegable-btn[aria-expanded='true'] { border-color: var(--acento) !important; }
+.desplegable-lista { animation: aparecer 140ms ease both; }
 
 /* Buttons: accent gradient with a soft glow, glass secondary */
 .btn { transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms, border-color 180ms, color 180ms, filter 180ms; }
@@ -295,7 +297,7 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .pg-filtros { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
 .pg-filtros-t { display: inline-flex; align-items: center; gap: 8px; font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif; font-size: 18px; font-weight: 300; color: #1E2433; margin-right: 6px; }
 .pg-count { min-width: 24px; height: 24px; padding: 0 7px; border-radius: 99px; background: #0F1B33; color: #fff; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
-.pg-filtros select, .pg-filtros input { border-radius: 160px !important; padding-left: 16px !important; background: rgba(255,255,255,0.8) !important; border-color: rgba(255,255,255,0.9) !important; box-shadow: 0 4px 16px rgba(31,72,160,0.07); min-width: 0; max-width: 100%; }
+.pg-filtros .desplegable-btn, .pg-filtros input { border-radius: 160px !important; padding-left: 16px !important; background: rgba(255,255,255,0.8) !important; border-color: rgba(255,255,255,0.9) !important; box-shadow: 0 4px 16px rgba(31,72,160,0.07); min-width: 0; max-width: 100%; }
 .pg-filtros input.pg-buscar { flex: 1 1 240px; }
 .pg-navy { border-radius: 28px; padding: clamp(16px, 2.2vw, 28px); background: #0F1B33; color: #fff; box-shadow: 0 18px 50px rgba(15,27,51,0.28); min-width: 0; }
 .pg-top { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); justify-items: center; margin-bottom: 22px; }

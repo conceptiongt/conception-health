@@ -25,6 +25,26 @@ import { TextoFormateado } from '../components/EditorTexto'
 import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro, codigoRegistro } from '../lib/ficha'
 import { puede } from '../lib/permisos'
 import { confirmar } from '../components/ui/Confirmar'
+import { Desplegable } from '../components/ui/Desplegable'
+
+// Quick buttons by type of attention: a patient appears if at least one of their appointments is of that type.
+// Cancelled and missed appointments do not count; types outside this list only show under "Todos".
+const ATENCIONES = [
+  { value: 'Consulta', color: C.blue, bg: C.blueLight },
+  { value: 'Seguimiento', color: C.green, bg: C.greenLight },
+  { value: 'Evaluación', color: C.amber, bg: C.amberLight },
+  { value: 'Procedimiento', color: C.orange, bg: C.orangeLight },
+  { value: 'Cirugía', color: C.red, bg: C.redLight },
+]
+const SIN_ATENCION = ['Cancelada', 'No asistió']
+const CONTACTOS = [
+  { value: '', label: 'Con o sin contacto' }, { value: 'telefono', label: 'Con teléfono' },
+  { value: 'email', label: 'Con correo' }, { value: 'sin', label: 'Sin teléfono ni correo' },
+]
+const atencionDe = (tipo) => {
+  if (ATENCIONES.some(a => a.value !== 'Consulta' && a.value === tipo)) return tipo
+  return tipo === 'Primera consulta' || /consulta/i.test(tipo || '') ? 'Consulta' : null
+}
 
 export function Expedientes({ abrirId }) {
   const { pacientes, citas, cobros, clinica, ir, sedes, perfil } = useDatos()
@@ -35,6 +55,7 @@ export function Expedientes({ abrirId }) {
   const [origen, setOrigen] = useState('')
   const [red, setRed] = useState('')
   const [contacto, setContacto] = useState('') // '' | 'telefono' | 'email' | 'sin'
+  const [atencion, setAtencion] = useState('') // '' (all) or one of ATENCIONES
 
   useEffect(() => { setAbierto(abrirId || null) }, [abrirId])
 
@@ -42,11 +63,20 @@ export function Expedientes({ abrirId }) {
   if (abierto && paciente) return <Expediente paciente={paciente} onVolver={() => setAbierto(null)} />
 
   const q = buscar.trim().toLowerCase()
-  const lista = pacientes
+  // every filter except the type of attention: the buttons show how many patients there are of each
+  const sinAtencion = pacientes
     .filter(p => (!q || [p.nombre, p.telefono, p.email, p.dpi].some(v => (v || '').toLowerCase().includes(q)))
       && (!origen || p.origen === origen) && (!red || p.red === red) && (!sede || p.sede_id === sede)
       && (!contacto || (contacto === 'telefono' ? !!p.telefono : contacto === 'email' ? !!p.email : !p.telefono && !p.email)))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+  // latest matching appointment date of each patient, per type of attention
+  const fechas = Object.fromEntries(ATENCIONES.map(a => [a.value, new Map()]))
+  for (const c of citas) {
+    const a = !SIN_ATENCION.includes(c.estado) && atencionDe(c.tipo)
+    if (a && !(fechas[a].get(c.paciente_id) >= c.fecha)) fechas[a].set(c.paciente_id, c.fecha)
+  }
+  const lista = atencion ? sinAtencion.filter(p => fechas[atencion].has(p.id)) : sinAtencion
+  const filtroTexto = `${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}${atencion ? ` · ${atencion}` : ''}`
   const hoy = hoyISO()
   const info = (p) => {
     const cs = citas.filter(c => c.paciente_id === p.id)
@@ -57,10 +87,10 @@ export function Expedientes({ abrirId }) {
   }
 
   const preparar = () => ({
-    titulo: 'Pacientes', subtitulo: `${lista.length} pacientes`,
+    titulo: 'Pacientes', subtitulo: filtroTexto,
     secciones: [{ tabla: { headers: ['Paciente', 'Teléfono', 'Correo', 'Origen', 'Consultas', 'Última cita', 'Próxima cita', ...(finanzas ? ['Saldo'] : [])],
       filas: lista.map(p => { const i = info(p); return [p.nombre, p.telefono || '—', p.email || '—', p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), i.consultas, i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—', ...(finanzas ? [fmtQ(i.deuda)] : [])] }) } }],
-    excel: { archivo: 'pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
+    excel: { archivo: atencion ? `pacientes_${slug(atencion)}` : 'pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
       { header: 'Paciente', key: 'n', width: 30 }, { header: 'Teléfono', key: 't', width: 14 }, { header: 'Correo', key: 'e', width: 28 }, { header: 'DPI', key: 'dpi', width: 16 }, { header: 'Origen', key: 'o', width: 15 },
       { header: 'Red social', key: 'r', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 }, { header: 'Registrado', key: 'reg', width: 12 },
       { header: 'Consultas', key: 'c', width: 10 }, { header: 'Última cita', key: 'u', width: 12 }, { header: 'Próxima cita', key: 'px', width: 12 },
@@ -76,19 +106,18 @@ export function Expedientes({ abrirId }) {
   const sel = filtroStyle
   return (
     <>
-      <Encabezado titulo="Expedientes" subtitulo={`${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}`}>
+      <Encabezado titulo="Expedientes" subtitulo={filtroTexto}>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
         <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
       </Encabezado>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por nombre, teléfono, correo o DPI…" style={{ ...sel, flex: '1 1 240px' }} />
-        <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-        <select value={red} onChange={e => setRed(e.target.value)} style={sel}><option value="">Toda red social</option>{REDES.map(r => <option key={r}>{r}</option>)}</select>
-        <select value={contacto} onChange={e => setContacto(e.target.value)} style={sel}>
-          <option value="">Con o sin contacto</option><option value="telefono">Con teléfono</option><option value="email">Con correo</option><option value="sin">Sin teléfono ni correo</option>
-        </select>
+        <Desplegable ariaLabel="Origen" value={origen} onChange={setOrigen} options={[{ value: '', label: 'Todo origen' }, ...ORIGENES]} />
+        <Desplegable ariaLabel="Red social" value={red} onChange={setRed} options={[{ value: '', label: 'Toda red social' }, ...REDES.map(r => ({ value: r, label: r }))]} />
+        <Desplegable ariaLabel="Contacto" value={contacto} onChange={setContacto} options={CONTACTOS} />
       </div>
       <div style={{ marginBottom: 14 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
+      {pacientes.length > 0 && <BotonesAtencion pacientes={sinAtencion} fechas={fechas} valor={atencion} onChange={setAtencion} />}
       {pacientes.length === 0 ? (
         <Vacio icono="expedientes" titulo="Aún no hay pacientes" texto="Registre su primer paciente para crear su expediente.">
           <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
@@ -99,13 +128,40 @@ export function Expedientes({ abrirId }) {
           onFila={(f) => setAbierto(f.key)}
           vacio="Ningún paciente coincide con la búsqueda"
           filas={lista.map(p => { const i = info(p); return { key: p.id, celdas: [
-            <span style={{ fontWeight: 500 }}>{p.nombre}</span>, p.telefono || '—', ...(sedes.length ? [nombreSede(sedes, p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []), p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
+            <span style={{ display: 'block' }}>
+              <span style={{ fontWeight: 500 }}>{p.nombre}</span>
+              {atencion && <span style={{ display: 'block', fontSize: 12, color: C.g500, marginTop: 2 }}>{atencion}: {fmtFechaCorta(fechas[atencion].get(p.id))}</span>}
+            </span>, p.telefono || '—', ...(sedes.length ? [nombreSede(sedes, p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []), p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
             i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—',
             ...(finanzas ? [i.deuda > 0 ? <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(i.deuda)}</span> : <span style={{ color: C.g400 }}>Q0.00</span>] : []),
           ] } })}
         />
       )}
     </>
+  )
+}
+
+// One tap shows only the patients with that type of attention; tapping it again goes back to all
+function BotonesAtencion({ pacientes, fechas, valor, onChange }) {
+  const boton = ({ value, color, bg }, label, n, destino) => {
+    const activo = valor === value
+    return (
+      <button key={label} type="button" aria-pressed={activo} onClick={() => onChange(destino)} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 160, cursor: 'pointer',
+        fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', transition: 'background 0.15s, border-color 0.15s',
+        border: `1.5px solid ${activo ? color : C.g200}`, background: activo ? bg : '#fff', color: activo ? color : C.g700,
+      }}>
+        <span style={{ width: 8, height: 8, borderRadius: 8, background: color }} />
+        {label}
+        <span style={{ minWidth: 20, padding: '1px 7px', borderRadius: 160, fontSize: 12, fontWeight: 600, background: activo ? '#fff' : C.g100, color: activo ? color : C.g500 }}>{n}</span>
+      </button>
+    )
+  }
+  return (
+    <div role="group" aria-label="Tipo de atención" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      {boton({ value: '', color: C.purple, bg: C.purpleMid }, 'Todos', pacientes.length, '')}
+      {ATENCIONES.map(a => boton(a, a.value, pacientes.filter(p => fechas[a.value].has(p.id)).length, valor === a.value ? '' : a.value))}
+    </div>
   )
 }
 

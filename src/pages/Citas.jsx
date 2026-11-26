@@ -13,6 +13,7 @@ import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
+import { Desplegable } from '../components/ui/Desplegable'
 import { sincronizarCita } from '../lib/google'
 import { MeetCita } from '../components/EnlaceMeet'
 
@@ -119,9 +120,9 @@ export function Citas() {
       </div>
       <div style={{ marginBottom: 10 }}><FiltroSede valor={sede} onChange={setSede} contar={deSede} /></div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
-        <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios />
-        <select value={tipo} onChange={e => setTipo(e.target.value)} style={sel}><option value="">Todo tipo</option>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</select>
-        <select value={origen} onChange={e => setOrigen(e.target.value)} style={sel}><option value="">Todo origen</option>{ORIGENES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios desplegable />
+        <Desplegable ariaLabel="Tipo" value={tipo} onChange={setTipo} options={[{ value: '', label: 'Todo tipo' }, ...TIPOS_CITA.map(t => ({ value: t, label: t }))]} />
+        <Desplegable ariaLabel="Origen" value={origen} onChange={setOrigen} options={[{ value: '', label: 'Todo origen' }, ...ORIGENES]} />
         <RangoFechas valor={periodo} onChange={setPeriodo} />
       </div>
 

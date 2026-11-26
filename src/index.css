@@ -358,3 +358,6 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
   .tg-lado > * { flex: 1 1 100%; justify-content: center; }
   .tg-debajo { padding-left: 0 !important; }
 }
+
+/* Camera window (CamaraFoto): preview and still share the same box */
+.cam-video { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: 16px; background: #0F1624; }

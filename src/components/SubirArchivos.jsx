@@ -1,8 +1,9 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { Icon } from './ui/Icon'
 import { toast } from './ui/Toast'
+import { CamaraFoto, usarCamaraNativa, hayCamaraWeb } from './CamaraFoto'
 
 const EXT_IMAGEN = /\.(jpe?g|png|gif|webp|heic|heif)$/i
 // some phones send photos without a type; recognise them by their name
@@ -27,16 +28,26 @@ export async function subirArchivos(files, { clinicaId, pacienteId, citaId = nul
   return errores
 }
 
-// Two buttons: choose photos or PDFs from the device, or take a photo with the camera (phones and tablets)
+// Two buttons: choose photos or PDFs from the device, or take a photo with the camera
 export function BotonesSubir({ onArchivos, ocupado, texto = 'Elegir fotos o PDF' }) {
   const elegir = useRef(null), camara = useRef(null)
-  const recibir = (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
+  const [verCamara, setVerCamara] = useState(false)
+  const procesar = (files) => {
     if (!files.length) return
     if (files.some(f => !archivoValido(f))) { toast.error('Solo se aceptan fotos o archivos PDF'); return }
     if (files.some(f => f.size > 25 * 1024 * 1024)) { toast.error('Cada archivo debe pesar menos de 25 MB'); return }
     onArchivos(files)
+  }
+  const recibir = (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    procesar(files)
+  }
+  // Phones and tablets open the device camera app; computers open the in-platform camera (or the file picker if there is none)
+  const tomarFoto = () => {
+    if (usarCamaraNativa()) camara.current.click()
+    else if (hayCamaraWeb()) setVerCamara(true)
+    else elegir.current.click()
   }
   const estilo = { flex: '1 1 200px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, border: `2px dashed ${C.g300}`, background: C.g50, cursor: ocupado ? 'default' : 'pointer', fontWeight: 600, fontSize: 14, color: ocupado ? C.purple : C.g600, fontFamily: 'inherit' }
   return (
@@ -44,7 +55,8 @@ export function BotonesSubir({ onArchivos, ocupado, texto = 'Elegir fotos o PDF'
       <input ref={elegir} type="file" accept="image/*,application/pdf,.heic,.heif" multiple onChange={recibir} style={{ display: 'none' }} />
       <input ref={camara} type="file" accept="image/*" capture="environment" onChange={recibir} style={{ display: 'none' }} />
       <button type="button" disabled={ocupado} onClick={() => elegir.current.click()} style={estilo}><Icon name="subir" size={18} />{ocupado || texto}</button>
-      <button type="button" disabled={!!ocupado} onClick={() => camara.current.click()} style={{ ...estilo, flex: '0 1 180px' }}><Icon name="camara" size={18} />Tomar foto</button>
+      <button type="button" disabled={!!ocupado} onClick={tomarFoto} style={{ ...estilo, flex: '0 1 180px' }}><Icon name="camara" size={18} />Tomar foto</button>
+      {verCamara && <CamaraFoto onFoto={(f) => procesar([f])} onClose={() => setVerCamara(false)} onElegirArchivo={() => elegir.current?.click()} />}
     </div>
   )
 }

@@ -105,7 +105,17 @@ function Aplicacion({ sesion }) {
   useEffect(() => { aplicarMarca(clinica?.color) }, [clinica?.color])
   // an expired account has a single screen: any other address (#/citas, #/suscripcion…) lands here
   useEffect(() => {
-    if (vencida && window.location.hash !== '#/cuenta-vencida') window.history.replaceState(null, '', '#/cuenta-vencida')
+    if (!vencida) return
+    const fijar = () => { if (window.location.hash !== '#/cuenta-vencida') window.history.replaceState(null, '', '#/cuenta-vencida') }
+    fijar()
+    window.addEventListener('hashchange', fijar)
+    return () => window.removeEventListener('hashchange', fijar)
+  }, [vencida])
+  // when the account is reactivated (it was expired and no longer is), go to Inicio
+  const eraVencida = useRef(vencida)
+  useEffect(() => {
+    if (eraVencida.current && !vencida) ir('inicio')
+    eraVencida.current = vencida
   }, [vencida])
 
   // first entry with a specialty: fill Tarifas with its suggested services (once)
@@ -152,6 +162,8 @@ function Aplicacion({ sesion }) {
   const subTermina = planActivo && !promoActiva && !!clinica?.cancelada_at && !!clinica?.plan_hasta
   const subDias = subTermina ? diasRestantes(clinica.plan_hasta) : 0
   const aviso = promoActiva ? { dias: promoDias, fin: clinica.promo_hasta } : subTermina && subDias <= 7 ? { dias: subDias, fin: clinica.plan_hasta } : null
+  // a paid plan (not promo, not cancelled) whose end date is within 3 days: the renewal charge has not been confirmed (owner only)
+  const sinConfirmar = esAdmin(perfil) && planActivo && !promoActiva && !clinica?.cancelada_at && !!clinica?.plan_hasta && diasRestantes(clinica.plan_hasta) <= 3
   const usados = datos?.pacientes.length ?? 0
 
   const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
@@ -164,7 +176,7 @@ function Aplicacion({ sesion }) {
     return (
       <DatosContext.Provider value={ctx}>
         {esSoporte(perfil) && <div style={{ padding: '14px clamp(14px, 3vw, 40px) 0' }}><BannerSoporte clinica={clinica} onSalir={recargarSesion} /></div>}
-        {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div> : !datos ? <PantallaCarga /> : <CuentaVencida />}
+        {!datos && !error ? <PantallaCarga /> : <CuentaVencida errorDatos={!datos && !!error} onReintentar={recargar} />}
       </DatosContext.Provider>
     )
   }
@@ -251,6 +263,15 @@ function Aplicacion({ sesion }) {
             </div>
           )}
           {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
+          {sinConfirmar && (
+            <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
+              <div style={{ flex: 1, minWidth: 220, fontWeight: 700, fontSize: 14 }}>
+                No pudimos confirmar su pago. Si no se renueva antes del {fmtFechaLocal(clinica.plan_hasta)}, la cuenta quedará solo para descargar sus datos.
+              </div>
+              <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>
+            </div>
+          )}
           {aviso && (aviso.dias <= 7 || promoActiva) && (
             <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>

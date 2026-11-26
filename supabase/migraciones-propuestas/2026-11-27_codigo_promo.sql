@@ -41,6 +41,15 @@
 --     solo pueden ganar uno.
 --   * Orden de despliegue: aplicar este SQL ANTES de desplegar las funciones (invitar-asistente llama a clinica_vencida_de) y antes del front.
 --
+-- HECHOS VERIFICADOS EN LA BASE VIVA (para esta propuesta)
+--   * orden_recibir() y categoria_renombrar() NO son SECURITY DEFINER: corren con los permisos de quien llama, así que RLS (incluidas las
+--     políticas restrictivas de esta propuesta) SÍ les aplica y quedan bloqueadas en una clínica vencida. No hace falta tocarlas.
+--   * Las políticas SELECT del inventario usan inventario_habilitado() = (not plan_activo) or plan in ('max','ultra'). Por eso una clínica
+--     vencida con plan 'max' o 'ultra' SÍ puede LEER su inventario (y exportarlo desde la pantalla de cuenta vencida). Ojo: la función solo
+--     mira plan_activo, no plan_hasta; si plan_activo sigue en true con plan_hasta pasado y el plan no es max/ultra, esa clínica no lee su
+--     inventario. La escritura sigue bloqueada por las políticas restrictivas de esta propuesta.
+--   * clinicas.plan es NOT NULL con valor por defecto 'prueba' (por eso clinica_vencida() no necesita tratar plan null).
+--
 -- CÓMO CREAR UN CÓDIGO (editor SQL, rol postgres / service role). RECOMENDADO: un código aleatorio de 10 caracteres por cliente, 1 uso, 60 días, plan max:
 --     select public.promo_crear(upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10)), 1, 60, 'max', null, 'Cliente: Dra. X');
 --   También se puede un código para varias personas (p. ej. 50 usos, vence el 31 de enero), menos seguro porque se puede compartir:
@@ -73,8 +82,12 @@
 --        select public.clinica_vencida();                                  -- true
 --        select count(*) from pacientes; select count(*) from citas; select count(*) from cobros; select count(*) from archivos;   -- siguen leyendo
 --        insert / update / delete en CADA tabla de la lista de la sección 6 (pacientes, citas, cobros, abonos, servicios, productos, existencias,
---          inventario_movimientos, sedes, proveedores, paquetes, gastos, archivos, invitaciones…)  -- deben fallar: violates row-level security policy
---        update public.clinicas set nombre = nombre where id = '<CLINICA>';                      -- debe fallar (0 filas / RLS)
+--          inventario_movimientos, sedes, proveedores, paquetes, gastos, archivos, invitaciones…)
+--          OJO AL INTERPRETAR EL RESULTADO: con la clínica vencida, el INSERT lanza error de RLS («new row violates row-level security policy»),
+--          pero UPDATE y DELETE NO dan error: la política restrictiva hace que no vean ninguna fila y afectan 0 filas. Quien pruebe debe
+--          verificar el número de filas afectadas (get diagnostics / «UPDATE 0», «DELETE 0»), no esperar una excepción, y comprobar después
+--          con un select que los datos no cambiaron.
+--        update public.clinicas set nombre = nombre where id = '<CLINICA>';                      -- debe afectar 0 filas / fallar por RLS
 --        storage: subir un archivo a expedientes, logos o compartidos                            -- denegado; descargar/firmar uno existente -- permitido
 --        select public.cita_eliminar('<CITA>', 'prueba');                                        -- debe fallar (sin permiso)
 --        select public.inventario_eliminar('producto', '<ID>', 'prueba');                        -- debe fallar (sin permiso)

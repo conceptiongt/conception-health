@@ -94,7 +94,7 @@ export function Pagos() {
   useEffect(() => {
     if (sel != null && !selExiste) { setSel(null); setDetalleMovil(false) }
   }, [sel, selExiste])
-  const cuenta = (k) => vista === 'cobros' ? base.filter(c => cumple(c, k)).length : agruparPorPaciente(base.filter(c => cumple(c, k))).length
+  const cuenta = (k) => vista === 'cobros' ? base.filter(c => cumple(c, k)).length : agruparPorPaciente(base.filter(c => cumple(c, k)), porId).length
   const etiquetaChip = { vencido: 'Vencido', pendiente: 'Con saldo', parcial: 'Con saldo', pagado: 'Al día' } // patient rows: old three-state wording (as in the PDF/Excel export)
 
   const nFiltros = [buscar.trim(), tipo, sede, (periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta) ? 'p' : ''].filter(v => v !== '' && v != null).length

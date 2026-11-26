@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
 import { fmtFechaLocal } from '../lib/formato'
-import { esAdmin, puede } from '../lib/permisos'
+import { esAdmin, esSoporte, puede } from '../lib/permisos'
 import { urlLogo, iniciales } from '../lib/marca'
 import { limpiarGoogle } from '../lib/google'
 import { useDatos } from '../hooks/useDatos'
@@ -21,7 +21,7 @@ const TODO = { mes: '', anio: '', desde: '', hasta: '' }
 
 // Screen of an expired account (read-only): the only things left are downloading the data, activating a plan or deleting the account.
 // It replaces the whole app, so nothing here writes to the clinic's data.
-export function CuentaVencida() {
+export function CuentaVencida({ errorDatos, onReintentar } = {}) {
   const { clinica, perfil, pacientes, citas, cobros, servicios, sedes } = useDatos()
   const admin = esAdmin(perfil)
   const logo = urlLogo(clinica)
@@ -90,7 +90,14 @@ export function CuentaVencida() {
 
         <section style={tarjeta}>
           {titulo('Descargar mis datos', 'Elija el archivo que necesita: Excel para abrirlo en una hoja de cálculo, PDF para guardarlo o compartirlo.')}
-          {!puede(perfil, 'exportar')
+          {errorDatos
+            ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 14, color: C.red, lineHeight: 1.6 }}>
+                <span style={{ flex: 1, minWidth: 220 }}>No se pudieron cargar los datos para descargar. Intente de nuevo.</span>
+                <Button variant="ghost" size="sm" onClick={onReintentar}>Reintentar</Button>
+              </div>
+            )
+            : !puede(perfil, 'exportar')
             ? <div style={{ fontSize: 14, color: C.g600, lineHeight: 1.6 }}>Su usuario no tiene permiso para descargar. Pídaselo al dueño de la cuenta.</div>
             : (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -107,7 +114,7 @@ export function CuentaVencida() {
             )}
         </section>
 
-        <EliminarCuenta />
+        {!esSoporte(perfil) && <EliminarCuenta />}
       </main>
     </div>
   )

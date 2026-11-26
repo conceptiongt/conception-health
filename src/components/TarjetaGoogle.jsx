@@ -95,7 +95,7 @@ export function TarjetaGoogle({ perfil }) {
   let cuerpo, lado = null, debajo = null
   if (est === undefined) cuerpo = <div style={texto}>Cargando…</div>
   else if (est === null) {
-    cuerpo = <div style={texto}>Puede pasar cualquier cita a su Google Calendar con el botón "Agregar a Google Calendar" de cada cita.</div>
+    cuerpo = <div style={texto}>Cuando esté disponible, podrá conectar la cuenta de Google de su clínica: sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google, y los eventos de ese calendario se verán aquí.</div>
     lado = <span style={pildora(C.g100, C.g500)}>Disponible pronto</span>
   } else if (!est.conectada) {
     cuerpo = (

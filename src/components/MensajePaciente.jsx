@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
-import { fmtQ, mensajeConfirmacion, linkWhatsApp, linkCalendar } from '../lib/formato'
+import { fmtQ, mensajeConfirmacion, linkWhatsApp } from '../lib/formato'
 import { linkPago, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { useDatos } from '../hooks/useDatos'
 import { Button } from './ui/Button'
@@ -22,7 +22,6 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
     formulario: formulario && token ? urlRegistro(token) : null,
   })
   const wa = linkWhatsApp(paciente.telefono, msg)
-  const cal = linkCalendar(paciente, cita)
 
   const activarFormulario = async (v) => { // the first time, the patient gets their own private form link
     setFormulario(v)
@@ -59,7 +58,6 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
         {wa && <Button icon="mensaje" size={compacto ? 'sm' : undefined} onClick={() => window.open(wa, '_blank', 'noopener')}>Enviar por WhatsApp</Button>}
         <Button variant="ghost" size={compacto ? 'sm' : undefined} icon="copiar" onClick={() => { navigator.clipboard?.writeText(msg); toast.success('Mensaje copiado') }}>Copiar mensaje</Button>
-        {!compacto && cal && <Button variant="ghost" icon="calendarioMas" onClick={() => window.open(cal, '_blank', 'noopener')}>Agregar a Google Calendar</Button>}
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { C } from '../lib/theme'
 import { esAdmin } from '../lib/permisos'
-import { googleEstado, conectarGoogle, sincronizarTodas, desconectarGoogle, opcionesGoogle } from '../lib/google'
+import { googleEstado, conectarGoogle, sincronizarTodas, confirmarGoogle, desconectarGoogle, opcionesGoogle } from '../lib/google'
 import { Card } from './ui/Varios'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
@@ -17,6 +17,7 @@ export function TarjetaGoogle({ perfil }) {
   const dueno = esAdmin(perfil)
   const [est, setEst] = useState(undefined)
   const [busy, setBusy] = useState(false)
+  const [progreso, setProgreso] = useState('')
   const corrida = useRef(false)
 
   const cargar = async () => setEst(await googleEstado({ forzar: true }))
@@ -32,31 +33,31 @@ export function TarjetaGoogle({ perfil }) {
       const e = await googleEstado({ forzar: true })
       setEst(e)
       if (resultado === 'error') toast.error('No se pudo conectar con Google. Intente de nuevo.')
-      if (resultado === 'ok' && e?.conectada) {
-        toast.success('Google Calendar conectado')
-        setBusy(true)
-        try {
-          const r = await sincronizarTodas()
-          if (r?.sincronizadas) toast.success(`${r.sincronizadas} ${r.sincronizadas === 1 ? 'cita enviada' : 'citas enviadas'} a Google Calendar`)
-        } catch { /* the card shows the status; "Sincronizar ahora" retries */ }
-        setBusy(false)
-        cargar()
-      }
+      // connected: NOTHING is sent yet; the card asks the owner to confirm the account first
+      if (resultado === 'ok' && e?.conectada) toast.success('Cuenta de Google conectada. Falta confirmarla.')
     })()
   }, [])
+
+  const enviarTodas = async () => {
+    setBusy(true); setProgreso('')
+    try {
+      const r = await sincronizarTodas(d => setProgreso(`Enviando citas… ${d.sincronizadas} de ${d.total}`))
+      if (r?.reconectar) toast.error('Google pidió volver a conectar la cuenta')
+      else if (r?.confirmar) toast.error('Falta confirmar la cuenta de Google')
+      else if (r?.pendientes > 0) toast.success(`${r.sincronizadas} de ${r.total} citas enviadas. Use «Sincronizar ahora» para continuar con el resto.`)
+      else toast.success(r?.total ? `${r.sincronizadas} de ${r.total} citas al día en Google Calendar` : 'No hay citas próximas que enviar')
+    } catch { toast.error('No se pudo sincronizar. Intente de nuevo.') }
+    setProgreso(''); setBusy(false); cargar()
+  }
+  const confirmarCuenta = async () => {
+    setBusy(true)
+    try { await confirmarGoogle() } catch { setBusy(false); toast.error('No se pudo confirmar. Intente de nuevo.'); return }
+    await enviarTodas()
+  }
 
   const conectar = async () => {
     setBusy(true)
     try { await conectarGoogle() } catch { setBusy(false); toast.error('No se pudo iniciar la conexión con Google') }
-  }
-  const sincronizar = async () => {
-    setBusy(true)
-    try {
-      const r = await sincronizarTodas()
-      if (r?.reconectar) toast.error('Google pidió volver a conectar la cuenta')
-      else toast.success(r?.total ? `${r.sincronizadas} de ${r.total} citas al día en Google Calendar` : 'No hay citas próximas que enviar')
-    } catch { toast.error('No se pudo sincronizar. Intente de nuevo.') }
-    setBusy(false); cargar()
   }
   const desconectar = async () => {
     if (!await confirmar({
@@ -89,10 +90,23 @@ export function TarjetaGoogle({ perfil }) {
     )
   } else {
     const fallo = est.estado === 'error'
+    const sinConfirmar = !est.confirmada && !fallo
     const ultima = cuando(est.ultimo_sync_at)
     cuerpo = (
       <>
         <div style={texto}>Conectado como <strong style={{ color: C.black, overflowWrap: 'anywhere' }}>{est.google_email || 'su cuenta de Google'}</strong>{ultima && <> · Última sincronización: {ultima}</>}</div>
+        {sinConfirmar && (
+          <div role="alert" style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: `1px solid ${C.g200}`, color: C.black, fontSize: 13.5, lineHeight: 1.55 }}>
+            {dueno
+              ? <>Se conectó la cuenta <strong style={{ overflowWrap: 'anywhere' }}>{est.google_email || 'de Google'}</strong>. ¿Enviar las citas de su clínica a ese calendario de Google?
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    <Button size="sm" onClick={confirmarCuenta} disabled={busy}>Sí, usar esta cuenta</Button>
+                    <Button variant="ghost" size="sm" onClick={desconectar} disabled={busy}>No, desconectar</Button>
+                  </div></>
+              : 'Falta que el dueño confirme la cuenta de Google.'}
+          </div>
+        )}
+        {progreso && <div style={{ ...texto, color: C.g600 }}>{progreso}</div>}
         {fallo && (
           <div role="alert" style={{ marginTop: 10, padding: '10px 14px', borderRadius: 12, background: C.amberLight, color: C.amber, fontSize: 13.5, lineHeight: 1.5 }}>
             Google pidió volver a conectar la cuenta.
@@ -100,17 +114,17 @@ export function TarjetaGoogle({ perfil }) {
         )}
         {dueno ? (
           <>
-            {!fallo && (
+            {!fallo && !sinConfirmar && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '12px 0 4px' }}>
                 <Interruptor activo={!!est.ocultar_nombre} onChange={ocultar} titulo="Ocultar el nombre del paciente en Google" />
                 <span style={{ fontSize: 13.5, lineHeight: 1.4, color: C.black }}>Ocultar el nombre del paciente en Google
-                  <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>El evento dirá solo el tipo de cita.</span></span>
+                  <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>El evento dirá solo el tipo de cita, la sede y el estado.</span></span>
               </label>
             )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
               {fallo
                 ? <Button onClick={conectar} disabled={busy}>Conectar de nuevo</Button>
-                : <Button variant="ghost" size="sm" onClick={sincronizar} disabled={busy}>Sincronizar ahora</Button>}
+                : !sinConfirmar && <Button variant="ghost" size="sm" onClick={enviarTodas} disabled={busy}>Sincronizar ahora</Button>}
               <Button variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar</Button>
             </div>
           </>

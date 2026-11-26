@@ -12,6 +12,11 @@
 --   con sesión iniciada.
 -- Riesgo: bajo. Solo tablas y función nuevas; no toca tablas existentes. Mientras no se aplique, la app muestra
 --   «Disponible pronto» en la tarjeta de Google Calendar y todo lo demás funciona igual.
+-- Fase 2 (pendiente): las citas creadas o cambiadas por Lía desde el servidor y los borrados hechos por pacientes se reflejan
+--   en Google solo en el siguiente «Sincronizar ahora» (que también reconcilia: quita eventos de citas borradas o canceladas).
+--   La revocación del token cuando se elimina la cuenta de una clínica se agregará a eliminar-cuenta en un cambio posterior.
+-- Confirmación: al conectar, la conexión queda con confirmada = false y no se envía ninguna cita hasta que el dueño, viendo
+--   la cuenta de Google conectada, confirme (mitiga un enlace de consentimiento filtrado o la cuenta equivocada).
 -- Antes de aplicar (no es SQL): crear los secretos de la función (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_TOKEN_KEY
 --   = base64 de 32 bytes aleatorios) y desplegar `google-calendar` con verify_jwt desactivado (/callback lo llama Google).
 -- Cómo probar dentro de una transacción (sin dejar nada):
@@ -40,7 +45,8 @@ create table if not exists public.google_conexiones (
   ocultar_nombre boolean not null default false,
   estado text not null default 'activa' check (estado in ('activa', 'error')),
   ultimo_error text,
-  ultimo_sync_at timestamptz
+  ultimo_sync_at timestamptz,
+  confirmada boolean not null default false     -- el dueño debe confirmar la cuenta antes de enviar citas
 );
 
 -- no FK to citas on purpose: a deleted cita must still be found to delete its Google event
@@ -65,6 +71,7 @@ alter table public.google_eventos enable row level security;
 alter table public.google_oauth_estados enable row level security;
 -- no policies on purpose: only the service role (edge function) can read or write them
 revoke all on public.google_conexiones, public.google_eventos, public.google_oauth_estados from public, anon, authenticated;
+grant all on public.google_conexiones, public.google_eventos, public.google_oauth_estados to service_role;
 
 create or replace function public.google_estado()
 returns json
@@ -80,11 +87,12 @@ as $$
         'ocultar_nombre', g.ocultar_nombre,
         'estado', g.estado,
         'ultimo_error', g.ultimo_error,
-        'ultimo_sync_at', g.ultimo_sync_at)
+        'ultimo_sync_at', g.ultimo_sync_at,
+        'confirmada', g.confirmada)
        from public.google_conexiones g
       where g.clinica_id = public.mi_clinica()),
     json_build_object('conectada', false, 'google_email', null, 'ocultar_nombre', false,
-                      'estado', null, 'ultimo_error', null, 'ultimo_sync_at', null)
+                      'estado', null, 'ultimo_error', null, 'ultimo_sync_at', null, 'confirmada', false)
   );
 $$;
 revoke all on function public.google_estado() from public, anon;

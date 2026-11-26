@@ -33,19 +33,35 @@ export async function conectarGoogle() {
   window.location.href = d.url
 }
 
+// Clears the module cache: called when the session ends so the next user never sees the previous clinic's status
+export function limpiarGoogle() { cache = null }
+
 // Fire-and-forget after every successful write of an appointment (or its deletion)
 export function sincronizarCita(citaId) {
   if (MODO_DEMO || !citaId) return
   googleEstado().then(e => {
-    if (!e?.conectada) return
+    if (!e?.conectada || !e.confirmada || e.estado === 'error') return
     return llamar('sync', { cita_id: citaId }).then(r => { if (r?.reconectar) cache = null })
   }).catch(() => {})
 }
 
-export async function sincronizarTodas() {
-  const d = await llamar('sync-todas')
+// Runs the whole-clinic sync in rounds (the function stops after ~100 s and reports `pendientes`); max 5 rounds.
+// alProgreso({ sincronizadas, total, pendientes }) is called after every round. Resolves with the last answer.
+export async function sincronizarTodas(alProgreso) {
+  let d = null, inicio
+  for (let ronda = 0; ronda < 5; ronda++) {
+    d = await llamar('sync-todas', inicio ? { inicio } : {})
+    if (d?.inicio) inicio = d.inicio
+    if (d?.sincronizado && alProgreso) alProgreso(d)
+    if (!d?.sincronizado || !(d.pendientes > 0)) break
+  }
   cache = null
   return d
+}
+
+export async function confirmarGoogle() {
+  await llamar('confirmar')
+  cache = null
 }
 
 export async function desconectarGoogle() {

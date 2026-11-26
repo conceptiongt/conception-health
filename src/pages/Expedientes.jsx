@@ -42,6 +42,7 @@ const CONTACTOS = [
   { value: 'email', label: 'Con correo' }, { value: 'sin', label: 'Sin teléfono ni correo' },
 ]
 const atencionDe = (tipo) => {
+  if (!tipo) return 'Consulta' // a cita without type counts as a consultation, as in the calendar
   if (ATENCIONES.some(a => a.value !== 'Consulta' && a.value === tipo)) return tipo
   return tipo === 'Primera consulta' || /consulta/i.test(tipo || '') ? 'Consulta' : null
 }

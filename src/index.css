@@ -19,7 +19,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--acento) !importa
 ::selection { background: var(--acento-claro); }
 button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 button { transition: background-color .16s, border-color .16s, color .16s; }
-.desplegable-btn:not(:disabled):hover, .desplegable-btn[aria-expanded='true'] { border-color: var(--acento) !important; }
+.desplegable-btn:not(:disabled):hover, .desplegable-btn[aria-expanded='true'], .pg-filtros .desplegable-btn[aria-expanded='true'] { border-color: var(--acento) !important; }
 .desplegable-lista { animation: aparecer 140ms ease both; }
 
 /* Buttons: accent gradient with a soft glow, glass secondary */

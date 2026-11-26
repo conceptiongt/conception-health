@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { C } from '../lib/theme'
 import { esAdmin } from '../lib/permisos'
-import { googleEstado, conectarGoogle, sincronizarTodas, confirmarGoogle, desconectarGoogle, opcionesGoogle } from '../lib/google'
+import { googleEstado, avisosGoogle, alAvisoGoogle, conectarGoogle, sincronizarTodas, confirmarGoogle, desconectarGoogle, opcionesGoogle } from '../lib/google'
 import { Card } from './ui/Varios'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
@@ -19,6 +19,10 @@ export function TarjetaGoogle({ perfil }) {
   const [busy, setBusy] = useState(false)
   const [progreso, setProgreso] = useState('')
   const corrida = useRef(false)
+  const [falta, setFalta] = useState(() => !!avisosGoogle().faltaPermiso)
+
+  // the Calendario reports «reconectar» / «faltaPermiso» after reading the Google events
+  useEffect(() => alAvisoGoogle(() => { setFalta(!!avisosGoogle().faltaPermiso); googleEstado({ forzar: true }).then(setEst) }), [])
 
   const cargar = async () => setEst(await googleEstado({ forzar: true }))
 
@@ -95,7 +99,7 @@ export function TarjetaGoogle({ perfil }) {
   } else if (!est.conectada) {
     cuerpo = (
       <>
-        <div style={texto}>Conecte la cuenta de Google de su clínica y sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google.</div>
+        <div style={texto}>Conecte la cuenta de Google de su clínica: sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google, y los eventos de ese calendario se verán aquí.</div>
         {!dueno && <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que conecte Google Calendar.</div>}
       </>
     )
@@ -108,7 +112,7 @@ export function TarjetaGoogle({ perfil }) {
     cuerpo = (
       <>
         <div style={texto}>
-          {fallo ? 'Google pidió volver a conectar la cuenta.' : 'Sus citas se envían solas a su Google Calendar.'}
+          {fallo ? 'Google pidió volver a conectar la cuenta.' : 'Sus citas se envían a su Google Calendar y los eventos de ese calendario se muestran aquí.'}
           {sinConfirmar && <> Cuenta conectada: <strong style={{ color: C.black, overflowWrap: 'anywhere' }}>{correo}</strong>.</>}
         </div>
         {sinConfirmar && (
@@ -120,6 +124,11 @@ export function TarjetaGoogle({ perfil }) {
                     <Button variant="ghost" size="sm" onClick={desconectar} disabled={busy}>No, desconectar</Button>
                   </div></>
               : 'Falta que el dueño confirme la cuenta de Google.'}
+          </div>
+        )}
+        {falta && !fallo && !sinConfirmar && (
+          <div style={{ ...texto, color: C.g600 }}>Para ver todos sus calendarios de Google, conecte de nuevo y acepte el permiso.
+            {dueno && <div style={{ marginTop: 8 }}><Button size="sm" variant="ghost" onClick={conectar} disabled={busy}>Conectar de nuevo</Button></div>}
           </div>
         )}
         {progreso && <div style={{ ...texto, color: C.g600 }}>{progreso}</div>}

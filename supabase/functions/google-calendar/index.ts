@@ -6,7 +6,9 @@
 //
 // Routes
 //   POST /start          (dueno)           → { url } Google consent URL
-//   GET  /callback       (Google redirect) → 302 to the app (?google=ok | ?google=error), stores the encrypted refresh token
+//   GET  /callback       (Google redirect, reached through the Vercel proxy at ${APP_URL}/google/callback) → 302 to the app (?google=ok | ?google=error), stores the encrypted refresh token
+//   POST /eventos        (dueno/asistente/miembro) { desde, hasta } → READ-ONLY list of the events of the connected account's calendars
+//                                            in that range (≤ 62 days), minimal fields only, never stored; citas mirrored by us are left out
 //   POST /sync           (dueno/asistente/miembro) { cita_id } → mirrors one appointment (or removes its event)
 //   POST /sync-todas     (dueno)           → mirrors the clinic's future appointments in rounds ({ sincronizadas, pendientes, total }:
 //                                            the client repeats while pendientes > 0) and then reconciles (removes events of deleted/cancelled citas)
@@ -30,7 +32,8 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 // Registered in Google Cloud. It lives on the app's own domain (Vercel proxies /google/callback to this function) so Google's
 // consent screen shows the Conception Health domain instead of the Supabase project host. Constant: never taken from the request.
 const REDIRECT_URI = `${APP_URL}/google/callback`
-const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events'
+// calendar.events also allows reading events; calendarlist.readonly only lists the calendars (ids, names, colours) of the account
+const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
@@ -444,6 +447,117 @@ async function sincronizarTodas(req: Request, p: Perfil) {
   }
 }
 
+// ---------- read-only view of the account's events (/eventos) ----------
+const MAX_DIAS = 62, MAX_CALENDARIOS = 12, MAX_EVENTOS = 600, PRESUPUESTO_EVENTOS_MS = 20_000
+const esFechaISO = (s: unknown): s is string => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const f = new Date(s + 'T00:00:00Z')
+  return !Number.isNaN(f.getTime()) && f.toISOString().slice(0, 10) === s
+}
+const dias = (a: string, b: string) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400e3)
+// RFC3339 instant → Guatemala wall clock (UTC-6, no DST) by plain arithmetic
+function aGT(dateTime: unknown): { fecha: string, hora: string } | null {
+  const ms = Date.parse(String(dateTime))
+  if (!Number.isFinite(ms)) return null
+  const iso = new Date(ms + OFFSET_GT * 3600e3).toISOString()
+  return { fecha: iso.slice(0, 10), hora: iso.slice(11, 16) }
+}
+const HEX = /^#[0-9a-fA-F]{6}$/
+const ENLACE_OK = /^https:\/\/(www\.google\.com\/calendar\/|calendar\.google\.com\/)/
+
+// Minimal projection of one Google event: no description, attendees, location or emails ever leave this function.
+function proyectar(ev: any, cal: { nombre: string, color: string | null }, idx: number) {
+  let fecha: string, hora: string | null = null, finFecha: string, finHora: string | null = null, todoElDia = false
+  if (ev?.start?.date && esFechaISO(ev.start.date)) {
+    todoElDia = true
+    fecha = ev.start.date
+    // Google's all-day end is exclusive: make it inclusive, never before the start
+    const fin = esFechaISO(ev?.end?.date) ? sumarDias(ev.end.date, -1) : fecha
+    finFecha = fin < fecha ? fecha : fin
+  } else {
+    const a = aGT(ev?.start?.dateTime)
+    if (!a) return null
+    const b = aGT(ev?.end?.dateTime) || a
+    fecha = a.fecha; hora = a.hora; finFecha = b.fecha; finHora = b.hora
+  }
+  const titulo = limpiar(ev?.summary, 140) || 'Sin título'
+  const enlace = typeof ev?.htmlLink === 'string' && ENLACE_OK.test(ev.htmlLink) ? ev.htmlLink : null
+  return { id: `${idx}-${String(ev?.id || '').slice(0, 200)}`, titulo, fecha, hora, finFecha, finHora, todoElDia, calendario: cal.nombre, color: cal.color, enlace }
+}
+
+async function eventosGoogle(req: Request, p: Perfil) {
+  if (!['dueno', 'asistente', 'miembro'].includes(p.rol)) return json(req, { error: 'SIN_PERMISO' }, 403)
+  const b = await req.json().catch(() => ({}))
+  const desde = b?.desde, hasta = b?.hasta
+  if (!esFechaISO(desde) || !esFechaISO(hasta) || hasta < desde || dias(desde, hasta) + 1 > MAX_DIAS) return json(req, { error: 'DATOS' }, 400)
+  const cid = p.clinica_id // always from the session profile, never from the body
+  const t0 = Date.now()
+  try {
+    const ctx = await conectarCtx(cid, []) // no patients are loaded
+    if (!ctx) return json(req, { conectada: false, eventos: [] })
+    if (ctx === SIN_CONFIRMAR) return json(req, { conectada: true, confirmar: true, eventos: [] })
+
+    // events created by the platform itself are left out (they are the citas): by private property and by this clinic's known event ids
+    const filas = await leerTodo((d, h) => db.from('google_eventos').select('event_id').eq('clinica_id', cid).order('event_id').range(d, h), 100000)
+    const propios = new Set<string>((filas || []).map((f: any) => String(f.event_id)))
+
+    // calendars: the owner's visible ones; without the calendar-list permission fall back to the primary calendar only
+    let faltaPermiso = false
+    let cals: { id: string, nombre: string, color: string | null }[] = []
+    const lista = await gcal(ctx.token, 'GET', '/users/me/calendarList?minAccessRole=reader&maxResults=50')
+    if (lista.ok && Array.isArray(lista.data?.items)) {
+      cals = lista.data.items
+        .filter((c: any) => c && typeof c.id === 'string' && c.selected !== false && !c.hidden && !c.deleted)
+        .slice(0, MAX_CALENDARIOS)
+        .map((c: any) => ({
+          id: c.id,
+          // the primary calendar is named after the account email: never send an email to the screen
+          nombre: c.primary || String(c.summaryOverride || c.summary || '').includes('@') ? 'Principal' : limpiar(c.summaryOverride || c.summary, 60) || 'Calendario',
+          color: HEX.test(String(c.backgroundColor || '')) ? c.backgroundColor : null,
+        }))
+    } else if (lista.status === 403 || lista.status === 404) {
+      faltaPermiso = true
+      cals = [{ id: 'primary', nombre: 'Principal', color: null }]
+    } else throw new Error(`GCAL_${lista.status}`)
+
+    const timeMin = `${desde}T00:00:00-06:00`, timeMax = `${sumarDias(hasta, 1)}T00:00:00-06:00`
+    const q = new URLSearchParams({
+      singleEvents: 'true', orderBy: 'startTime', timeMin, timeMax, maxResults: '250',
+      fields: 'nextPageToken,items(id,status,summary,start,end,htmlLink,extendedProperties/private,eventType)',
+    })
+    const eventos: any[] = []
+    let omitidos = 0, truncado = false
+    for (let k = 0; k < cals.length; k += 4) {
+      if (Date.now() - t0 > PRESUPUESTO_EVENTOS_MS) { omitidos += cals.length - k; break }
+      const lote = cals.slice(k, k + 4)
+      const res = await Promise.all(lote.map(async (cal, j) => {
+        try {
+          const r = await gcal(ctx.token, 'GET', `/calendars/${encodeURIComponent(cal.id)}/events?${q}`)
+          return r.ok && Array.isArray(r.data?.items) ? { cal, idx: k + j, items: r.data.items, mas: !!r.data.nextPageToken } : null
+        } catch (e) { if (e instanceof Reconectar) throw e; return null } // a failing calendar is skipped
+      }))
+      for (const x of res) {
+        if (!x) { omitidos++; continue }
+        if (x.mas) truncado = true
+        for (const ev of x.items) {
+          if (!ev || ev.status === 'cancelled' || ev.eventType === 'workingLocation') continue
+          if (ev.extendedProperties?.private?.cita_id || propios.has(String(ev.id))) continue
+          const e = proyectar(ev, x.cal, x.idx)
+          if (!e || e.finFecha < desde || e.fecha > hasta) continue
+          eventos.push(e)
+        }
+      }
+    }
+    eventos.sort((a, c) => a.fecha.localeCompare(c.fecha) || (a.hora || '').localeCompare(c.hora || ''))
+    if (eventos.length > MAX_EVENTOS) { eventos.length = MAX_EVENTOS; truncado = true }
+    return json(req, { conectada: true, eventos, ...(faltaPermiso ? { faltaPermiso: true } : {}), ...(omitidos ? { omitidos } : {}), ...(truncado ? { truncado: true } : {}) })
+  } catch (e) {
+    if (e instanceof Reconectar) { await marcarError(cid); return json(req, { conectada: true, reconectar: true, eventos: [] }) }
+    console.error('google-calendar eventos', e instanceof Error ? e.message : 'error')
+    return json(req, SELECT_ERR, 502)
+  }
+}
+
 async function confirmar(req: Request, p: Perfil) {
   if (p.rol !== 'dueno') return json(req, { error: 'SOLO_ADMIN' }, 403)
   const b = await req.json().catch(() => ({}))
@@ -488,6 +602,7 @@ Deno.serve(async (req) => {
     if (r === '/start') return await iniciar(req, p)
     if (r === '/sync') return await sincronizar(req, p)
     if (r === '/sync-todas') return await sincronizarTodas(req, p)
+    if (r === '/eventos') return await eventosGoogle(req, p)
     if (r === '/confirmar') return await confirmar(req, p)
     if (r === '/opciones') return await opciones(req, p)
     if (r === '/desconectar') return await desconectar(req, p)

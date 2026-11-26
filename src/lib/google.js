@@ -34,7 +34,36 @@ export async function conectarGoogle() {
 }
 
 // Clears the module cache: called when the session ends so the next user never sees the previous clinic's status
-export function limpiarGoogle() { cache = null }
+export function limpiarGoogle() { cache = null; cacheEventos.clear(); avisos = {} }
+
+// ---- read-only Google events shown inside the Calendario (nothing is stored; short in-memory cache only) ----
+const TTL_EVENTOS = 60 * 1000
+const cacheEventos = new Map() // 'desde|hasta' → { t, valor }
+let avisos = {} // { faltaPermiso } of the last answer, read by the Google card
+export const avisosGoogle = () => avisos
+const AVISO = 'ch-google-aviso'
+export const alAvisoGoogle = (fn) => { window.addEventListener(AVISO, fn); return () => window.removeEventListener(AVISO, fn) }
+
+// → { eventos: [{ id, titulo, fecha, hora, finFecha, finHora, todoElDia, calendario, color, enlace }], faltaPermiso? } — never throws
+export async function eventosGoogle(desde, hasta) {
+  const vacio = { eventos: [] }
+  if (MODO_DEMO) return vacio
+  try {
+    const e = await googleEstado()
+    if (!e?.conectada || !e.confirmada) return vacio
+    const llave = `${desde}|${hasta}`
+    const previo = cacheEventos.get(llave)
+    if (previo && Date.now() - previo.t < TTL_EVENTOS) return previo.valor
+    const d = await llamar('eventos', { desde, hasta })
+    const valor = { eventos: Array.isArray(d?.eventos) ? d.eventos : [], faltaPermiso: !!d?.faltaPermiso }
+    cacheEventos.set(llave, { t: Date.now(), valor })
+    if (cacheEventos.size > 12) cacheEventos.delete(cacheEventos.keys().next().value)
+    const nuevo = { faltaPermiso: valor.faltaPermiso }
+    if (nuevo.faltaPermiso !== !!avisos.faltaPermiso) { avisos = nuevo; window.dispatchEvent(new CustomEvent(AVISO)) }
+    if (d?.reconectar) { cache = null; window.dispatchEvent(new CustomEvent(AVISO)) } // the card re-reads the status and shows the amber state
+    return valor
+  } catch { return vacio }
+}
 
 // Fire-and-forget after every successful write of an appointment (or its deletion)
 export function sincronizarCita(citaId) {

@@ -81,6 +81,27 @@ export function agruparPorDia(citas) {
   return g
 }
 
+// Read-only Google events → { 'YYYY-MM-DD': [event] } for the days inside [desde, hasta]. All-day events (end already inclusive) are
+// repeated on every day they cover; timed ones sit on their start day with a `duracion` (until midnight when they run past it).
+// They carry `g: true` so the views can tell them apart from citas.
+export function agruparGoogle(eventos, desde, hasta) {
+  const g = {}
+  for (const ev of eventos || []) {
+    if (!esISO(ev?.fecha)) continue
+    if (ev.todoElDia) {
+      const fin = esISO(ev.finFecha) && ev.finFecha > ev.fecha ? ev.finFecha : ev.fecha
+      let d = ev.fecha < desde ? desde : ev.fecha
+      for (let n = 0; d <= fin && d <= hasta && n < 70; n++, d = sumarDias(d, 1)) (g[d] ||= []).push({ ...ev, g: true, hora: null, clave: `${ev.id}|${d}` })
+    } else if (ev.fecha >= desde && ev.fecha <= hasta) {
+      const ini = aMinutos(ev.hora) ?? 0
+      const fin = ev.finFecha === ev.fecha && ev.finHora ? aMinutos(ev.finHora) : 1440
+      ;(g[ev.fecha] ||= []).push({ ...ev, g: true, duracion: Math.max(fin - ini, 15), clave: `${ev.id}|${ev.fecha}` })
+    }
+  }
+  for (const k in g) g[k].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
+  return g
+}
+
 // 0 libre, 1 ocupado (1–4 citas), 2 muy ocupado (5 or more)
 export const nivelOcupacion = (n) => n >= 5 ? 2 : n >= 1 ? 1 : 0
 export const NIVELES = [
@@ -177,4 +198,8 @@ const LLAVE_VISTA = 'ch-calendario-vista'
 export function leerVista() {
   try { const v = JSON.parse(localStorage.getItem(LLAVE_VISTA) || '{}'); return { vista: ['mes', 'semana', 'dia'].includes(v.vista) ? v.vista : 'mes', colorPor: ['tipo', 'estado'].includes(v.colorPor) ? v.colorPor : null } } catch { return { vista: 'mes', colorPor: null } }
 }
+// «Google» toggle of the Calendario (on by default), remembered per device
+const LLAVE_GOOGLE = 'ch-calendario-google'
+export const leerVerGoogle = () => { try { return localStorage.getItem(LLAVE_GOOGLE) !== '0' } catch { return true } }
+export const guardarVerGoogle = (v) => { try { localStorage.setItem(LLAVE_GOOGLE, v ? '1' : '0') } catch { /* private window */ } }
 export function guardarVista(v) { try { localStorage.setItem(LLAVE_VISTA, JSON.stringify(v)) } catch { /* private window */ } }

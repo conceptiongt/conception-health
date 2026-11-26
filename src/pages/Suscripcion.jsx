@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
 import { esAdmin } from '../lib/permisos'
-import { PLANES, LIMITE_PRUEBA } from '../lib/constantes'
+import { PLANES, LIMITE_PRUEBA, COBRO_ACTIVO } from '../lib/constantes'
 import { fmtFecha, fmtFechaLocal, diasRestantes } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Badge } from '../components/ui/Varios'
@@ -182,9 +182,9 @@ export function Planes() {
                 <div style={{ marginTop: 24, minHeight: 40 }}>
                   {p.proximamente ? null : actual
                     ? <Button variant="ghost" icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Gestionar suscripción</Button>
-                    : p.link && p.precio
+                    : COBRO_ACTIVO && p.link && p.precio
                       ? <Button variant={destacado ? 'brand' : 'primary'} icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Suscribirme al plan {p.nombre}</Button>
-                      : <Button variant="ghost" style={{ width: '100%' }} disabled>Precio por anunciar</Button>}
+                      : <Button variant="ghost" style={{ width: '100%' }} disabled>{p.precio ? 'Disponible pronto' : 'Precio por anunciar'}</Button>}
                 </div>
               </div>
             </div>

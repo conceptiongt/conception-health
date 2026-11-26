@@ -46,6 +46,8 @@ export const LIMITE_PRUEBA = 3
 // Subscription plans (checkout handled by Recurrente). A priced plan with a Recurrente `link` shows its subscribe button.
 // `proximamente: true` plans (Ultra, Lía) show "Próximamente" and no button. `precio: null` without it shows "Precio por anunciar".
 // Básico = Health; Max = Básico + inventory per location; Ultra = Max + Lía; Lía = only the receptionist.
+// Online checkout is off during the launch trial: prices show, but nobody can pay yet. Set to true to show «Suscribirme».
+export const COBRO_ACTIVO = false
 export const PLANES = [
   {
     value: 'basico',

@@ -10,6 +10,7 @@ import { Button } from './ui/Button'
 import { Modal } from './ui/Modal'
 import { Campo, Input, filtroStyle } from './ui/Campos'
 import { toast } from './ui/Toast'
+import { Desplegable } from './ui/Desplegable'
 
 const ESTE_ANIO = new Date().getFullYear()
 
@@ -38,10 +39,20 @@ export function textoPeriodo(p) {
   return [mes, anio].filter(Boolean).join(' ') || 'Todas las fechas'
 }
 
-// Month (January…December, no year) + year selects
-export function SelectorPeriodo({ valor, onChange, todosMeses = true, todosAnios = false }) {
+// Month (January…December, no year) + year selects. `desplegable`: drawn with the platform's own dropdown (filter bars)
+export function SelectorPeriodo({ valor, onChange, todosMeses = true, todosAnios = false, desplegable = false }) {
   const anios = useAnios()
   const rango = !!(valor.desde || valor.hasta)
+  if (desplegable) return (
+    <>
+      <Desplegable ariaLabel="Mes" value={valor.mes === '' || valor.mes == null ? '' : Number(valor.mes)} disabled={rango} style={{ opacity: rango ? 0.5 : 1 }}
+        onChange={mes => onChange({ ...valor, mes })}
+        options={[...(todosMeses ? [{ value: '', label: 'Todos los meses' }] : []), ...MESES.map((m, i) => ({ value: i, label: m }))]} />
+      <Desplegable ariaLabel="Año" value={valor.anio === '' || valor.anio == null ? '' : Number(valor.anio)} disabled={rango} style={{ opacity: rango ? 0.5 : 1 }}
+        onChange={anio => onChange({ ...valor, anio })}
+        options={[...(todosAnios ? [{ value: '', label: 'Todos los años' }] : []), ...anios.map(a => ({ value: a, label: String(a) }))]} />
+    </>
+  )
   return (
     <>
       <select value={valor.mes === '' || valor.mes == null ? '' : valor.mes} disabled={rango} onChange={e => onChange({ ...valor, mes: e.target.value === '' ? '' : Number(e.target.value) })} style={{ ...filtroStyle, opacity: rango ? 0.5 : 1 }} aria-label="Mes">

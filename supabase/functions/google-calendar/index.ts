@@ -10,8 +10,16 @@
 //   POST /eventos        (dueno/asistente/miembro) { desde, hasta } → READ-ONLY list of the events of the connected account's calendars
 //                                            in that range (≤ 62 days), minimal fields only, never stored; citas mirrored by us are left out
 //   POST /sync           (dueno/asistente/miembro) { cita_id } → mirrors one appointment (or removes its event)
+//   POST /evento         (dueno/asistente/miembro) { id } → mirrors one of the clinic's OWN calendar events (lia_config.config.bloqueos /
+//                                            .eventos, looked up by id with the service role: no event field is ever taken from the client);
+//                                            not found = the Google event is deleted. → { sincronizado, meet_url? } (Meet link only if requested)
+//   POST /meet           (dueno/asistente/miembro) { cita_id, crear? } → { meet_url | null }: reads (default) or creates the Google Meet link of a cita
 //   POST /sync-todas     (dueno)           → mirrors the clinic's future appointments in rounds ({ sincronizadas, pendientes, total }:
-//                                            the client repeats while pendientes > 0) and then reconciles (removes events of deleted/cancelled citas)
+//                                            the client repeats while pendientes > 0) and then reconciles (removes events of deleted/cancelled citas).
+//                                            Once every cita was visited it also upserts the clinic's own events that end today or later ({ eventos }).
+//                                            Remote reconciliation of own events is NOT done: Google cannot list «every event that has ch_evento»
+//                                            (privateExtendedProperty filters by key=value), and deleting an event in the platform already calls /evento,
+//                                            which deletes it in Google.
 //   POST /confirmar      (dueno)           → the owner confirms the connected Google account; until then NOTHING is sent to Google
 //   POST /opciones       (dueno) { ocultar_nombre }
 //   POST /desconectar    (dueno)           → revokes the token and forgets the connection
@@ -23,6 +31,8 @@
 // Known limits (Fase 2): citas created/changed by Lía server-side and patient deletions are mirrored only at the next
 // «Sincronizar ahora» (sync-todas also reconciles); revoking the token when a clinic account is deleted still has to be added to eliminar-cuenta.
 // Tokens are never logged, never returned to the browser and never put in a URL.
+// Meet links: created with conferenceData.createRequest (conferenceDataVersion=1). PUT replaces the whole event, so an update of an event that
+// ALREADY has a link is sent as PATCH (omitted fields untouched, conferenceDataVersion=0) and never carries conferenceData: the link is kept.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { decodeBase64, encodeBase64 } from 'jsr:@std/encoding@1/base64'
 import { encodeBase64Url } from 'jsr:@std/encoding@1/base64url'
@@ -204,26 +214,54 @@ async function quitarEvento(ctx: Contexto, citaId: string, conocido?: string | n
   await db.from('google_eventos').delete().eq('cita_id', citaId).eq('clinica_id', ctx.conn.clinica_id)
 }
 
-async function reflejarEvento(ctx: Contexto, cita: any, conocido?: string | null) {
-  const evento = construirEvento(cita, ctx.pacientes.get(cita.paciente_id) || '', ctx.sedes.get(cita.sede_id) || '', ctx.conn.ocultar_nombre)
+// Sets start/end to null on the other representation: PATCH merges objects, so a timed → all-day change would otherwise keep both
+const paraPatch = (ev: any) => {
+  const t = (x: any) => x?.date ? { ...x, dateTime: null, timeZone: null } : { ...x, date: null }
+  return { ...ev, start: t(ev.start), end: t(ev.end) }
+}
+const URL_MEET = /^https:\/\/meet\.google\.com\//
+const enlaceMeet = (d: any): string | null => typeof d?.hangoutLink === 'string' && URL_MEET.test(d.hangoutLink) ? d.hangoutLink : null
+const crearMeet = (requestId: string) => ({ createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } })
+
+// Shared create-or-update ladder (cita events and own events). `conocido`: event id stored for it, `det`: the deterministic id.
+//  0. read the event (only id/status/link): it tells whether a Meet link exists and whether Google still has it
+//  1. exists with a link → PATCH without conferenceData (keeps the link); exists without → PUT (+ createRequest when `meetId` is given)
+//  2. Google no longer has it (404/410) → create it with the deterministic id
+//  3. a concurrent request may have created it first (409) → update that one; 4. last resort: let Google pick the id
+async function subirEvento(ctx: Contexto, evento: any, conocido: string | undefined, det: string, meetId?: string): Promise<any> {
   const base = ruta(ctx.conn)
+  const objetivo = encodeURIComponent(conocido || det)
+  const conMeet = meetId ? { conferenceData: crearMeet(meetId) } : {}
+  const qMeet = meetId ? '?conferenceDataVersion=1' : ''
+  const ver = await gcal(ctx.token, 'GET', `${base}/${objetivo}?fields=id,status,hangoutLink`)
+  if (!ver.ok && ver.status !== 404 && ver.status !== 410) throw new Error(`GCAL_${ver.status}`)
+  let r: { status: number, ok: boolean, data: any } | null = null
+  if (ver.ok) {
+    r = enlaceMeet(ver.data)
+      ? await gcal(ctx.token, 'PATCH', `${base}/${objetivo}?conferenceDataVersion=0`, paraPatch(evento))
+      : await gcal(ctx.token, 'PUT', `${base}/${objetivo}${qMeet}`, { ...evento, ...conMeet })
+  }
+  if (!r || r.status === 404 || r.status === 410) {
+    r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...evento, ...conMeet, id: det })
+    if (r.status === 409) {
+      r = await gcal(ctx.token, 'PUT', `${base}/${det}${qMeet}`, { ...evento, ...conMeet })
+      if (r.status === 404 || r.status === 410) r = await gcal(ctx.token, 'POST', `${base}${qMeet}`, { ...evento, ...conMeet })
+    }
+  }
+  if (!r.ok || !r.data?.id) throw new Error(`GCAL_${r.status}`)
+  return r.data
+}
+
+async function reflejarEvento(ctx: Contexto, cita: any, conocido?: string | null): Promise<any> {
+  const evento = construirEvento(cita, ctx.pacientes.get(cita.paciente_id) || '', ctx.sedes.get(cita.sede_id) || '', ctx.conn.ocultar_nombre)
   const det = idEvento(cita.id)
   const fila = conocido === undefined
     ? (await db.from('google_eventos').select('event_id').eq('cita_id', cita.id).eq('clinica_id', ctx.conn.clinica_id).maybeSingle()).data
     : (conocido ? { event_id: conocido } : null)
-  // 1. update the known event; 2. if Google no longer has it, create it with the deterministic id;
-  // 3. a concurrent request may have created it first (409) → update that one; 4. last resort: let Google pick the id
-  let r = await gcal(ctx.token, 'PUT', `${base}/${encodeURIComponent(fila?.event_id || det)}`, evento)
-  if (r.status === 404 || r.status === 410) {
-    r = await gcal(ctx.token, 'POST', base, { ...evento, id: det })
-    if (r.status === 409) {
-      r = await gcal(ctx.token, 'PUT', `${base}/${det}`, evento)
-      if (r.status === 404 || r.status === 410) r = await gcal(ctx.token, 'POST', base, evento)
-    }
-  }
-  if (!r.ok || !r.data?.id) throw new Error(`GCAL_${r.status}`)
-  const { error: eUp } = await db.from('google_eventos').upsert({ cita_id: cita.id, clinica_id: ctx.conn.clinica_id, event_id: String(r.data.id), actualizado_at: new Date().toISOString() })
+  const data = await subirEvento(ctx, evento, fila?.event_id || undefined, det)
+  const { error: eUp } = await db.from('google_eventos').upsert({ cita_id: cita.id, clinica_id: ctx.conn.clinica_id, event_id: String(data.id), actualizado_at: new Date().toISOString() })
   if (eUp) throw new Error('DB_EVENTO')
+  return data
 }
 
 const SIN_CONFIRMAR = 'SIN_CONFIRMAR' as const
@@ -362,6 +400,145 @@ async function sincronizar(req: Request, p: Perfil) {
   }
 }
 
+// ---------- the clinic's own calendar events (lia_config.config.bloqueos = «no disponible», .eventos = flexible) ----------
+const ID_PROPIO = /^[0-9a-f]{32}$/
+const HORA_OK = /^([01]\d|2[0-3]):[0-5]\d$/
+const MAX_ENTRADAS = 400
+// the '0e' tag keeps these ids apart from the cita ids (32 hex chars too); '0e' + 32 hex = 34 chars of the base32hex alphabet (0-9a-v)
+const idGooglePropio = (id: string) => `0e${id}`
+type Entrada = { id: string, fecha: string, hasta_fecha: string, desde: string, hasta: string, motivo: string, nota: string, meet: boolean, bloquea: boolean }
+
+// both arrays of the clinic's config, read with the service role for the clinic of the caller. null = the read failed (never treated as «empty»)
+async function leerAgendaPropia(clinicaId: string): Promise<Entrada[] | null> {
+  const { data, error } = await db.from('lia_config').select('config').eq('clinica_id', clinicaId).maybeSingle()
+  if (error) return null
+  const cfg = data?.config && typeof data.config === 'object' ? data.config : {}
+  const out: Entrada[] = []
+  for (const [clave, bloquea] of [['bloqueos', true], ['eventos', false]] as const) {
+    const l = Array.isArray(cfg[clave]) ? cfg[clave].slice(0, MAX_ENTRADAS) : []
+    for (const e of l) {
+      if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !ID_PROPIO.test(e.id) || !esFechaISO(e.fecha)) continue
+      out.push({
+        id: e.id, fecha: e.fecha, hasta_fecha: esFechaISO(e.hasta_fecha) && e.hasta_fecha > e.fecha ? e.hasta_fecha : '',
+        desde: HORA_OK.test(String(e.desde)) ? e.desde : '', hasta: HORA_OK.test(String(e.hasta)) ? e.hasta : '',
+        motivo: String(e.motivo ?? ''), nota: String(e.nota ?? ''), meet: e.meet === true, bloquea,
+      })
+    }
+  }
+  return out
+}
+
+function construirEventoPropio(e: Entrada) {
+  const ultimo = e.hasta_fecha || e.fecha
+  const resumen = limpiar(String(e.motivo).replace(/[<>]/g, ''), 120) || 'Evento'
+  const nota = String(e.nota).replace(/[<>]/g, '').replace(/\r/g, '').trim().slice(0, 300)
+  let tiempo: Record<string, unknown>
+  const ini = e.desde || (e.hasta ? '00:00' : ''), fin = e.hasta || (e.desde ? '23:59' : '')
+  // timed when it has hours (and they make sense); otherwise all-day with Google's exclusive end date
+  if (ini && fin && (ultimo > e.fecha || fin > ini)) {
+    tiempo = { start: { dateTime: `${e.fecha}T${ini}:00`, timeZone: TZ }, end: { dateTime: `${ultimo}T${fin}:00`, timeZone: TZ } }
+  } else {
+    tiempo = { start: { date: e.fecha }, end: { date: sumarDias(ultimo, 1) } }
+  }
+  return {
+    summary: resumen, description: [nota, 'Creado desde Conception Health'].filter(Boolean).join('\n'), status: 'confirmed', ...tiempo,
+    transparency: e.bloquea ? 'opaque' : 'transparent',
+    reminders: { useDefault: true },
+    extendedProperties: { private: { ch_evento: e.id } },
+  }
+}
+
+async function quitarEventoPropio(ctx: Contexto, id: string) {
+  const r = await gcal(ctx.token, 'DELETE', `${ruta(ctx.conn)}/${encodeURIComponent(idGooglePropio(id))}`)
+  if (!r.ok && r.status !== 404 && r.status !== 410) throw new Error(`GCAL_${r.status}`)
+}
+
+// → the Meet link when one was requested and Google has it
+async function reflejarEventoPropio(ctx: Contexto, e: Entrada): Promise<string | null> {
+  const det = idGooglePropio(e.id)
+  const data = await subirEvento(ctx, construirEventoPropio(e), undefined, det, e.meet ? e.id : undefined)
+  if (!e.meet) return null
+  let url = enlaceMeet(data)
+  if (!url) { // the conference can still be pending in the answer: read it once more
+    const r = await gcal(ctx.token, 'GET', `${ruta(ctx.conn)}/${encodeURIComponent(det)}?fields=hangoutLink`)
+    if (r.ok) url = enlaceMeet(r.data)
+  }
+  return url
+}
+
+async function sincronizarEvento(req: Request, p: Perfil) {
+  if (!['dueno', 'asistente', 'miembro'].includes(p.rol)) return json(req, { error: 'SIN_PERMISO' }, 403)
+  const b = await req.json().catch(() => ({}))
+  const id = String(b?.id || '')
+  if (!ID_PROPIO.test(id)) return json(req, { error: 'DATOS' }, 400)
+  // the event is read here, from the caller's clinic only: nothing but the id comes from the client
+  const agenda = await leerAgendaPropia(p.clinica_id)
+  if (!agenda) return json(req, SELECT_ERR, 502) // a failed read is never a deletion
+  const entrada = agenda.find(x => x.id === id) || null
+  try {
+    const ctx = await conectarCtx(p.clinica_id, [])
+    if (!ctx) return json(req, { sincronizado: false })
+    if (ctx === SIN_CONFIRMAR) return json(req, { sincronizado: false, confirmar: true })
+    if (!entrada) {
+      await quitarEventoPropio(ctx, id)
+      await marcarBien(p.clinica_id)
+      return json(req, { sincronizado: true, eliminado: true })
+    }
+    const meet_url = await reflejarEventoPropio(ctx, entrada)
+    await marcarBien(p.clinica_id)
+    return json(req, { sincronizado: true, meet_url })
+  } catch (e) {
+    if (e instanceof Reconectar) { await marcarError(p.clinica_id); return json(req, { sincronizado: false, reconectar: true }) }
+    console.error('google-calendar evento', e instanceof Error ? e.message : 'error')
+    return json(req, SELECT_ERR, 502)
+  }
+}
+
+// ---------- Meet link of a cita ----------
+async function meetCita(req: Request, p: Perfil) {
+  if (!['dueno', 'asistente', 'miembro'].includes(p.rol)) return json(req, { error: 'SIN_PERMISO' }, 403)
+  const b = await req.json().catch(() => ({}))
+  const citaId = String(b?.cita_id || '')
+  if (!UUID.test(citaId)) return json(req, { error: 'DATOS' }, 400)
+  const crear = b?.crear === true
+  const { data: leida, error: eLeer } = await db.from('citas').select(COLS_CITA).eq('id', citaId).maybeSingle()
+  if (eLeer) return json(req, SELECT_ERR, 502)
+  // a cita of another clinic answers exactly like a missing one, and only THIS clinic's connection is used
+  const cita = leida && leida.clinica_id === p.clinica_id ? leida : null
+  try {
+    const ctx = await conectarCtx(p.clinica_id, cita && crear ? [cita] : [])
+    if (!ctx) return json(req, { meet_url: null, sincronizado: false })
+    if (ctx === SIN_CONFIRMAR) return json(req, { meet_url: null, sincronizado: false, confirmar: true })
+    if (!cita || cita.estado === 'Cancelada') return json(req, { meet_url: null, sincronizado: true })
+    const det = idEvento(citaId)
+    let data: any
+    if (!crear) {
+      const { data: fila } = await db.from('google_eventos').select('event_id').eq('cita_id', citaId).eq('clinica_id', p.clinica_id).maybeSingle()
+      const r = await gcal(ctx.token, 'GET', `${ruta(ctx.conn)}/${encodeURIComponent(fila?.event_id || det)}?fields=hangoutLink`)
+      if (!r.ok && r.status !== 404 && r.status !== 410) throw new Error(`GCAL_${r.status}`)
+      data = r.ok ? r.data : null
+    } else {
+      const ev = await reflejarEvento(ctx, cita) // makes sure the event exists (keeps a link it already has)
+      data = ev
+      if (!enlaceMeet(data)) {
+        const r = await gcal(ctx.token, 'PATCH', `${ruta(ctx.conn)}/${encodeURIComponent(String(ev.id))}?conferenceDataVersion=1`, { conferenceData: crearMeet(det) })
+        if (!r.ok) throw new Error(`GCAL_${r.status}`)
+        data = r.data
+        if (!enlaceMeet(data)) {
+          const g = await gcal(ctx.token, 'GET', `${ruta(ctx.conn)}/${encodeURIComponent(String(ev.id))}?fields=hangoutLink`)
+          if (g.ok) data = g.data
+        }
+      }
+    }
+    await marcarBien(p.clinica_id)
+    return json(req, { meet_url: enlaceMeet(data), sincronizado: true })
+  } catch (e) {
+    if (e instanceof Reconectar) { await marcarError(p.clinica_id); return json(req, { meet_url: null, sincronizado: false, reconectar: true }) }
+    console.error('google-calendar meet', e instanceof Error ? e.message : 'error')
+    return json(req, SELECT_ERR, 502)
+  }
+}
+
 const PRESUPUESTO_MS = 100_000 // stop starting new chunks after ~100 s (the platform kills the function at ~150 s)
 const LOTE = 5
 const TECHO_CITAS = 5000
@@ -438,8 +615,25 @@ async function sincronizarTodas(req: Request, p: Perfil) {
         }
       }
     }
+
+    // own events that end today or later, only once every cita was visited (so the client's extra rounds do not repeat them). Counted apart: a failed
+    // own event never keeps the citas rounds going. No remote reconciliation (see the header).
+    let propiosOk = 0, propiosFallidos = 0
+    if (pendientes === 0) {
+      const agenda = await leerAgendaPropia(cid)
+      const vigentes = (agenda || []).filter(x => (x.hasta_fecha || x.fecha) >= hoy)
+      let k = 0
+      while (k < vigentes.length && Date.now() - t0 < PRESUPUESTO_MS + 10_000) {
+        const lote = vigentes.slice(k, k + LOTE); k += lote.length
+        const res = await Promise.all(lote.map(async (x) => {
+          try { await reflejarEventoPropio(ctx, x); return 'ok' } catch (e) { return e instanceof Reconectar ? 'reconectar' : 'fallo' }
+        }))
+        if (res.includes('reconectar')) throw new Reconectar()
+        propiosOk += res.filter(x => x === 'ok').length; propiosFallidos += res.filter(x => x === 'fallo').length
+      }
+    }
     await marcarBien(cid)
-    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes: pendientes + fallidas, retiradas, inicio })
+    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes: pendientes + fallidas, retiradas, eventos: propiosOk, eventosFallidos: propiosFallidos, inicio })
   } catch (e) {
     if (e instanceof Reconectar) { await marcarError(cid); return json(req, { sincronizado: false, reconectar: true }) }
     console.error('google-calendar sync-todas', e instanceof Error ? e.message : 'error')
@@ -541,7 +735,8 @@ async function eventosGoogle(req: Request, p: Perfil) {
         if (x.mas) truncado = true
         for (const ev of x.items) {
           if (!ev || ev.status === 'cancelled' || ev.eventType === 'workingLocation') continue
-          if (ev.extendedProperties?.private?.cita_id || propios.has(String(ev.id))) continue
+          // the platform's own events (citas and the clinic's own events) are already drawn locally
+          if (ev.extendedProperties?.private?.cita_id || ev.extendedProperties?.private?.ch_evento || propios.has(String(ev.id))) continue
           const e = proyectar(ev, x.cal, x.idx)
           if (!e || e.finFecha < desde || e.fecha > hasta) continue
           eventos.push(e)
@@ -601,6 +796,8 @@ Deno.serve(async (req) => {
     if (p.rol === 'soporte') return json(req, { error: 'SIN_PERMISO' }, 403)
     if (r === '/start') return await iniciar(req, p)
     if (r === '/sync') return await sincronizar(req, p)
+    if (r === '/evento') return await sincronizarEvento(req, p)
+    if (r === '/meet') return await meetCita(req, p)
     if (r === '/sync-todas') return await sincronizarTodas(req, p)
     if (r === '/eventos') return await eventosGoogle(req, p)
     if (r === '/confirmar') return await confirmar(req, p)

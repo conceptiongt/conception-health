@@ -53,12 +53,13 @@ export function useCargarLia(clinica) {
   const guardar = useCallback(async (nueva) => {
     let datos = nueva || cfg
     setGuardando(true)
-    // `bloqueos` can also be edited from the Calendario (lib/bloqueos.js). This copy of the settings may be older, so when
-    // this screen did not touch the blocks, keep the ones stored now instead of overwriting them.
+    // `bloqueos` and `eventos` can also be edited from the Calendario (lib/agenda.js). This copy of the settings may be older, so when
+    // this screen did not touch one of them, keep the one stored now instead of overwriting it.
     // (If the blocks WERE edited here from a stale copy, this save still wins: the settings screen is hidden today.)
-    if (JSON.stringify(datos.bloqueos || []) === JSON.stringify(guardada?.bloqueos || [])) {
+    const sinTocar = (k) => JSON.stringify(datos[k] || []) === JSON.stringify(guardada?.[k] || [])
+    if (sinTocar('bloqueos') || sinTocar('eventos')) {
       const { data: actual } = await supabase.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
-      if (Array.isArray(actual?.config?.bloqueos)) datos = { ...datos, bloqueos: actual.config.bloqueos }
+      for (const k of ['bloqueos', 'eventos']) if (sinTocar(k) && Array.isArray(actual?.config?.[k])) datos = { ...datos, [k]: actual.config[k] }
     }
     const { error: e } = await supabase.from('lia_config').upsert({ clinica_id: clinica.id, config: datos, updated_at: new Date().toISOString() })
     setGuardando(false)

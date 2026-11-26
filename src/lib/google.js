@@ -74,6 +74,33 @@ export function sincronizarCita(citaId) {
   }).catch(() => {})
 }
 
+const URL_MEET = 'https://meet.google.com/'
+const meetSeguro = (u) => (typeof u === 'string' && u.startsWith(URL_MEET) && u.length <= 200 && !/\s/.test(u) ? u : null)
+const listo = (e) => !!(e?.conectada && e.confirmada && e.estado !== 'error')
+
+// Mirrors one of the clinic's own calendar events (create / update / delete: the function reads the saved entry by id, so a missing entry
+// deletes the Google event). Awaitable: resolves { meet_url } (null when there is no link) or null when nothing was sent / it failed. Never throws.
+export async function sincronizarEvento(id) {
+  if (MODO_DEMO || !id) return null
+  try {
+    if (!listo(await googleEstado())) return null
+    const r = await llamar('evento', { id })
+    if (r?.reconectar) { cache = null; return null }
+    return r?.sincronizado ? { meet_url: meetSeguro(r.meet_url) } : null
+  } catch { return null }
+}
+
+// Google Meet link of a cita: crear = false only reads it, crear = true creates it when missing. → { meet_url } or null (never throws)
+export async function meetCita(citaId, crear = false) {
+  if (MODO_DEMO || !citaId) return null
+  try {
+    if (!listo(await googleEstado())) return null
+    const r = await llamar('meet', { cita_id: citaId, crear: !!crear })
+    if (r?.reconectar) { cache = null; return null }
+    return r?.sincronizado ? { meet_url: meetSeguro(r.meet_url) } : null
+  } catch { return null }
+}
+
 // Runs the whole-clinic sync in rounds (the function stops after ~100 s and reports `pendientes`); max 5 rounds.
 // alProgreso({ sincronizadas, total, pendientes }) is called after every round. Resolves with the last answer.
 export async function sincronizarTodas(alProgreso) {

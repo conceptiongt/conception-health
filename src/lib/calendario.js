@@ -203,3 +203,18 @@ const LLAVE_GOOGLE = 'ch-calendario-google'
 export const leerVerGoogle = () => { try { return localStorage.getItem(LLAVE_GOOGLE) !== '0' } catch { return true } }
 export const guardarVerGoogle = (v) => { try { localStorage.setItem(LLAVE_GOOGLE, v ? '1' : '0') } catch { /* private window */ } }
 export function guardarVista(v) { try { localStorage.setItem(LLAVE_VISTA, JSON.stringify(v)) } catch { /* private window */ } }
+
+// «Nueva cita» chosen from a clicked day / hour in the Calendario: Registrar opens with that date (and hour) already filled in.
+// Kept in sessionStorage for one minute and read without consuming it (React may run an initialiser twice); Registrar clears it once mounted.
+const LLAVE_PRE = 'ch-registrar-pre'
+export function guardarPrefillCita({ fecha, hora }) {
+  try { sessionStorage.setItem(LLAVE_PRE, JSON.stringify({ fecha, hora: hora || '', t: Date.now() })) } catch { /* private window */ }
+}
+export function leerPrefillCita() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem(LLAVE_PRE) || 'null')
+    if (!o || Date.now() - Number(o.t) > 60000 || !esISO(o.fecha)) return null
+    return { fecha: o.fecha, hora: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.hora) ? o.hora : '' }
+  } catch { return null }
+}
+export function limpiarPrefillCita() { try { sessionStorage.removeItem(LLAVE_PRE) } catch { /* private window */ } }

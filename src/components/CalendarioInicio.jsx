@@ -5,8 +5,8 @@ import { hoyISO } from '../lib/formato'
 import { DIAS_INICIAL, agruparPorDia, citasActivas, fechaLarga, matrizMes, nivelOcupacion, partesISO, sumarMeses } from '../lib/calendario'
 import { Card } from './ui/Varios'
 import { Icon } from './ui/Icon'
-import { useBloqueos } from '../hooks/useBloqueos'
-import { RAYADO, diaBloqueado } from '../lib/bloqueos'
+import { useAgenda } from '../hooks/useAgenda'
+import { RAYADO, diaBloqueado } from '../lib/agenda'
 
 // Tint of a day by how busy it is: none = libre, light accent = ocupado, strong accent = muy ocupado
 const CLASE_TINTE = ['', 'tinte-1', 'tinte-2']
@@ -19,7 +19,7 @@ export function CalendarioInicio({ citas: todas, pacientes, onDia, onAbrir }) {
   // Only count citas whose patient still exists (same filter as Calendario.jsx)
   const citas = useMemo(() => { const ids = new Set((pacientes || []).map(p => p.id)); return todas.filter(c => ids.has(c.paciente_id)) }, [todas, pacientes])
   const porDia = useMemo(() => agruparPorDia(citas), [citas])
-  const { bloqueos } = useBloqueos()
+  const { bloqueos } = useAgenda()
   const { y, m } = partesISO(mes)
   const semanas = matrizMes(y, m)
   const hayBloqueo = semanas.flat().some(d => d.delMes && diaBloqueado(bloqueos, d.iso))

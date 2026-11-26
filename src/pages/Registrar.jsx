@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SERIF } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES, estadoCita } from '../lib/constantes'
@@ -7,7 +7,7 @@ import { puede, verPrecio } from '../lib/permisos'
 import { urlRegistro, codigoRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
 import { hoyISO, fmtFecha, fmtHora, fmtQ, linkWhatsAppSinNumero } from '../lib/formato'
-import { fechaLarga, textoDuracion, DURACION_DEFECTO } from '../lib/calendario'
+import { fechaLarga, textoDuracion, DURACION_DEFECTO, leerPrefillCita, limpiarPrefillCita } from '../lib/calendario'
 import { useDatos, mensajeError } from '../hooks/useDatos'
 import { Button } from '../components/ui/Button'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
@@ -17,7 +17,7 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../compone
 import { toast } from '../components/ui/Toast'
 import { QuienAgendo, nombreUsuario } from '../components/QuienAgendo'
 import { SelectorFechaHora } from '../components/SelectorFechaHora'
-import { useBloqueos } from '../hooks/useBloqueos'
+import { useAgenda } from '../hooks/useAgenda'
 import { sincronizarCita } from '../lib/google'
 
 const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
@@ -26,10 +26,12 @@ export function Registrar() {
   const { citas, pacientes, servicios, perfil, clinica, recargar, ir, sedes, acc } = useDatos()
   const finanzas = puede(perfil, 'finanzas')
   const conSedes = acc?.inventario && sedes.length > 0
-  const [f, setF] = useState(() => ({ ...vacio, sede: sedes.length === 1 ? sedes[0].id : '' }))
+  // arriving from a clicked day / hour of the Calendario: date (and hour) already chosen
+  const [f, setF] = useState(() => ({ ...vacio, fecha: hoyISO(), sede: sedes.length === 1 ? sedes[0].id : '', ...(leerPrefillCita() || {}) }))
+  useEffect(() => { limpiarPrefillCita() }, [])
   const [serv, setServ] = useState(() => servicioInicial(vacio.tipo, servicios))
   const [busy, setBusy] = useState(false)
-  const { bloqueos } = useBloqueos()
+  const { bloqueos } = useAgenda()
   const [listo, setListo] = useState(null) // { paciente, cita, cobro } after saving
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios)) }

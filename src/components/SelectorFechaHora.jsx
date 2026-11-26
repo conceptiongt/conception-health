@@ -7,7 +7,7 @@ import { Select } from './ui/Campos'
 import {
   DURACION_DEFECTO, HORAS, NIVELES, agruparPorDia, citasQueChocan, citasActivas, esISO, nivelOcupacion,
 } from '../lib/calendario'
-import { RAYADO, diaBloqueado, horaBloqueada } from '../lib/bloqueos'
+import { RAYADO, diaBloqueado, horaBloqueada } from '../lib/agenda'
 import { MiniCalendario } from './MiniCalendario'
 
 const etiqueta = { display: 'block', fontSize: 13, fontWeight: 500, color: C.g600, marginBottom: 6 }
@@ -19,7 +19,7 @@ const MINUTOS_SELECT = Array.from({ length: 12 }, (_, i) => String(i * 5).padSta
 // hours that overlap another appointment are marked (still selectable, to allow overbooking on purpose).
 //   fecha 'YYYY-MM-DD', hora 'HH:MM' or '' · citas: every appointment · sedeId: only that location counts
 //   citaId: the appointment being edited (it never conflicts with itself)
-//   bloqueos: agenda blocks (see lib/bloqueos.js): blocked days / hours are marked but stay selectable, with a warning
+//   bloqueos: agenda blocks (see lib/agenda.js): blocked days / hours are marked but stay selectable, with a warning
 export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], sedeId, citaId, duracion = DURACION_DEFECTO, bloqueos = [] }) {
   const { pacientes = [] } = useDatos()
   const id = useId()

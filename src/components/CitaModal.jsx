@@ -23,13 +23,14 @@ import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 import { SelectorFechaHora } from './SelectorFechaHora'
-import { useBloqueos } from '../hooks/useBloqueos'
+import { useAgenda } from '../hooks/useAgenda'
+import { MeetCita } from './EnlaceMeet'
 
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
   const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir } = useDatos()
-  const { bloqueos } = useBloqueos()
+  const { bloqueos } = useAgenda()
   const esp = especialidad(clinica?.especialidad)
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
@@ -273,6 +274,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <section className="bloque">
             <h3>Mensaje para el paciente</h3>
             <MensajePaciente paciente={paciente} cita={citaActual} precio={precio} compacto />
+            {cita?.id && <MeetCita cita={cita} telefono={paciente?.telefono} perfil={perfil} arriba={14} />}
           </section>
           {ficha && medidasPaciente}
         </aside>

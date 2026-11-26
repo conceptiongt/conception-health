@@ -136,7 +136,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     onGuardado()
   }
 
-  const citaActual = { ...cita, ...f, id: cita?.id, ficha: fichaLimpia() }
+  // the service lives in its own state (`serv`): include it so the patient message shows the one being edited, not the saved one
+  const citaActual = { ...cita, ...f, id: cita?.id, ficha: fichaLimpia(), servicio: serv.servicio?.trim() || null }
   // measurements + patient summary: under the appointment data when editing from Citas, on the side in the patient file
   const medidasPaciente = (
     <>

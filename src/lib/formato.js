@@ -27,10 +27,19 @@ export const enMes = (iso, m) => !!iso && Number(iso.slice(0, 4)) === m.year && 
 export const totalCobro = (c) => Math.max(0, (Number(c.precio) || 0) - (Number(c.descuento) || 0))
 export const saldo = (c) => Math.max(0, totalCobro(c) - (Number(c.pagado) || 0))
 
+// "Tipo de consulta" and, when the appointment has a service, its name labelled like the form does
+// (Tipo de cirugía / Tipo de procedimiento / Servicio). Skipped when it only repeats the tipo.
+function lineasConsulta(cita) {
+  const tipo = String(cita.tipo || '').trim(), servicio = String(cita.servicio || '').trim()
+  const etiqueta = tipo === 'Cirugía' ? 'Tipo de cirugía' : tipo === 'Procedimiento' ? 'Tipo de procedimiento' : 'Servicio'
+  return (tipo ? `\n🏥 Tipo de consulta: ${tipo}` : '')
+    + (servicio && servicio.toLowerCase() !== tipo.toLowerCase() ? `\n➡ ${etiqueta}: ${servicio}` : '')
+}
+
 // extras: { pago: { monto, pct, link }, formulario: url }
 export function mensajeConfirmacion(paciente, cita, clinica, extras = {}) {
   const { pago, formulario } = extras
-  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}${cita.hora ? `\n⏰ Hora: ${fmtHora(cita.hora)}` : ''}${cita.tipo ? `\n🏥 ${cita.tipo}` : ''}`
+  return `¡Hola ${paciente.nombre}! 👋\n\nSu cita con ${clinica} está confirmada. ✅\n📅 Fecha: ${fmtFecha(cita.fecha)}${cita.hora ? `\n⏰ Hora: ${fmtHora(cita.hora)}` : ''}${lineasConsulta(cita)}`
     + (pago ? `\n\n💳 Para reservar su cita, realice el anticipo de ${fmtQ(pago.monto)} (${pago.pct}%) en este enlace:\n${pago.link}` : '')
     + (formulario ? `\n\n📝 Antes de su cita, por favor llene sus datos aquí (toma 3 minutos):\n${formulario}` : '')
     + `\n\nSi necesita reprogramar, por favor avísenos con anticipación. ¡Le esperamos!`

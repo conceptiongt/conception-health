@@ -81,6 +81,38 @@ export function agruparPorDia(citas) {
   return g
 }
 
+// Read-only Google events → { 'YYYY-MM-DD': [event] } for the days inside [desde, hasta]. All-day events (end already inclusive) are
+// repeated on every day they cover; timed ones sit on their start day with a `duracion` (until midnight when they run past it).
+// They carry `g: true` so the views can tell them apart from citas.
+export function agruparGoogle(eventos, desde, hasta) {
+  const g = {}
+  for (const ev of eventos || []) {
+    if (!esISO(ev?.fecha)) continue
+    if (ev.todoElDia) {
+      const fin = esISO(ev.finFecha) && ev.finFecha > ev.fecha ? ev.finFecha : ev.fecha
+      let d = ev.fecha < desde ? desde : ev.fecha
+      for (let n = 0; d <= fin && d <= hasta && n < 70; n++, d = sumarDias(d, 1)) (g[d] ||= []).push({ ...ev, g: true, hora: null, clave: `${ev.id}|${d}` })
+    } else {
+      if (ev.fecha >= desde && ev.fecha <= hasta) {
+        const ini = aMinutos(ev.hora) ?? 0
+        const fin = ev.finFecha === ev.fecha && ev.finHora ? aMinutos(ev.finHora) : 1440
+        ;(g[ev.fecha] ||= []).push({ ...ev, g: true, duracion: Math.max(fin - ini, 15), clave: `${ev.id}|${ev.fecha}` })
+      }
+      // a timed event that crosses midnight / spans several days also shows on the following days as an all-day style chip «continúa: …»
+      // (it ends exactly at 00:00 → the last day is not covered)
+      if (esISO(ev.finFecha) && ev.finFecha > ev.fecha) {
+        const ultimo = ev.finHora === '00:00' ? sumarDias(ev.finFecha, -1) : ev.finFecha
+        let d = sumarDias(ev.fecha, 1) < desde ? desde : sumarDias(ev.fecha, 1)
+        for (let n = 0; d <= ultimo && d <= hasta && n < 70; n++, d = sumarDias(d, 1)) {
+          (g[d] ||= []).push({ ...ev, g: true, todoElDia: true, hora: null, finHora: null, finFecha: d, fecha: d, titulo: `continúa: ${ev.titulo}`, clave: `${ev.id}|${d}|c` })
+        }
+      }
+    }
+  }
+  for (const k in g) g[k].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
+  return g
+}
+
 // 0 libre, 1 ocupado (1–4 citas), 2 muy ocupado (5 or more)
 export const nivelOcupacion = (n) => n >= 5 ? 2 : n >= 1 ? 1 : 0
 export const NIVELES = [
@@ -177,4 +209,23 @@ const LLAVE_VISTA = 'ch-calendario-vista'
 export function leerVista() {
   try { const v = JSON.parse(localStorage.getItem(LLAVE_VISTA) || '{}'); return { vista: ['mes', 'semana', 'dia'].includes(v.vista) ? v.vista : 'mes', colorPor: ['tipo', 'estado'].includes(v.colorPor) ? v.colorPor : null } } catch { return { vista: 'mes', colorPor: null } }
 }
+// «Google» toggle of the Calendario (on by default), remembered per device
+const LLAVE_GOOGLE = 'ch-calendario-google'
+export const leerVerGoogle = () => { try { return localStorage.getItem(LLAVE_GOOGLE) !== '0' } catch { return true } }
+export const guardarVerGoogle = (v) => { try { localStorage.setItem(LLAVE_GOOGLE, v ? '1' : '0') } catch { /* private window */ } }
 export function guardarVista(v) { try { localStorage.setItem(LLAVE_VISTA, JSON.stringify(v)) } catch { /* private window */ } }
+
+// «Nueva cita» chosen from a clicked day / hour in the Calendario: Registrar opens with that date (and hour) already filled in.
+// Kept in sessionStorage for one minute and read without consuming it (React may run an initialiser twice); Registrar clears it once mounted.
+const LLAVE_PRE = 'ch-registrar-pre'
+export function guardarPrefillCita({ fecha, hora }) {
+  try { sessionStorage.setItem(LLAVE_PRE, JSON.stringify({ fecha, hora: hora || '', t: Date.now() })) } catch { /* private window */ }
+}
+export function leerPrefillCita() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem(LLAVE_PRE) || 'null')
+    if (!o || Date.now() - Number(o.t) > 60000 || !esISO(o.fecha)) return null
+    return { fecha: o.fecha, hora: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.hora) ? o.hora : '' }
+  } catch { return null }
+}
+export function limpiarPrefillCita() { try { sessionStorage.removeItem(LLAVE_PRE) } catch { /* private window */ } }

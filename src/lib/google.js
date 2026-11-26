@@ -34,7 +34,46 @@ export async function conectarGoogle() {
 }
 
 // Clears the module cache: called when the session ends so the next user never sees the previous clinic's status
-export function limpiarGoogle() { cache = null }
+export function limpiarGoogle() { cache = null; cacheEventos.clear(); avisos = {} }
+
+// ---- read-only Google events shown inside the Calendario (nothing is stored; short in-memory cache only) ----
+const TTL_EVENTOS = 60 * 1000
+const cacheEventos = new Map() // 'desde|hasta' → { t, valor }
+let avisos = {} // { faltaPermiso } of the last answer, read by the Google card
+export const avisosGoogle = () => avisos
+const AVISO = 'ch-google-aviso'
+export const alAvisoGoogle = (fn) => { window.addEventListener(AVISO, fn); return () => window.removeEventListener(AVISO, fn) }
+
+const ENLACE_GOOGLE = /^https:\/\/(www\.google\.com\/calendar\/|calendar\.google\.com\/)/
+const limpiarEvento = (x) => ({
+  ...x,
+  titulo: String(x.titulo ?? '').slice(0, 140),
+  calendario: String(x.calendario ?? '').slice(0, 60),
+  color: typeof x.color === 'string' && /^#[0-9a-f]{6}$/i.test(x.color) ? x.color : null,
+  enlace: typeof x.enlace === 'string' && ENLACE_GOOGLE.test(x.enlace) ? x.enlace : null,
+})
+
+// → { eventos: [{ id, titulo, fecha, hora, finFecha, finHora, todoElDia, calendario, color, enlace }], faltaPermiso? } — never throws
+export async function eventosGoogle(desde, hasta) {
+  const vacio = { eventos: [] }
+  if (MODO_DEMO) return vacio
+  try {
+    const e = await googleEstado()
+    if (!e?.conectada || !e.confirmada) return vacio
+    const llave = `${desde}|${hasta}`
+    const previo = cacheEventos.get(llave)
+    if (previo && Date.now() - previo.t < TTL_EVENTOS) return previo.valor
+    const d = await llamar('eventos', { desde, hasta })
+    // defence in depth: the function already filters these, but nothing from the network is trusted as-is on screen
+    const valor = { eventos: (Array.isArray(d?.eventos) ? d.eventos : []).filter(x => x && typeof x === 'object').map(limpiarEvento), faltaPermiso: !!d?.faltaPermiso }
+    cacheEventos.set(llave, { t: Date.now(), valor })
+    if (cacheEventos.size > 12) cacheEventos.delete(cacheEventos.keys().next().value)
+    const nuevo = { faltaPermiso: valor.faltaPermiso }
+    if (nuevo.faltaPermiso !== !!avisos.faltaPermiso) { avisos = nuevo; window.dispatchEvent(new CustomEvent(AVISO)) }
+    if (d?.reconectar) { cache = null; window.dispatchEvent(new CustomEvent(AVISO)) } // the card re-reads the status and shows the amber state
+    return valor
+  } catch { return vacio }
+}
 
 // Fire-and-forget after every successful write of an appointment (or its deletion)
 export function sincronizarCita(citaId) {
@@ -45,6 +84,33 @@ export function sincronizarCita(citaId) {
   }).catch(() => {})
 }
 
+const URL_MEET = 'https://meet.google.com/'
+const meetSeguro = (u) => (typeof u === 'string' && u.startsWith(URL_MEET) && u.length <= 200 && !/\s/.test(u) ? u : null)
+const listo = (e) => !!(e?.conectada && e.confirmada && e.estado !== 'error')
+
+// Mirrors one of the clinic's own calendar events (create / update / delete: the function reads the saved entry by id, so a missing entry
+// deletes the Google event). Awaitable: resolves { meet_url } (null when there is no link) or null when nothing was sent / it failed. Never throws.
+export async function sincronizarEvento(id) {
+  if (MODO_DEMO || !id) return null
+  try {
+    if (!listo(await googleEstado())) return null
+    const r = await llamar('evento', { id })
+    if (r?.reconectar) { cache = null; return null }
+    return r?.sincronizado ? { meet_url: meetSeguro(r.meet_url) } : null
+  } catch { return null }
+}
+
+// Google Meet link of a cita: crear = false only reads it, crear = true creates it when missing. → { meet_url } or null (never throws)
+export async function meetCita(citaId, crear = false) {
+  if (MODO_DEMO || !citaId) return null
+  try {
+    if (!listo(await googleEstado())) return null
+    const r = await llamar('meet', { cita_id: citaId, crear: !!crear })
+    if (r?.reconectar) { cache = null; return null }
+    return r?.sincronizado ? { meet_url: meetSeguro(r.meet_url) } : null
+  } catch { return null }
+}
+
 // Runs the whole-clinic sync in rounds (the function stops after ~100 s and reports `pendientes`); max 5 rounds.
 // alProgreso({ sincronizadas, total, pendientes }) is called after every round. Resolves with the last answer.
 export async function sincronizarTodas(alProgreso) {
@@ -53,7 +119,7 @@ export async function sincronizarTodas(alProgreso) {
     d = await llamar('sync-todas', inicio ? { inicio } : {})
     if (d?.inicio) inicio = d.inicio
     if (d?.sincronizado && alProgreso) alProgreso(d)
-    if (!d?.sincronizado || !(d.pendientes > 0)) break // pendientes already includes the failed ones, so the next round retries them
+    if (!d?.sincronizado || !(d.pendientes > 0 || d.eventosPendientes > 0)) break // pendientes already includes the failed ones, so the next round retries them; eventosPendientes = own events the time budget left out
   }
   cache = null
   return d

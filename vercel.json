@@ -5,6 +5,10 @@
       "destination": "/privacidad.html"
     },
     {
+      "source": "/google/callback",
+      "destination": "https://kezokphwwnedpcpcqzyk.supabase.co/functions/v1/google-calendar/callback"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

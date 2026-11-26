@@ -1,17 +1,16 @@
-import { useState, useEffect, useMemo, useId } from 'react'
+import { useState, useMemo, useId } from 'react'
 import { C } from '../lib/theme'
-import { MESES } from '../lib/constantes'
 import { hoyISO } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
 import { Icon } from './ui/Icon'
 import { Select } from './ui/Campos'
 import {
-  DIAS_INICIAL, DURACION_DEFECTO, HORAS, NIVELES, agruparPorDia, citasQueChocan, citasActivas,
-  esISO, fechaLarga, matrizMes, nivelOcupacion, partesISO, sumarMeses,
+  DURACION_DEFECTO, HORAS, NIVELES, agruparPorDia, citasQueChocan, citasActivas, esISO, nivelOcupacion,
 } from '../lib/calendario'
+import { RAYADO, diaBloqueado, horaBloqueada } from '../lib/agenda'
+import { MiniCalendario } from './MiniCalendario'
 
 const etiqueta = { display: 'block', fontSize: 13, fontWeight: 500, color: C.g600, marginBottom: 6 }
-const flecha = { width: 34, height: 34, borderRadius: 160, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', cursor: 'pointer', color: C.g600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', fontSize: 18, lineHeight: 1 }
 const HORAS_SELECT = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTOS_SELECT = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
 
@@ -20,15 +19,12 @@ const MINUTOS_SELECT = Array.from({ length: 12 }, (_, i) => String(i * 5).padSta
 // hours that overlap another appointment are marked (still selectable, to allow overbooking on purpose).
 //   fecha 'YYYY-MM-DD', hora 'HH:MM' or '' · citas: every appointment · sedeId: only that location counts
 //   citaId: the appointment being edited (it never conflicts with itself)
-export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], sedeId, citaId, duracion = DURACION_DEFECTO }) {
+//   bloqueos: agenda blocks (see lib/agenda.js): blocked days / hours are marked but stay selectable, with a warning
+export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], sedeId, citaId, duracion = DURACION_DEFECTO, bloqueos = [] }) {
   const { pacientes = [] } = useDatos()
   const id = useId()
-  const [abierto, setAbierto] = useState(false)
-  const base = esISO(fecha) ? fecha : hoyISO()
-  const [vista, setVista] = useState(() => base.slice(0, 7) + '-01') // first day of the month being shown
   const [otra, setOtra] = useState(false)
   const hoy = hoyISO()
-  useEffect(() => { if (esISO(fecha)) setVista(fecha.slice(0, 7) + '-01') }, [fecha])
 
   const porDia = useMemo(() => agruparPorDia(citas.filter(c => c.id !== citaId)), [citas, citaId])
   const nombreDe = (c) => pacientes.find(p => p.id === c.paciente_id)?.nombre || 'otro paciente'
@@ -44,67 +40,51 @@ export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], se
     return m
   }, [citas, fecha, sedeId, citaId, duracion])
 
-  const { y, m } = partesISO(vista)
-  const semanas = matrizMes(y, m)
-  const elegirDia = (iso) => { onFecha(iso); setAbierto(false) }
   const [hh, mm] = hora5 ? hora5.split(':') : ['08', '00']
   const minutos = MINUTOS_SELECT.includes(mm) ? MINUTOS_SELECT : [...MINUTOS_SELECT, mm].sort()
   const cambiarOtra = (nh, nm) => { if (nh && nm) onHora(`${nh}:${nm}`) }
 
-  const pill = (activo, tomada) => ({
+  // slots overlapping a block (computed once per day)
+  const bloqueadas = useMemo(() => {
+    const m = {}
+    for (const h of HORAS) { const b = horaBloqueada(bloqueos, fecha, h, duracion); if (b) m[h] = b }
+    return m
+  }, [bloqueos, fecha, duracion])
+  const bloqueoActual = esISO(fecha) ? (hora5 ? horaBloqueada(bloqueos, fecha, hora5, duracion) : diaBloqueado(bloqueos, fecha)) : null
+
+  const pill = (activo, tomada, bloqueada) => ({
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 64, height: 38, padding: '0 14px', borderRadius: 160, cursor: 'pointer',
     fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, transition: 'background 150ms, color 150ms, border-color 150ms',
     border: `1.5px solid ${activo ? C.purple : C.g200}`,
-    background: activo ? C.purple : tomada ? C.g100 : 'rgba(255,255,255,0.9)', color: activo ? C.onPurple : tomada ? C.g500 : C.black,
+    background: activo ? C.purple : bloqueada ? `${RAYADO(0.18)}, ${C.g100}` : tomada ? C.g100 : 'rgba(255,255,255,0.9)', color: activo ? C.onPurple : tomada || bloqueada ? C.g500 : C.black,
     boxShadow: activo ? '0 4px 14px var(--acento-sombra)' : 'none',
   })
 
   return (
-    <div style={{ gridColumn: '1 / -1', minWidth: 0 }} onKeyDown={e => { if (e.key === 'Escape' && abierto) { e.stopPropagation(); setAbierto(false) } }}>
-      <span style={etiqueta} id={`${id}-fecha`}>Fecha *</span>
-      <button type="button" aria-expanded={abierto} aria-controls={`${id}-cal`} aria-labelledby={`${id}-fecha ${id}-valor`} onClick={() => setAbierto(a => !a)} style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-        border: `1px solid ${abierto ? C.purple : C.g200}`, background: 'rgba(255,255,255,0.9)', fontFamily: 'inherit', fontSize: 14, color: C.black,
-        boxShadow: abierto ? '0 0 0 3px var(--acento-anillo)' : 'none', transition: 'border-color 150ms, box-shadow 150ms', boxSizing: 'border-box',
-      }}>
-        <Icon name="citas" size={17} style={{ color: C.purple }} />
-        <span id={`${id}-valor`} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{esISO(fecha) ? fechaLarga(fecha) : 'Elegir fecha'}</span>
-        <span style={{ display: 'inline-flex', color: C.g500, transform: abierto ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}><Icon name="abajo" size={16} /></span>
-      </button>
-
-      {abierto && (
-        <div id={`${id}-cal`} style={{ marginTop: 8, padding: '14px 14px 12px', borderRadius: 18, border: `1px solid ${C.line}`, background: 'rgba(255,255,255,0.95)', maxWidth: 380, animation: 'aparecer 0.2s ease' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div aria-live="polite" style={{ flex: 1, fontWeight: 600, fontSize: 15, color: C.black }}>{MESES[m]} {y}</div>
-            <button type="button" style={flecha} aria-label="Mes anterior" onClick={() => setVista(sumarMeses(vista, -1))}>‹</button>
-            <button type="button" style={flecha} aria-label="Mes siguiente" onClick={() => setVista(sumarMeses(vista, 1))}>›</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
-            {DIAS_INICIAL.map((d, i) => <div key={i} aria-hidden="true" style={{ fontSize: 12, color: C.g500, padding: '4px 0', fontWeight: 600 }}>{d}</div>)}
-            {semanas.flat().map(d => {
-              const sel = d.iso === fecha
-              const n = citasActivas(porDia[d.iso], sedeId).length
-              const nivel = nivelOcupacion(n)
-              const pasado = d.iso < hoy
-              return (
-                <button key={d.iso} type="button" onClick={() => elegirDia(d.iso)} aria-pressed={sel}
-                  aria-label={`${fechaLarga(d.iso)}, ${n === 0 ? 'sin citas' : n === 1 ? '1 cita' : `${n} citas`}`}
-                  style={{
-                    position: 'relative', height: 40, borderRadius: 12, border: d.iso === hoy && !sel ? `1.5px solid ${C.purple}` : '1.5px solid transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
-                    fontWeight: sel || d.iso === hoy ? 700 : 500, background: sel ? C.purple : 'transparent',
-                    color: sel ? C.onPurple : !d.delMes || pasado ? C.g400 : C.black, opacity: d.delMes ? 1 : 0.6, padding: 0,
-                  }}>
-                  {d.dia}
-                  <span aria-hidden="true" style={{ position: 'absolute', left: '50%', bottom: 4, width: 5, height: 5, marginLeft: -2.5, borderRadius: 5, background: NIVELES[nivel].color, boxShadow: sel ? '0 0 0 1.5px #fff' : 'none' }} />
-                </button>
-              )
-            })}
-          </div>
+    <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+      <MiniCalendario etiqueta="Fecha *" valor={fecha} onElegir={onFecha}
+        etiquetaDia={(iso) => {
+          const n = citasActivas(porDia[iso], sedeId).length
+          const bl = diaBloqueado(bloqueos, iso)
+          return `, ${n === 0 ? 'sin citas' : n === 1 ? '1 cita' : `${n} citas`}${bl ? `, bloqueado: ${bl.titulo}` : ''}`
+        }}
+        estiloDia={(iso, sel) => !sel && diaBloqueado(bloqueos, iso) ? { background: RAYADO(0.16) } : null}
+        marca={(iso, sel) => {
+          const nivel = nivelOcupacion(citasActivas(porDia[iso], sedeId).length)
+          const bl = diaBloqueado(bloqueos, iso)
+          return (
+            <>
+              <span aria-hidden="true" style={{ position: 'absolute', left: '50%', bottom: 4, width: 5, height: 5, marginLeft: -2.5, borderRadius: 5, background: NIVELES[nivel].color, boxShadow: sel ? '0 0 0 1.5px #fff' : 'none' }} />
+              {bl && <span aria-hidden="true" title={bl.titulo} style={{ position: 'absolute', top: 2, right: 3, display: 'inline-flex', color: sel ? C.onPurple : C.g500 }}><Icon name="candado" size={10} /></span>}
+            </>
+          )
+        }}
+        leyenda={(
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, fontSize: 12, color: C.g500 }}>
             {NIVELES.map(n => <span key={n.nivel} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 8, background: n.color }} />{n.label}</span>)}
+            {bloqueos.length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: 4, border: `1px solid ${C.g300}`, backgroundImage: RAYADO(0.3) }} />Bloqueado</span>}
           </div>
-        </div>
-      )}
+        )} />
 
       <span style={{ ...etiqueta, marginTop: 16 }} id={`${id}-hora`}>Hora</span>
       <div role="group" aria-labelledby={`${id}-hora`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -112,11 +92,14 @@ export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], se
         {HORAS.map(h => {
           const activo = !esOtra && hora5 === h
           const t = tomadas[h]
+          const bl = bloqueadas[h]
+          const aviso = [bl && `Bloqueada: ${bl.titulo}`, t && `Ocupada: ${t.map(nombreDe).join(', ')}`].filter(Boolean).join(' · ')
           return (
             <button key={h} type="button" aria-pressed={activo} onClick={() => { setOtra(false); onHora(h) }}
-              title={t ? `Ocupada: ${t.map(nombreDe).join(', ')}` : undefined}
-              aria-label={t ? `${h}, ocupada con ${t.map(nombreDe).join(' y ')}` : h}
-              style={pill(activo, !!t)}>
+              title={aviso || undefined}
+              aria-label={`${h}${bl ? `, bloqueada: ${bl.titulo}` : ''}${t ? `, ocupada con ${t.map(nombreDe).join(' y ')}` : ''}`}
+              style={pill(activo, !!t, !!bl)}>
+              {bl && <Icon name="candado" size={11} />}
               {t && <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 6, background: activo ? C.onPurple : '#E0A100' }} />}
               {h}
             </button>
@@ -133,6 +116,12 @@ export function SelectorFechaHora({ fecha, hora, onFecha, onHora, citas = [], se
         </div>
       )}
 
+      {bloqueoActual && (
+        <div role="status" style={{ marginTop: 12, background: C.amberLight, color: C.amber, borderRadius: 18, padding: '10px 14px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Icon name="candado" size={17} />
+          <span>Esa {hora5 ? 'hora' : 'fecha'} está bloqueada: <strong>{bloqueoActual.titulo}</strong>. Puede guardar de todas formas.</span>
+        </div>
+      )}
       {choqueActual.length > 0 && (
         <div role="status" style={{ marginTop: 12, background: C.amberLight, color: C.amber, borderRadius: 18, padding: '10px 14px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center' }}>
           <Icon name="alerta" size={17} />

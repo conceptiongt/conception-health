@@ -23,11 +23,14 @@ import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 import { SelectorFechaHora } from './SelectorFechaHora'
+import { useAgenda } from '../hooks/useAgenda'
+import { MeetCita } from './EnlaceMeet'
 
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
   const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir } = useDatos()
+  const { bloqueos } = useAgenda()
   const esp = especialidad(clinica?.especialidad)
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
@@ -190,7 +193,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <section className="bloque">
             <h3>Datos de la cita</h3>
             <Grid min={190}>
-              <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
+              <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
               <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
               <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
@@ -271,6 +274,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <section className="bloque">
             <h3>Mensaje para el paciente</h3>
             <MensajePaciente paciente={paciente} cita={citaActual} precio={precio} compacto />
+            {cita?.id && <MeetCita cita={cita} telefono={paciente?.telefono} perfil={perfil} arriba={14} />}
           </section>
           {ficha && medidasPaciente}
         </aside>

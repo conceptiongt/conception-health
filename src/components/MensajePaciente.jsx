@@ -66,10 +66,10 @@ export function MensajePaciente({ paciente, cita, precio = 0, compacto }) {
 }
 
 // Small on/off switch
-export function Interruptor({ activo, onChange, titulo }) {
+export function Interruptor({ activo, onChange, titulo, disabled = false }) {
   return (
-    <button type="button" role="switch" aria-checked={activo} title={titulo} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange(!activo) }} style={{
-      width: 36, height: 21, borderRadius: 11, border: 'none', padding: 2, cursor: 'pointer', flexShrink: 0, marginTop: 1,
+    <button type="button" role="switch" aria-checked={activo} title={titulo} disabled={disabled} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!disabled) onChange(!activo) }} style={{
+      width: 36, height: 21, borderRadius: 11, border: 'none', padding: 2, cursor: disabled ? 'default' : 'pointer', flexShrink: 0, marginTop: 1,
       background: activo ? 'var(--acento)' : '#C9CBD6', transition: 'background .15s', display: 'inline-flex',
     }}>
       <span style={{ width: 17, height: 17, borderRadius: 9, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transform: activo ? 'translateX(15px)' : 'none', transition: 'transform .15s' }} />

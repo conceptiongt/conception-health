@@ -51,15 +51,25 @@ export function useCargarLia(clinica) {
   const set = useCallback((ruta, valor) => setCfg(prev => fijar(prev, String(ruta).split('.'), valor)), [])
 
   const guardar = useCallback(async (nueva) => {
-    const datos = nueva || cfg
+    let datos = nueva || cfg
     setGuardando(true)
+    // `bloqueos` and `eventos` can also be edited from the Calendario (lib/agenda.js). This copy of the settings may be older, so when
+    // this screen did not touch one of them, keep the one stored now instead of overwriting it.
+    // (If the blocks WERE edited here from a stale copy, this save still wins: the settings screen is hidden today.)
+    const sinTocar = (k) => JSON.stringify(datos[k] || []) === JSON.stringify(guardada?.[k] || [])
+    if (sinTocar('bloqueos') || sinTocar('eventos')) {
+      const { data: actual, error: eLeer } = await supabase.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+      // never write from a stale copy when the current settings could not be read
+      if (eLeer) { setGuardando(false); return false } // the caller (pages/Lia.jsx) shows the save-error toast on false
+      for (const k of ['bloqueos', 'eventos']) if (sinTocar(k) && Array.isArray(actual?.config?.[k])) datos = { ...datos, [k]: actual.config[k] }
+    }
     const { error: e } = await supabase.from('lia_config').upsert({ clinica_id: clinica.id, config: datos, updated_at: new Date().toISOString() })
     setGuardando(false)
     if (e) return false
     setGuardada(datos)
     setCfg(datos)
     return true
-  }, [cfg, clinica?.id])
+  }, [cfg, guardada, clinica?.id])
 
   const descartar = useCallback(() => setCfg(guardada), [guardada])
   const cambios = !!cfg && JSON.stringify(cfg) !== JSON.stringify(guardada)

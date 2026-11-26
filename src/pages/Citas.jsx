@@ -14,6 +14,7 @@ import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
 import { sincronizarCita } from '../lib/google'
+import { MeetCita } from '../components/EnlaceMeet'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -139,7 +140,7 @@ export function Citas() {
             cuandoEliminada(r.eliminado_at),
           ] }))}
         />
-      ) : <ListaCitas citas={visibles} porId={porId} sedes={sedes} abierta={abierta} setAbierta={setAbierta}
+      ) : <ListaCitas citas={visibles} porId={porId} sedes={sedes} abierta={abierta} setAbierta={setAbierta} perfil={perfil}
         onEstado={cambiarEstado} onEditar={setEditando} onExpediente={(p) => ir('expedientes', p.id)}
         mensaje={(p, c) => mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre)} />}
     </>
@@ -169,7 +170,7 @@ function BotonesEstado({ citas, valor, onChange, eliminadas }) {
 }
 
 // Appointments list: tapping a row opens it downwards with its details and actions (file, edit, WhatsApp, Calendar)
-function ListaCitas({ citas, porId, sedes, abierta, setAbierta, onEstado, onEditar, onExpediente, mensaje }) {
+function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado, onEditar, onExpediente, mensaje }) {
   const conSede = sedes.length > 0
   // the open panel always fits the visible width, even when the table scrolls sideways
   const caja = useRef(null)
@@ -229,6 +230,7 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, onEstado, onEdit
                         {p.alergias && dato('Alergias', <span style={{ color: C.red }}>{p.alergias}</span>)}
                       </div>
                       {c.notas && <div style={{ marginTop: 14 }}>{dato('Notas', c.notas)}</div>}
+                      <MeetCita cita={c} telefono={p.telefono} perfil={perfil} arriba={14} />
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.g100}` }}>
                         <button style={accion} onClick={() => onExpediente(p)}><Icon name="expedientes" size={15} />Ver expediente</button>
                         <button style={accion} onClick={() => onEditar(c)}><Icon name="editar" size={15} />Editar cita</button>

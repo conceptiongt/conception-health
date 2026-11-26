@@ -162,7 +162,7 @@ function from(t) {
     if (op === 'update') {
       const cambiadas = filas.filter(coincide)
       cambiadas.forEach(r => { Object.assign(r, payload); if (t === 'pacientes' && payload.registro_token) r.registro_codigo = `datos-${r.id}` })
-      return { data: one ? (cambiadas[0] ? { ...cambiadas[0] } : null) : null, error: null }
+      return { data: one ? (cambiadas[0] ? { ...cambiadas[0] } : null) : cambiadas.map(r => ({ ...r })), error: null }
     }
     if (op === 'delete') {
       const quitar = filas.filter(coincide)

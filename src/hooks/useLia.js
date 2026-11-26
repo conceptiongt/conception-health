@@ -51,15 +51,22 @@ export function useCargarLia(clinica) {
   const set = useCallback((ruta, valor) => setCfg(prev => fijar(prev, String(ruta).split('.'), valor)), [])
 
   const guardar = useCallback(async (nueva) => {
-    const datos = nueva || cfg
+    let datos = nueva || cfg
     setGuardando(true)
+    // `bloqueos` can also be edited from the Calendario (lib/bloqueos.js). This copy of the settings may be older, so when
+    // this screen did not touch the blocks, keep the ones stored now instead of overwriting them.
+    // (If the blocks WERE edited here from a stale copy, this save still wins: the settings screen is hidden today.)
+    if (JSON.stringify(datos.bloqueos || []) === JSON.stringify(guardada?.bloqueos || [])) {
+      const { data: actual } = await supabase.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+      if (Array.isArray(actual?.config?.bloqueos)) datos = { ...datos, bloqueos: actual.config.bloqueos }
+    }
     const { error: e } = await supabase.from('lia_config').upsert({ clinica_id: clinica.id, config: datos, updated_at: new Date().toISOString() })
     setGuardando(false)
     if (e) return false
     setGuardada(datos)
     setCfg(datos)
     return true
-  }, [cfg, clinica?.id])
+  }, [cfg, guardada, clinica?.id])
 
   const descartar = useCallback(() => setCfg(guardada), [guardada])
   const cambios = !!cfg && JSON.stringify(cfg) !== JSON.stringify(guardada)

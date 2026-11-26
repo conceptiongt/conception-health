@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
 import { ESTADOS_CITA, MESES, estadoCita } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
-import { puede } from '../lib/permisos'
+import { puede, esSoporte } from '../lib/permisos'
 import { hoyISO, fmtHora, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import {
   DIAS_CORTOS, DIAS_INICIAL, PALETA, aMinutos, agruparPorDia, colorDeCita, colorDeClave, duracionCita, esISO,
@@ -20,6 +20,10 @@ import { CitaModal } from '../components/CitaModal'
 import { SelectorColor } from '../components/SelectorColor'
 import { TarjetaGoogle } from '../components/TarjetaGoogle'
 import { googleEstado, eventosGoogle, alAvisoGoogle } from '../lib/google'
+import { bloqueosDelDia, RAYADO } from '../lib/bloqueos'
+import { useBloqueos } from '../hooks/useBloqueos'
+import { BloqueoModal } from '../components/BloqueoModal'
+import { BandaBloqueo, ChipBloqueo, ListaBloqueosDia, TarjetaBloqueos } from '../components/BloqueosCalendario'
 
 const PX_HORA = 56 // height of one hour in the time grids
 const SLATE = '#677188' // neutral colour of Google events that carry none of their own
@@ -55,6 +59,11 @@ export function Calendario({ fechaInicial }) {
   const [abierta, setAbierta] = useState(null) // appointment shown in the detail window
   const [editando, setEditando] = useState(null)
   const [personalizando, setPersonalizando] = useState(false)
+  // agenda blocks (stored with the receptionist's settings): drawn in every view, edited from here. Support sessions only look.
+  const { bloqueos, setBloqueos, error: errorBloqueos } = useBloqueos()
+  const [bloqueando, setBloqueando] = useState(null) // { bloqueo | null, fecha } while the block window is open
+  const puedeBloquear = !esSoporte(perfil)
+  useEffect(() => { if (errorBloqueos) toast.error('No se pudieron cargar los bloqueos') }, [errorBloqueos])
   const compacto = useMedia('(max-width: 640px)')
   const hoy = hoyISO()
 
@@ -108,6 +117,12 @@ export function Calendario({ fechaInicial }) {
     return () => { vivo = false }
   }, [googleConectado, verGoogle, desde, hasta])
   const gPorDia = useMemo(() => agruparGoogle(eventosG, desde, hasta), [eventosG, desde, hasta])
+  // { 'YYYY-MM-DD': [block of that day] } for the visible range
+  const bPorDia = useMemo(() => {
+    const o = {}
+    for (let d = desde, n = 0; d <= hasta && n < 45; d = sumarDias(d, 1), n++) { const l = bloqueosDelDia(bloqueos, d); if (l.length) o[d] = l }
+    return o
+  }, [bloqueos, desde, hasta])
   const cambiarVerGoogle = () => { const v = !verGoogle; setVerGoogle(v); guardarVerGoogle(v) }
   const titulo = vista === 'mes' ? `${MESES[m]} ${y}` : vista === 'semana' ? tituloSemana(inicioSemana(fecha)) : mayuscula(fechaLarga(fecha))
   const enRango = vista === 'mes' ? visibles.filter(c => c.fecha.slice(0, 7) === fecha.slice(0, 7)).length
@@ -117,11 +132,13 @@ export function Calendario({ fechaInicial }) {
 
   if (editando) return <CitaModal soloCita cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
 
-  const propsVista = { porDia, gPorDia, onGoogle: setGoogleAbierto, porId, colorDe, hoy, nombreCorto, onCita: setAbierta, onDia: abrirDia }
+  const onBloqueo = puedeBloquear ? (bloqueo) => setBloqueando({ bloqueo }) : undefined
+  const propsVista = { porDia, gPorDia, bPorDia, onBloqueo, onGoogle: setGoogleAbierto, porId, colorDe, hoy, nombreCorto, onCita: setAbierta, onDia: abrirDia }
 
   return (
     <>
       <Encabezado titulo="Calendario" subtitulo={`${enRango} ${enRango === 1 ? 'cita' : 'citas'} · ${titulo}`}>
+        {puedeBloquear && <Button variant="ghost" icon="candado" onClick={() => setBloqueando({ bloqueo: null, fecha })}>Bloquear agenda</Button>}
         <Button onClick={() => ir('registrar')} icon="mas">Nueva cita</Button>
       </Encabezado>
 
@@ -146,7 +163,7 @@ export function Calendario({ fechaInicial }) {
         {puede(perfil, 'configuracion') && <Button variant="ghost" size="sm" icon="ajustes" onClick={() => setPersonalizando(true)}>Personalizar colores</Button>}
       </div>
 
-      <Leyenda prefs={prefsEf} clinica={clinica} citas={visibles} conGoogle={googleConectado && verGoogle} />
+      <Leyenda prefs={prefsEf} clinica={clinica} citas={visibles} conGoogle={googleConectado && verGoogle} conBloqueos={bloqueos.length > 0} />
 
       {vista === 'mes' && (compacto
         ? <MesCompacto fecha={fecha} {...propsVista} onElegir={fijarFecha} onAbrirDia={abrirDia} />
@@ -159,8 +176,10 @@ export function Calendario({ fechaInicial }) {
         </div>
       )}
 
+      <TarjetaBloqueos bloqueos={bloqueos} clinica={clinica} editable={puedeBloquear} onEditar={(b) => setBloqueando({ bloqueo: b })} onCambio={setBloqueos} />
       <TarjetaGoogle perfil={perfil} />
 
+      {bloqueando && <BloqueoModal bloqueo={bloqueando.bloqueo} fechaInicial={bloqueando.fecha} citas={citas} clinica={clinica} onClose={() => setBloqueando(null)} onGuardado={(l) => { setBloqueos(l); setBloqueando(null) }} />}
       {googleAbierto && <DetalleGoogle g={googleAbierto} onClose={() => setGoogleAbierto(null)} />}
       {abierta && (
         <DetalleCita cita={abierta} paciente={porId[abierta.paciente_id]} sedes={sedes} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}
@@ -179,7 +198,7 @@ function tiposUsados(clinica, citas) {
   return [...new Set([...tiposDe(clinica?.especialidad), ...citas.map(c => c.tipo).filter(Boolean)])]
 }
 
-function Leyenda({ prefs, clinica, citas, conGoogle }) {
+function Leyenda({ prefs, clinica, citas, conGoogle, conBloqueos }) {
   const claves = prefs.colorPor === 'estado'
     ? ESTADOS_CITA.map(e => ({ clave: `estado:${e.value}`, label: e.value }))
     : tiposUsados(clinica, citas).map(t => ({ clave: `tipo:${t}`, label: t }))
@@ -190,6 +209,11 @@ function Leyenda({ prefs, clinica, citas, conGoogle }) {
           <span style={{ width: 10, height: 10, borderRadius: 10, background: colorDeClave(k.clave, prefs) }} />{k.label}
         </span>
       ))}
+ {conBloqueos && (
+        <span role="listitem" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 12px 4px 9px', borderRadius: 160, fontSize: 12.5, fontWeight: 500, color: C.g700, background: 'rgba(255,255,255,0.75)', border: `1px solid ${C.g200}` }}>
+          <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, border: `1px solid ${C.g300}`, backgroundImage: RAYADO(0.35) }} />Bloqueos
+        </span>
+      )}
       {conGoogle && (
         <span role="listitem" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 12px 4px 9px', borderRadius: 160, fontSize: 12.5, fontWeight: 500, color: C.g700, background: 'rgba(255,255,255,0.75)', border: `1px dashed ${C.g300}` }}>
           <MarcaG />Eventos de Google
@@ -227,7 +251,7 @@ function Chip({ c, col, texto, onClick }) {
   )
 }
 
-function VistaMes({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onDia }) {
+function VistaMes({ fecha, porDia, gPorDia, bPorDia, onBloqueo, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onDia }) {
   const { y, m } = partesISO(fecha)
   const semanas = matrizMes(y, m)
   return (
@@ -239,17 +263,20 @@ function VistaMes({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombr
         <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
           {sem.map(d => {
             const lista = [...(porDia[d.iso] || []), ...(gPorDia[d.iso] || [])]
+            const bl = bPorDia[d.iso] || []
             const esHoy = d.iso === hoy
+            const fondoDia = esHoy ? 'var(--acento-tenue)' : d.delMes ? 'transparent' : 'rgba(246,248,253,0.55)'
             return (
               <div key={d.iso} onClick={() => onDia(d.iso)} className="fila" style={{
                 minHeight: 112, minWidth: 0, padding: 6, borderTop: i ? `1px solid ${C.g100}` : 'none', borderLeft: `1px solid ${C.g100}`, cursor: 'pointer',
-                background: esHoy ? 'var(--acento-tenue)' : d.delMes ? 'transparent' : 'rgba(246,248,253,0.55)',
+                background: bl.some(b => b.todoElDia) ? `${RAYADO(0.07)}, ${fondoDia}` : fondoDia,
               }}>
                 <button type="button" onClick={(e) => { e.stopPropagation(); onDia(d.iso) }} aria-label={`Abrir ${fechaLarga(d.iso)}`} style={{
                   width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: esHoy ? 700 : 500, marginBottom: 4,
                   background: esHoy ? C.purple : 'transparent', color: esHoy ? C.onPurple : d.delMes ? C.black : C.g400,
                 }}>{d.dia}</button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {bl.map((it, k) => <ChipBloqueo key={k} item={it} onClick={onBloqueo && (() => onBloqueo(it.bloqueo))} />)}
                   {lista.slice(0, 3).map(c => c.g
                     ? <ChipG key={c.clave} g={c} onClick={() => onGoogle(c)} />
                     : <Chip key={c.id} c={c} col={colorDe(c)} onClick={() => onCita(c)} texto={`${c.hora ? c.hora.slice(0, 5) + ' ' : ''}${nombreCorto(c)}`} />)}
@@ -267,7 +294,7 @@ function VistaMes({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombr
 }
 
 // Phones: coloured dots per day, and the list of the chosen day below
-function MesCompacto({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onElegir, onAbrirDia }) {
+function MesCompacto({ fecha, porDia, gPorDia, bPorDia, onBloqueo, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onElegir, onAbrirDia }) {
   const { y, m } = partesISO(fecha)
   const semanas = matrizMes(y, m)
   return (
@@ -278,14 +305,16 @@ function MesCompacto({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, no
           {semanas.flat().map(d => {
             const lista = porDia[d.iso] || []
             const nG = (gPorDia[d.iso] || []).length
+            const bl = bPorDia[d.iso] || []
             const sel = d.iso === fecha
             const esHoy = d.iso === hoy
             return (
-              <button key={d.iso} type="button" onClick={() => onElegir(d.iso)} aria-pressed={sel} aria-label={`${fechaLarga(d.iso)}, ${lista.length === 1 ? '1 cita' : `${lista.length} citas`}${nG ? `, ${nG === 1 ? '1 evento' : `${nG} eventos`} de Google` : ''}`} style={{
+              <button key={d.iso} type="button" onClick={() => onElegir(d.iso)} aria-pressed={sel} aria-label={`${fechaLarga(d.iso)}, ${lista.length === 1 ? '1 cita' : `${lista.length} citas`}${nG ? `, ${nG === 1 ? '1 evento' : `${nG} eventos`} de Google` : ''}${bl.length ? `, bloqueado: ${bl.map(b => b.titulo).join(', ')}` : ''}`} style={{
                 height: 48, border: esHoy && !sel ? `1.5px solid ${C.purple}` : '1.5px solid transparent', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, padding: 0,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
-                background: sel ? C.purple : 'transparent', color: sel ? C.onPurple : d.delMes ? C.black : C.g400, fontWeight: sel || esHoy ? 700 : 500,
+                position: 'relative', background: sel ? C.purple : bl.some(b => b.todoElDia) ? RAYADO(0.14) : 'transparent', color: sel ? C.onPurple : d.delMes ? C.black : C.g400, fontWeight: sel || esHoy ? 700 : 500,
               }}>
+                {bl.length > 0 && <span aria-hidden="true" style={{ position: 'absolute', top: 3, right: 4, display: 'inline-flex', color: sel ? C.onPurple : C.g500 }}><Icon name="candado" size={10} /></span>}
                 {d.dia}
                 <span style={{ display: 'flex', gap: 2, height: 5 }}>
                   {lista.slice(0, nG ? 2 : 3).map(c => <span key={c.id} style={{ width: 5, height: 5, borderRadius: 5, background: colorDe(c).base, boxShadow: sel ? '0 0 0 1px #fff' : 'none' }} />)}
@@ -301,6 +330,7 @@ function MesCompacto({ fecha, porDia, gPorDia, onGoogle, porId, colorDe, hoy, no
           <div style={{ flex: 1, fontWeight: 600, fontSize: 15, color: C.black }}>{mayuscula(fechaLarga(fecha))}</div>
           <Button size="sm" variant="ghost" onClick={() => onAbrirDia(fecha)}>Ver día</Button>
         </div>
+        <ListaBloqueosDia lista={bPorDia[fecha] || []} onBloqueo={onBloqueo} />
         <ListaCitas lista={porDia[fecha] || []} porId={porId} colorDe={colorDe} onCita={onCita} />
         <ListaGoogle lista={gPorDia[fecha] || []} onGoogle={onGoogle} />
       </div>
@@ -357,9 +387,10 @@ function ListaGoogle({ lista, onGoogle }) {
   )
 }
 
-function ListaDia({ iso, porDia, gPorDia, onGoogle, porId, colorDe, onCita, sedes }) {
+function ListaDia({ iso, porDia, gPorDia, bPorDia, onBloqueo, onGoogle, porId, colorDe, onCita, sedes }) {
   return (
     <div style={{ minWidth: 0 }}>
+      <ListaBloqueosDia lista={bPorDia[iso] || []} onBloqueo={onBloqueo} />
       <div style={{ fontSize: 15, fontWeight: 500, color: C.black, marginBottom: 10 }}>Citas del día</div>
       <ListaCitas lista={porDia[iso] || []} porId={porId} colorDe={colorDe} onCita={onCita} sedes={sedes} />
       <ListaGoogle lista={gPorDia[iso] || []} onGoogle={onGoogle} />
@@ -384,7 +415,7 @@ function distribuir(lista) {
 }
 
 // Time grid for one day or a whole week: appointments are placed by their hour and length
-function Grilla({ dias, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onDia, conCabecera = true, minAncho = 0 }) {
+function Grilla({ dias, porDia, gPorDia, bPorDia, onBloqueo, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onDia, conCabecera = true, minAncho = 0 }) {
   const eventos = dias.map(iso => distribuir([...(porDia[iso] || []), ...(gPorDia[iso] || [])]))
   const sinHora = dias.map(iso => [...(porDia[iso] || []), ...(gPorDia[iso] || [])].filter(c => !c.hora))
   const todos = eventos.flat()
@@ -434,6 +465,7 @@ function Grilla({ dias, porDia, gPorDia, onGoogle, porId, colorDe, hoy, nombreCo
               {iso === hoy && minAhora >= desde * 60 && minAhora <= hasta * 60 && (
                 <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, top: (minAhora - desde * 60) / 60 * PX_HORA, height: 2, background: C.red, zIndex: 3, borderRadius: 2 }} />
               )}
+              {(bPorDia[iso] || []).map((it, k) => <BandaBloqueo key={k} item={it} desdeMin={desde * 60} alto={alto} pxHora={PX_HORA} onClick={onBloqueo && (() => onBloqueo(it.bloqueo))} />)}
               {eventos[di].map(e => {
                 if (e.c.g) {
                   const g = e.c

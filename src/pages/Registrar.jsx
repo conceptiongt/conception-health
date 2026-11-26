@@ -17,6 +17,7 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from '../compone
 import { toast } from '../components/ui/Toast'
 import { QuienAgendo, nombreUsuario } from '../components/QuienAgendo'
 import { SelectorFechaHora } from '../components/SelectorFechaHora'
+import { useBloqueos } from '../hooks/useBloqueos'
 import { sincronizarCita } from '../lib/google'
 
 const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
@@ -28,6 +29,7 @@ export function Registrar() {
   const [f, setF] = useState(() => ({ ...vacio, sede: sedes.length === 1 ? sedes[0].id : '' }))
   const [serv, setServ] = useState(() => servicioInicial(vacio.tipo, servicios))
   const [busy, setBusy] = useState(false)
+  const { bloqueos } = useBloqueos()
   const [listo, setListo] = useState(null) // { paciente, cita, cobro } after saving
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios)) }
@@ -110,7 +112,7 @@ export function Registrar() {
         <Card title="Cita">
           <Grid>
             {conSedes && <Campo label="Sede *"><Select value={f.sede} onChange={set('sede')}><option value="">Seleccione…</option>{sedes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}</Select></Campo>}
-            <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} sedeId={conSedes && f.sede ? f.sede : undefined} />
+            <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} />
             <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
             <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo ?? nombreUsuario(perfil)} onChange={set('agendo')} /></Campo>

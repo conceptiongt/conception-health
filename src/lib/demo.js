@@ -190,6 +190,7 @@ const almacen = () => ({
 })
 
 async function rpc(fn, a) {
+  if (fn === 'google_estado') return { data: null, error: null } // Google Calendar is not available in the demo (card shows «Disponible pronto»)
   if (fn === 'cita_eliminar') {
     const c = DB.citas.find(x => x.id === a.p_cita)
     const pac = DB.pacientes.find(x => x.id === c.paciente_id)

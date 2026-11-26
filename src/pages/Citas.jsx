@@ -13,6 +13,7 @@ import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
+import { sincronizarCita } from '../lib/google'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -63,6 +64,7 @@ export function Citas() {
   const cambiarEstado = async (c, nuevo) => {
     const { error } = await supabase.from('citas').update({ estado: nuevo }).eq('id', c.id)
     if (error) { toast.error('No se pudo cambiar el estado'); return }
+    sincronizarCita(c.id)
     recargar()
   }
 

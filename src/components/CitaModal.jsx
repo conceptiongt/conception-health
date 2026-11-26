@@ -18,6 +18,7 @@ import { Icon } from './ui/Icon'
 import { Campo, Input, Select, Textarea, Grid } from './ui/Campos'
 import { toast } from './ui/Toast'
 import { confirmar } from './ui/Confirmar'
+import { sincronizarCita } from '../lib/google'
 import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
@@ -109,6 +110,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     setBusy(false)
     if (error) { toast.error('No se pudo guardar la cita'); return }
     toast.success(cita ? 'Cita actualizada' : 'Cita agregada')
+    sincronizarCita(guardada?.id) // mirror to the clinic's Google Calendar (silent, never blocks)
     onGuardado()
   }
 
@@ -127,6 +129,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     setBusy(false)
     if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : 'No se pudo eliminar'); return }
     toast.success(data?.productos ? 'Cita eliminada; los productos regresaron al inventario' : 'Cita eliminada')
+    sincronizarCita(cita.id) // the cita is gone: the function removes its Google event
     onGuardado()
   }
 

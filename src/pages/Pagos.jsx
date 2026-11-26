@@ -9,6 +9,7 @@ import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { Panel, Avatar, Tocable } from '../components/ui/Panel'
 import { filtroStyle } from '../components/ui/Campos'
+import { Desplegable } from '../components/ui/Desplegable'
 import { Exportar } from '../components/Documento'
 import { SelectorPeriodo, RangoFechas, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
 import { ESTADOS_COBRO, estadoCobro, tipoCobro, sedeCobro, CobroDetalle, AbonoModal } from '../components/Pagos'
@@ -202,8 +203,8 @@ export function Pagos() {
         <span className="pg-filtros-t">Filtros activos <span className="pg-count" aria-label={`${nFiltros} filtros activos`}>{nFiltros}</span></span>
         <input className="pg-buscar" value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar paciente o concepto…" aria-label="Buscar paciente o concepto" style={filtroStyle} />
         <FiltroSede valor={sede} onChange={setSede} />
-        <select value={tipo} onChange={e => setTipo(e.target.value)} style={filtroStyle} aria-label="Tipo"><option value="">Todo tipo</option>{[...TIPOS_CITA, 'Otro'].map(t => <option key={t}>{t}</option>)}</select>
-        <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios />
+        <Desplegable ariaLabel="Tipo" value={tipo} onChange={setTipo} options={[{ value: '', label: 'Todo tipo' }, ...[...TIPOS_CITA, 'Otro'].map(t => ({ value: t, label: t }))]} />
+        <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios desplegable />
         <RangoFechas valor={periodo} onChange={setPeriodo} />
         {nFiltros > 0 && <Button variant="texto" size="sm" onClick={limpiar}>Limpiar filtros</Button>}
       </div>

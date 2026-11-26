@@ -616,7 +616,8 @@ Deno.serve(async (req) => {
     const { data: u } = await db.auth.getUser(jwt)
     if (!u?.user) return json({ error: 'sin_sesion' }, 401)
     const { data: perfil } = await db.from('perfiles').select('clinica_id, rol').eq('user_id', u.user.id).maybeSingle()
-    if (!perfil) return json({ error: 'sin_sesion' }, 401)
+    // Temporary Conception support profiles never use the receptionist from the app
+    if (!perfil || perfil.rol === 'soporte') return json({ error: 'sin_sesion' }, 401)
     const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()
     const body = await req.json().catch(() => ({}))
 

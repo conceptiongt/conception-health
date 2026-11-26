@@ -15,6 +15,15 @@ export const fmtMomento = (d) => d ? new Date(d).toLocaleString('es-GT', { dateS
 // Never select codigo_hash: the database does not even grant that column to the browser.
 const COLUMNAS = 'id, creado_por, creado_nombre, creado_at, vence_at, usado_at, usado_nombre, revocado_at, terminado_at'
 
+// One shared request for the history: it is also the probe that tells whether the support feature is installed in the database.
+let consulta = null
+const pedirAccesos = (forzar = false) => {
+  if (!consulta || forzar) consulta = Promise.resolve(supabase.from('soporte_accesos').select(COLUMNAS).order('creado_at', { ascending: false }).limit(50)).catch(error => ({ data: null, error }))
+  return consulta
+}
+// True when the support feature is live (owners only; anyone else is treated as not available). Cached, one network request.
+export const soporteDisponible = () => pedirAccesos().then(({ error }) => !error)
+
 // vigente / vencido / cancelado / terminado
 export function estadoAcceso(a, ahora = Date.now()) {
   if (a.revocado_at) return 'cancelado'
@@ -39,11 +48,15 @@ export function SoporteAcceso() {
   const [busy, setBusy] = useState(false)
 
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.from('soporte_accesos').select(COLUMNAS).order('creado_at', { ascending: false }).limit(50)
+    const { data, error } = await pedirAccesos(true)
     if (error) { setDisponible(false); setFilas([]); return }
     setDisponible(true); setFilas(data || [])
   }, [])
-  useEffect(() => { if (admin) cargar() }, [admin, cargar])
+  useEffect(() => {
+    if (!admin) return
+    // first load reuses the shared request (also used by DatosSeguridad); later reloads force a fresh one
+    pedirAccesos().then(({ data, error }) => { if (error) { setDisponible(false); setFilas([]) } else { setDisponible(true); setFilas(data || []) } })
+  }, [admin])
   if (!admin) return null
 
   const activo = (filas || []).find(a => estadoAcceso(a) === 'vigente')
@@ -76,7 +89,7 @@ export function SoporteAcceso() {
       <span style={{ width: 34, height: 34, borderRadius: 11, background: C.purpleMid, color: 'var(--acento-fuerte)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="candado" size={18} /></span>
       Acceso de soporte
     </span>}>
-      <div style={{ fontSize: 13.5, color: C.g500, lineHeight: 1.55, marginBottom: 14 }}>Conception solo puede entrar a su clínica con un código que usted genera. Vence en 24 horas y puede cancelarlo cuando quiera.</div>
+      <div style={{ fontSize: 13.5, color: C.g500, lineHeight: 1.55, marginBottom: 14 }}>El equipo de soporte de Conception solo puede entrar a su clínica con un código que usted genera. Vence en 24 horas y puede cancelarlo cuando quiera.</div>
 
       {!disponible ? (
         <div style={{ background: C.g50, border: `1px solid ${C.line}`, borderRadius: 14, padding: '12px 14px', fontSize: 13.5, color: C.g600 }}>Disponible pronto.</div>

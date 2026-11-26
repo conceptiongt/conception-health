@@ -61,6 +61,8 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const { data: perfil } = await db.from('perfiles').select('clinica_id, rol, email').eq('user_id', user.id).maybeSingle()
   if (!perfil) return json({ error: 'Cuenta no encontrada' }, 404)
+  // Temporary Conception support sessions can never delete accounts
+  if (perfil.rol === 'soporte') return json({ error: 'El acceso de soporte no puede eliminar cuentas.' }, 403)
   const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()
 
   // ─── Assistant: only their own user ───
@@ -91,7 +93,7 @@ Deno.serve(async (req) => {
 
   const { count: pacientes } = await db.from('pacientes').select('id', { count: 'exact', head: true }).eq('clinica_id', clinica.id)
   await db.from('cuentas_eliminadas').insert({ tipo: 'clinica', clinica_nombre: clinica.nombre, email: perfil.email, plan: clinica.plan, motivo, detalle, pacientes: pacientes ?? 0 })
-  const { data: usuarios } = await db.from('perfiles').select('user_id').eq('clinica_id', clinica.id)
+  const { data: usuarios } = await db.from('perfiles').select('user_id').eq('clinica_id', clinica.id).neq('rol', 'soporte')
 
   // 2. Files (photos, PDFs, logo, shared documents)
   for (const bucket of BUCKETS) {
@@ -104,6 +106,8 @@ Deno.serve(async (req) => {
     const { error } = await db.from(tabla).delete().eq('clinica_id', clinica.id)
     if (error) return json({ error: 'No se pudo terminar de eliminar la cuenta. Escríbanos para completarlo.' }, 500)
   }
+  // a support agent's temporary profile goes before the clinic (explicit, independent of any FK cascade); the auth account is kept
+  await db.from('perfiles').delete().eq('clinica_id', clinica.id).eq('rol', 'soporte')
   const { error: errClinica } = await db.from('clinicas').delete().eq('id', clinica.id)
   if (errClinica) return json({ error: 'No se pudo terminar de eliminar la cuenta. Escríbanos para completarlo.' }, 500)
 

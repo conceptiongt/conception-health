@@ -8,8 +8,8 @@
 --   * Solo se guarda el hash (sha256) del código; el código en claro se muestra una sola vez al generarlo.
 -- Tablas nuevas: soporte_agentes, soporte_accesos, soporte_intentos. Funciones nuevas: soporte_generar, soporte_revocar, soporte_entrar,
 --   soporte_salir, soporte_estado (y dos internas: soporte_cerrar_clinica, soporte_limpiar_vencidos).
--- Funciones reemplazadas: mi_clinica(), tiene_permiso(text), perfil_proteger() (+ bloques TODO al final para usuarios_ocupados,
---   usuarios_permitidos, puede_eliminar_citas y puede_eliminar_inventario, que el planificador debe completar con las definiciones vivas).
+-- Funciones reemplazadas: mi_clinica(), tiene_permiso(text), perfil_proteger(), usuarios_ocupados(uuid), puede_eliminar_citas(),
+--   puede_eliminar_inventario() (usuarios_permitidos no cambia).
 -- Restricción cambiada: perfiles_rol_check ahora admite 'soporte'.
 --
 -- RIESGOS
@@ -27,28 +27,45 @@
 --   * Alta de agentes (a mano, en el editor SQL, nunca desde la app):
 --       insert into public.soporte_agentes (user_id, nombre) values ('<uuid de auth.users>', 'Nombre del agente');
 --
+-- CÓMO APLICAR
+--   Aplicar como UNA sola migración (la herramienta de migraciones la envuelve en una transacción; por eso este archivo
+--   no lleva begin/commit). Antes: select count(*) from public.perfiles where rol is null;  (debe ser 0).
+--
 -- CÓMO PROBAR DENTRO DE UNA TRANSACCIÓN (con rollback; nada queda aplicado)
 --   begin;
---     \i supabase/migraciones-propuestas/2026-11-26_codigo_soporte.sql   -- (o pegar el contenido sin su begin/commit)
+--     -- pegar aquí TODO el contenido de este archivo
 --     -- simular a la dueña (reemplazar por ids reales):
 --     select set_config('request.jwt.claims', json_build_object('sub', '<user_id_dueno>', 'role', 'authenticated')::text, true);
 --     set local role authenticated;
 --     select public.soporte_generar();                      -- devuelve XXXXX-XXXXX
 --     select id, creado_nombre, vence_at from public.soporte_accesos;   -- ve su historial
---     select codigo_hash from public.soporte_accesos;       -- debe fallar: permission denied (columna sin permiso)
+--     savepoint s;
+--       select codigo_hash from public.soporte_accesos;     -- debe fallar: permission denied (columna sin permiso)
+--     rollback to savepoint s;
 --     reset role;
 --     -- simular al agente (debe existir en soporte_agentes y no tener perfil de clínica):
 --     select set_config('request.jwt.claims', json_build_object('sub', '<user_id_agente>', 'role', 'authenticated')::text, true);
 --     set local role authenticated;
 --     select public.soporte_entrar('AAAAA-BBBBB');           -- código malo: devuelve null y suma un intento
 --     select public.soporte_entrar('<el código generado>');  -- devuelve el id de la clínica
---     select public.mi_clinica(), public.es_admin(), public.tiene_permiso('finanzas'), public.tiene_permiso('eliminar');  -- id, f, t, f
+--     select public.mi_clinica(), public.es_admin(), public.tiene_permiso('finanzas'), public.tiene_permiso('eliminar'),
+--            public.puede_eliminar_citas();                  -- id, f, t, f, f
 --     select public.soporte_estado();
 --     select public.soporte_salir();
 --   rollback;   -- nada de lo anterior queda guardado
 --
+--   Lista de pruebas a cubrir (revisor):
+--     1. Dueña y asistente se comportan igual antes y después para mi_clinica, es_admin y tiene_permiso.
+--     2. Agente con código válido: obtiene la clínica, es_admin false, tiene_permiso('eliminar') false, puede_eliminar_citas false.
+--     3. Código vencido: mi_clinica() devuelve null para el agente.
+--     4. Ni el agente ni la dueña pueden hacer update sobre la fila de perfil 'soporte' (perfil_proteger).
+--     5. Un segundo código cierra la sesión del primero.
+--     6. Un segundo agente con el mismo código obtiene null.
+--     7. Seis códigos malos seguidos: el sexto lanza DEMASIADOS_INTENTOS.
+--     8. Una invitación con el cupo lleno no se bloquea por una fila 'soporte' (usuarios_ocupados la excluye).
+--
 -- CÓMO DESHACER (si ya se aplicó)
---   begin;
+--   (en una sola transacción / migración)
 --     delete from public.perfiles where rol = 'soporte';
 --     create or replace function public.mi_clinica() returns uuid language sql stable security definer set search_path to 'public'
 --       as $f$ select clinica_id from public.perfiles where user_id = auth.uid(); $f$;
@@ -60,16 +77,12 @@
 --     drop function if exists public.soporte_generar(), public.soporte_revocar(), public.soporte_entrar(text), public.soporte_salir(),
 --       public.soporte_estado(), public.soporte_cerrar_clinica(uuid), public.soporte_limpiar_vencidos();
 --     drop table if exists public.soporte_intentos, public.soporte_accesos, public.soporte_agentes;
---     -- y deshacer los bloques TODO que se hayan aplicado (usuarios_ocupados, usuarios_permitidos, puede_eliminar_*).
---   commit;
+--     -- y volver a las definiciones anteriores de usuarios_ocupados, puede_eliminar_citas y puede_eliminar_inventario (guardarlas antes).
 --
--- EDGE FUNCTIONS (no se tocan aquí; decisión del planificador)
+-- EDGE FUNCTIONS (el código fuente ya está ajustado; el despliegue lo decide el planificador)
 --   * lia-responder (rutas desde la app) y eliminar-cuenta leen `perfiles` con service role y NO comprueban que el código siga vigente.
---     Mientras el perfil temporal exista (hasta que se cancele, se genere otro código, soporte salga, o corra soporte_limpiar_vencidos()),
---     un agente con el código ya vencido podría llamarlas directamente. Arreglos posibles: que esas funciones rechacen rol 'soporte', o
---     programar soporte_limpiar_vencidos() (requiere aprobación; hay una línea de pg_cron comentada al final).
-
-begin;
+--     El código fuente de ambas ya rechaza rol 'soporte' (y eliminar-cuenta nunca borra la cuenta de un agente); el planificador debe
+--     desplegarlas después de aplicar esta migración. soporte_limpiar_vencidos() puede programarse con pg_cron (requiere aprobación).
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Tablas
@@ -102,6 +115,8 @@ create table public.soporte_accesos (
 );
 create index soporte_accesos_clinica_idx on public.soporte_accesos (clinica_id, creado_at desc);
 create unique index soporte_accesos_hash_idx on public.soporte_accesos (codigo_hash);
+-- Optional: speeds up the usado_por lookups in mi_clinica(), soporte_entrar and soporte_salir.
+create index soporte_accesos_usado_por_idx on public.soporte_accesos (usado_por) where usado_por is not null;
 alter table public.soporte_accesos enable row level security;
 revoke all on public.soporte_accesos from public, anon, authenticated;
 -- Column-level grant: the hash is never readable by the browser. The app must select explicit columns (never select *).
@@ -132,7 +147,8 @@ alter table public.perfiles add constraint perfiles_rol_check check (rol in ('du
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- For every role except 'soporte' this is exactly the previous definition (clinic of the caller's profile).
--- A 'soporte' profile resolves to its clinic only while a code used by that same user is unrevoked, unfinished and unexpired.
+-- A 'soporte' profile resolves to its clinic only while its agent is active and a code used by that same user is unrevoked,
+-- unfinished and unexpired.
 create or replace function public.mi_clinica() returns uuid
 language sql stable security definer set search_path to 'public'
 as $$
@@ -140,21 +156,26 @@ as $$
   from public.perfiles p
   where p.user_id = auth.uid()
     and (
-      p.rol <> 'soporte'
-      or exists (
-        select 1 from public.soporte_accesos a
-        where a.clinica_id = p.clinica_id
-          and a.usado_por = auth.uid()
-          and a.revocado_at is null
-          and a.terminado_at is null
-          and a.vence_at > now()
+      p.rol is distinct from 'soporte'
+      or (
+        exists (select 1 from public.soporte_agentes g where g.user_id = p.user_id and g.activo)
+        and exists (
+          select 1 from public.soporte_accesos a
+          where a.clinica_id = p.clinica_id
+            and a.usado_por = auth.uid()
+            and a.revocado_at is null
+            and a.terminado_at is null
+            and a.vence_at > now()
+        )
       )
     );
 $$;
 
 -- es_admin() is intentionally NOT replaced: rol = 'dueno' stays false for 'soporte'.
 
--- 'soporte' gets every permission except the destructive / export ones, and only while its code is valid (mi_clinica() not null).
+-- 'soporte' gets an ALLOWLIST of permissions (today's keys of src/lib/permisos.js minus eliminar, eliminar_citas, eliminar_inventario,
+-- exportar), and only while its code is valid (mi_clinica() not null). Any future permission key is denied to support until listed here
+-- (and in puede() in src/lib/permisos.js).
 -- Other roles: unchanged ('dueno' → true; others → their permisos jsonb).
 create or replace function public.tiene_permiso(p text) returns boolean
 language sql stable security definer set search_path to 'public'
@@ -163,7 +184,7 @@ as $$
     select case
       when pf.rol = 'dueno' then true
       when pf.rol = 'soporte' then
-        tiene_permiso.p not in ('eliminar', 'eliminar_citas', 'eliminar_inventario', 'exportar')
+        tiene_permiso.p in ('expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'configuracion')
         and public.mi_clinica() is not null
       else coalesce((pf.permisos ->> tiene_permiso.p)::boolean, false)
     end
@@ -188,10 +209,11 @@ create or replace function public.perfil_proteger() returns trigger
 language plpgsql security definer set search_path to 'public'
 as $$
 begin
-  -- NUEVO (soporte): a support profile can only be created by soporte_entrar and removed (never edited or promoted);
+  -- NUEVO (soporte): a support profile can only be created by soporte_entrar and removed (never edited, promoted or renamed);
   -- no profile can be turned INTO a support profile either.
   if (old.rol = 'soporte' or new.rol = 'soporte')
-     and (new.rol is distinct from old.rol or new.clinica_id is distinct from old.clinica_id or new.permisos is distinct from old.permisos) then
+     and (new.rol is distinct from old.rol or new.clinica_id is distinct from old.clinica_id or new.permisos is distinct from old.permisos
+          or new.nombre is distinct from old.nombre or new.email is distinct from old.email or new.user_id is distinct from old.user_id) then
     raise exception 'SIN_PERMISO';
   end if;
   if not es_admin() and (new.rol is distinct from old.rol or new.permisos is distinct from old.permisos or new.clinica_id is distinct from old.clinica_id) then
@@ -272,7 +294,7 @@ begin
   if v_clinica is null then raise exception 'SIN_PERMISO'; end if;
 
   -- serialise concurrent clicks (two tabs) on the same clinic
-  perform 1 from public.clinicas where id = v_clinica for update;
+  perform 1 from public.clinicas where id = v_clinica for no key update;
 
   perform public.soporte_cerrar_clinica(v_clinica);
 
@@ -301,7 +323,7 @@ begin
   if auth.uid() is null or not public.es_admin() then raise exception 'SIN_PERMISO'; end if;
   v_clinica := public.mi_clinica();
   if v_clinica is null then raise exception 'SIN_PERMISO'; end if;
-  perform 1 from public.clinicas where id = v_clinica for update;
+  perform 1 from public.clinicas where id = v_clinica for no key update;
   perform public.soporte_cerrar_clinica(v_clinica);
 end;
 $$;
@@ -329,7 +351,7 @@ begin
   if v_uid is null or v_nombre is null then raise exception 'NO_AGENTE'; end if;
 
   -- agents are dedicated accounts: a user that belongs to a real clinic cannot be an agent
-  if exists (select 1 from public.perfiles where user_id = v_uid and rol <> 'soporte') then raise exception 'AGENTE_CON_CLINICA'; end if;
+  if exists (select 1 from public.perfiles where user_id = v_uid and rol is distinct from 'soporte') then raise exception 'AGENTE_CON_CLINICA'; end if;
 
   if (select count(*) from public.soporte_intentos where user_id = v_uid and at > now() - interval '1 hour') >= 5 then
     raise exception 'DEMASIADOS_INTENTOS';
@@ -365,7 +387,8 @@ begin
 
   select email into v_email from auth.users where id = v_uid;
   insert into public.perfiles (user_id, clinica_id, nombre, email, rol, permisos, password_creada)
-  values (v_uid, v_acceso.clinica_id, 'Soporte Conception — ' || v_nombre, v_email, 'soporte', '{}'::jsonb, true);
+  values (v_uid, v_acceso.clinica_id, 'Soporte Conception — ' || v_nombre, v_email, 'soporte',
+          '{"eliminar":false,"eliminar_citas":false,"eliminar_inventario":false,"exportar":false}'::jsonb, true);
 
   return v_acceso.clinica_id;
 end;
@@ -409,24 +432,36 @@ revoke execute on function public.soporte_estado() from public, anon;
 grant execute on function public.soporte_estado() to authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 8. TODO para el planificador (no se pueden escribir sin las definiciones vivas)
+-- 8. Funciones auxiliares existentes, ajustadas (atributos vivos: language sql stable security definer set search_path to 'public')
 -- ─────────────────────────────────────────────────────────────────────────────
--- Obtener cada definición con:  select pg_get_functiondef('public.<nombre>'::regproc);  y reescribirla con el cambio indicado.
---
--- TODO-1  usuarios_ocupados(cid uuid) y usuarios_permitidos(cid uuid): las filas de perfiles con rol = 'soporte' NO cuentan como
---         asientos del plan (el perfil temporal de soporte no debe llenar el cupo ni bloquear invitaciones). Agregar
---         «and rol <> 'soporte'» al conteo de perfiles en usuarios_ocupados.
---         (supabase/sql no trae estas definiciones; el cupo también se muestra en la app: ConfigExtra.jsx ya excluye 'soporte' del conteo.)
---
--- TODO-2  puede_eliminar_citas() y puede_eliminar_inventario(): deben devolver false para rol = 'soporte'.
---         supabase/sql/citas_eliminadas.sql e inventario_eliminados.sql no traen el cuerpo completo. Si ambas funciones llaman a
---         tiene_permiso('eliminar_citas') / tiene_permiso('eliminar_inventario') (o a es_admin()), ya devuelven false para soporte con las
---         definiciones de arriba; si leen perfiles.permisos directamente, hay que agregar «and rol <> 'soporte'».
---
--- TODO-3  Revisar si alguna política (tablas o storage) lee `perfiles` directamente en vez de usar mi_clinica()/es_admin()/tiene_permiso():
---         esas ignorarían la vigencia del código. Buscar con:
---           select schemaname, tablename, policyname, qual, with_check from pg_policies
---            where (coalesce(qual,'') || coalesce(with_check,'')) ilike '%perfiles%';
---           select policyname, qual, with_check from pg_policies where schemaname = 'storage';
 
-commit;
+-- Support never deletes appointments / inventory. Verified live: cita_eliminar and inventario_eliminar check mi_clinica() and these
+-- helpers, so they need no change.
+create or replace function public.puede_eliminar_citas() returns boolean
+language sql stable security definer set search_path to 'public' as $$
+  select coalesce((select case when rol = 'dueno' then true when rol = 'soporte' then false
+           else coalesce((permisos->>'eliminar_citas')::boolean, true) end
+         from public.perfiles where user_id = auth.uid()), false);
+$$;
+
+create or replace function public.puede_eliminar_inventario() returns boolean
+language sql stable security definer set search_path to 'public' as $$
+  select coalesce((select case when rol = 'dueno' then true when rol = 'soporte' then false
+           else coalesce((permisos->>'eliminar_inventario')::boolean, true) end
+         from public.perfiles where user_id = auth.uid()), false);
+$$;
+
+revoke execute on function public.puede_eliminar_citas() from public, anon;
+revoke execute on function public.puede_eliminar_inventario() from public, anon;
+grant execute on function public.puede_eliminar_citas() to authenticated, service_role;
+grant execute on function public.puede_eliminar_inventario() to authenticated, service_role;
+
+-- The temporary support profile must not take a plan seat nor block invitations (usuarios_permitidos is unchanged).
+create or replace function public.usuarios_ocupados(cid uuid) returns integer
+language sql stable security definer set search_path to 'public' as $$
+  select (select count(*) from public.perfiles where clinica_id = cid and rol is distinct from 'soporte')::int
+       + (select count(*) from public.invitaciones where clinica_id = cid and aceptada_at is null)::int;
+$$;
+
+-- Verified live: no RLS policy in any schema references `perfiles` directly (they all go through mi_clinica()/es_admin()/
+-- tiene_permiso()), and perfil_proteger (BEFORE UPDATE) is the only trigger on `perfiles`.

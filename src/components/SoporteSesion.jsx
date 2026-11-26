@@ -75,7 +75,7 @@ export function BannerSoporte({ clinica, onSalir }) {
       const { data, error } = await supabase.rpc('soporte_estado')
       if (!vivo || error) return
       if (data?.sesion?.vence_at) setVence(data.sesion.vence_at)
-      else { await supabase.rpc('soporte_salir'); if (vivo) onSalir() } // code expired, cancelled or finished elsewhere
+      else { await supabase.rpc('soporte_salir'); if (vivo) onSalir() } // the server says there is no session: expired, cancelled or finished elsewhere
     }
     revisar()
     const t = setInterval(revisar, 30000)
@@ -86,7 +86,13 @@ export function BannerSoporte({ clinica, onSalir }) {
     if (!vence) return
     const ms = new Date(vence).getTime() - Date.now()
     if (ms <= 0 || ms > 2147483000) return
-    const t = setTimeout(async () => { await supabase.rpc('soporte_salir'); onSalir() }, ms + 500)
+    // The local clock may be wrong: when it says «expired», ask the server and leave only if it confirms there is no session
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('soporte_estado')
+      if (error) return
+      if (data?.sesion?.vence_at) { if (data.sesion.vence_at !== vence) setVence(data.sesion.vence_at); return } // server still has a session: the 30 s check keeps watching
+      await supabase.rpc('soporte_salir'); onSalir()
+    }, ms + 500)
     return () => clearTimeout(t)
   }, [vence, onSalir])
 

@@ -16,7 +16,12 @@ export function Modal({ title, subtitle, onClose, children, maxWidth = 600 }) {
     const panel = panelRef.current
     if (panel && !panel.contains(document.activeElement)) panel.focus({ preventScroll: true })
     const anterior = previo.current
-    return () => { if (anterior && anterior !== document.body && document.contains(anterior)) anterior.focus?.({ preventScroll: true }) }
+    return () => {
+      // restore only when focus was left orphaned (real unmount): never take it from a field that holds it (autoFocus, StrictMode re-run)
+      const a = document.activeElement
+      if (a && a !== document.body) return
+      if (anterior && anterior !== document.body && document.contains(anterior)) anterior.focus?.({ preventScroll: true })
+    }
   }, [])
   useEffect(() => {
     const fn = (e) => { if (e.key === 'Escape' && z === 200 + capas * 2) onClose?.() } // Escape closes only the top window

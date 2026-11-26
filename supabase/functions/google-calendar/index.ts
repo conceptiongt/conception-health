@@ -27,7 +27,9 @@ import { encodeBase64Url } from 'jsr:@std/encoding@1/base64url'
 
 const APP_URL = (Deno.env.get('APP_URL') || 'https://health.conception-gt.com').replace(/\/+$/, '')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
-const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-calendar/callback` // registered in Google Cloud
+// Registered in Google Cloud. It lives on the app's own domain (Vercel proxies /google/callback to this function) so Google's
+// consent screen shows the Conception Health domain instead of the Supabase project host. Constant: never taken from the request.
+const REDIRECT_URI = `${APP_URL}/google/callback`
 const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'

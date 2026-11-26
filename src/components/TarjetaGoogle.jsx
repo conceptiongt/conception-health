@@ -76,25 +76,32 @@ export function TarjetaGoogle({ perfil }) {
   }
 
   const texto = { fontSize: 13.5, color: C.g500, marginTop: 4, lineHeight: 1.55, maxWidth: 720 }
-  let cuerpo
+  const pildora = (fondo, color) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, padding: '6px 12px', borderRadius: 99, background: fondo, color, fontSize: 12.5, fontWeight: 600 })
+  // `texto` = left column; `lado` = the action at the right (wraps below on narrow screens); `debajo` = second line
+  let cuerpo, lado = null, debajo = null
   if (est === undefined) cuerpo = <div style={texto}>Cargando…</div>
-  else if (est === null) cuerpo = <div style={texto}>Disponible pronto. Mientras tanto, puede pasar cualquier cita a su Google Calendar con el botón "Agregar a Google Calendar" de cada cita.</div>
-  else if (!est.conectada) {
+  else if (est === null) {
+    cuerpo = <div style={texto}>Puede pasar cualquier cita a su Google Calendar con el botón "Agregar a Google Calendar" de cada cita.</div>
+    lado = <span style={pildora(C.g100, C.g500)}>Disponible pronto</span>
+  } else if (!est.conectada) {
     cuerpo = (
       <>
         <div style={texto}>Conecte la cuenta de Google de su clínica y sus citas aparecerán solas en su Google Calendar, con los recordatorios de Google.</div>
-        {dueno
-          ? <div style={{ marginTop: 12 }}><Button onClick={conectar} disabled={busy}>Conectar con Google</Button></div>
-          : <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que conecte Google Calendar.</div>}
+        {!dueno && <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que conecte Google Calendar.</div>}
       </>
     )
+    if (dueno) lado = <Button onClick={conectar} disabled={busy}>Conectar con Google</Button>
   } else {
     const fallo = est.estado === 'error'
     const sinConfirmar = !est.confirmada && !fallo
     const ultima = cuando(est.ultimo_sync_at)
+    const correo = est.google_email || 'su cuenta de Google'
     cuerpo = (
       <>
-        <div style={texto}>Conectado como <strong style={{ color: C.black, overflowWrap: 'anywhere' }}>{est.google_email || 'su cuenta de Google'}</strong>{ultima && <> · Última sincronización: {ultima}</>}</div>
+        <div style={texto}>
+          {fallo ? 'Google pidió volver a conectar la cuenta.' : 'Sus citas se envían solas a su Google Calendar.'}
+          {sinConfirmar && <> Cuenta conectada: <strong style={{ color: C.black, overflowWrap: 'anywhere' }}>{correo}</strong>.</>}
+        </div>
         {sinConfirmar && (
           <div role="alert" style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', border: `1px solid ${C.g200}`, color: C.black, fontSize: 13.5, lineHeight: 1.55 }}>
             {dueno
@@ -107,41 +114,53 @@ export function TarjetaGoogle({ perfil }) {
           </div>
         )}
         {progreso && <div style={{ ...texto, color: C.g600 }}>{progreso}</div>}
-        {fallo && (
-          <div role="alert" style={{ marginTop: 10, padding: '10px 14px', borderRadius: 12, background: C.amberLight, color: C.amber, fontSize: 13.5, lineHeight: 1.5 }}>
-            Google pidió volver a conectar la cuenta.
-          </div>
-        )}
-        {dueno ? (
-          <>
-            {!fallo && !sinConfirmar && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '12px 0 4px' }}>
-                <Interruptor activo={!!est.ocultar_nombre} onChange={ocultar} titulo="Ocultar el nombre del paciente en Google" />
-                <span style={{ fontSize: 13.5, lineHeight: 1.4, color: C.black }}>Ocultar el nombre del paciente en Google
-                  <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>El evento dirá solo el tipo de cita, la sede y el estado.</span></span>
-              </label>
-            )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-              {fallo
-                ? <Button onClick={conectar} disabled={busy}>Conectar de nuevo</Button>
-                : !sinConfirmar && <Button variant="ghost" size="sm" onClick={enviarTodas} disabled={busy}>Sincronizar ahora</Button>}
-              <Button variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar</Button>
-            </div>
-          </>
-        ) : fallo && <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que la conecte de nuevo.</div>}
+        {fallo && !dueno && <div style={{ ...texto, color: C.g600 }}>Pídale al dueño de la cuenta que la conecte de nuevo.</div>}
       </>
     )
+    if (fallo) {
+      lado = <>
+        <span style={pildora(C.amberLight, C.amber)}>Hay que volver a conectar</span>
+        {dueno && <Button size="sm" onClick={conectar} disabled={busy}>Conectar de nuevo</Button>}
+      </>
+    } else if (!sinConfirmar) {
+      lado = <>
+        <span title={correo} style={pildora(C.greenLight, C.green)}>
+          <span style={{ display: 'inline-flex', flexShrink: 0 }}><Icon name="check" size={14} /></span>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Vinculado con <strong>{correo}</strong></span>
+        </span>
+        {dueno && <>
+          <Button variant="ghost" size="sm" onClick={enviarTodas} disabled={busy}>Sincronizar ahora</Button>
+          <Button variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar</Button>
+        </>}
+      </>
+      if (dueno || ultima) debajo = (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px 22px', flexWrap: 'wrap', marginTop: 10 }}>
+          {dueno && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <Interruptor activo={!!est.ocultar_nombre} onChange={ocultar} titulo="Ocultar el nombre del paciente en Google" />
+              <span style={{ fontSize: 13.5, lineHeight: 1.4, color: C.black }}>Ocultar el nombre del paciente en Google
+                <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>El evento dirá solo el tipo de cita, la sede y el estado.</span></span>
+            </label>
+          )}
+          {ultima && <span style={{ fontSize: 12.5, color: C.g500 }}>Última sincronización: {ultima}</span>}
+        </div>
+      )
+    }
   }
 
   return (
     <Card style={{ marginTop: 18, padding: '18px 22px' }}>
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-        <span style={{ width: 38, height: 38, borderRadius: 12, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="calendarioMas" size={19} /></span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, color: C.black }}>Google Calendar</div>
-          {cuerpo}
+      <div className="tg-fila">
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', minWidth: 0, flex: '1 1 240px' }}>
+          <span style={{ width: 38, height: 38, borderRadius: 12, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="calendarioMas" size={19} /></span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 500, color: C.black }}>Google Calendar</div>
+            {cuerpo}
+          </div>
         </div>
+        {lado && <div className="tg-lado">{lado}</div>}
       </div>
+      {debajo && <div style={{ paddingLeft: 52 }} className="tg-debajo">{debajo}</div>}
     </Card>
   )
 }

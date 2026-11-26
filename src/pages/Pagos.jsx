@@ -183,14 +183,14 @@ export function Pagos() {
       </Encabezado>
 
       <div className="pg-resumen">
-        <Panel eyebrow="Resumen" titulo={filtroTexto || 'Todos los cobros'}>
+        <Panel eyebrow="Resumen" titulo={filtroTexto || 'Todos los cobros'} style={{ padding: 'clamp(16px, 1.8vw, 22px) clamp(18px, 2.2vw, 28px)' }}>
           <div className="pg-tres">
             <Cifra label="Total de cobros" valor={fmtQ(total)} sub={`${lista.length} ${lista.length === 1 ? 'cobro' : 'cobros'}`} pct={total > 0 ? 100 : 0} />
             <Cifra label="Pagado" valor={fmtQ(pagado)} sub={total ? `${Math.round((pagado / total) * 100)}% del total` : null} pct={pctDe(pagado, total)} />
             <Cifra label="Saldo pendiente" valor={fmtQ(pendiente)} color={pendiente > 0 ? C.red : undefined} rojo pct={pctDe(pendiente, total)} sub="Ver los que tienen saldo" onClick={() => setEstado('deben')} />
           </div>
         </Panel>
-        <Panel eyebrow="Atención" titulo="Para revisar">
+        <Panel eyebrow="Atención" titulo="Para revisar" style={{ padding: 'clamp(16px, 1.8vw, 22px) clamp(18px, 2.2vw, 28px)' }}>
           <div className="pg-dos">
             <Cifra label="Vencido" valor={fmtQ(vencidoMonto)} color={vencidos.length ? C.red : undefined} rojo pct={pctDe(vencidoMonto, pendiente)} sub={`${vencidos.length} ${vencidos.length === 1 ? 'cobro' : 'cobros'}`} onClick={() => setEstado('vencido')} />
             <Cifra label="Pacientes al día" valor={`${alDia} de ${grupos.length}`} pct={pctDe(alDia, grupos.length)} sub="Ver los pagados" onClick={() => setEstado('pagado')} />

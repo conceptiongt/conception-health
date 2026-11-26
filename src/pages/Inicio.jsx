@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, SHADOW } from '../lib/theme'
+import { C, SERIF } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { especialidad } from '../lib/especialidades'
 import { puede } from '../lib/permisos'
 import { useDatos } from '../hooks/useDatos'
-import { Card, Badge, Indicadores } from '../components/ui/Varios'
+import { Badge } from '../components/ui/Varios'
+import { Panel, Avatar, Tocable } from '../components/ui/Panel'
 import { Icon } from '../components/ui/Icon'
 import { Exportar } from '../components/Documento'
 import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from '../components/Filtros'
@@ -19,8 +20,17 @@ const hoy = new Date()
 const NO_CUENTAN = ['Cancelada', 'No asistió']
 const COLOR_ESTADO = { Confirmada: '#1D4ED8', Pendiente: '#0F766E', 'Asistió': '#15803D', 'No asistió': '#DC2626', Reagendada: '#C2410C', Cancelada: '#6B6780', Eliminada: '#9F1239' }
 const PLURAL = { Confirmada: 'Confirmadas', Pendiente: 'Pendientes', 'Asistió': 'Asistieron', 'No asistió': 'No asistieron', Reagendada: 'Reagendadas', Cancelada: 'Canceladas', Eliminada: 'Eliminadas' }
-const Seccion = ({ children }) => (
-  <div style={{ fontSize: 11, fontWeight: 600, color: C.purple, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '26px 0 12px' }}>{children}</div>
+// Pastel tile of each appointment status (decorative surface only; text stays dark ink)
+const PASTEL_ESTADO = { Pendiente: C.peach, Confirmada: C.sky, 'Asistió': C.mint, 'No asistió': C.peony, Reagendada: C.lavender, Cancelada: C.periwinkle, Eliminada: C.g100 }
+const fechaCorta = (iso) => `${Number(iso.slice(8, 10))} ${MESES[Number(iso.slice(5, 7)) - 1].slice(0, 3).toLowerCase()}`
+const pctDe = (n, t) => (t ? Math.min(100, (n / t) * 100) : 0)
+const Linea = ({ label, valor, sub, pct, onClick, children }) => (
+  <Tocable onClick={onClick} label={onClick ? `${label}: ${valor}` : undefined} className="in-kpi">
+    <div className="in-kpi-l">{label}</div>
+    <div className="in-kpi-n">{valor}</div>
+    {children || <div className="k-barra" role="presentation"><span className="k-barra-relleno" style={{ width: `${pct}%` }} /></div>}
+    {sub && <div className="in-kpi-s">{sub}</div>}
+  </Tocable>
 )
 
 export function Inicio() {
@@ -88,6 +98,10 @@ export function Inicio() {
   // a status box opens Citas with that status, this month and this location
   const verCitas = (f) => { abrirCitasCon({ ...f, sede, periodo: { mes: periodo.mes, anio: periodo.anio, desde: '', hasta: '' } }); ir('citas') }
 
+  const hoyStr = hoyISO()
+  const citasHoy = citas.filter(c => c.fecha === hoyStr && ['Pendiente', 'Confirmada', 'Reagendada', 'Asistió'].includes(c.estado))
+  const sigCita = proximas[0]
+
   const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
   const titulo = `${MESES[periodo.mes]} ${periodo.anio}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
 
@@ -118,121 +132,179 @@ export function Inicio() {
     },
   })
 
-  const th = { padding: '10px 16px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }
-  const td = { padding: '11px 16px', whiteSpace: 'nowrap' }
+  const fechaHoy = new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(hoy)
 
   return (
     <>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, color: C.black, margin: 0, letterSpacing: '-0.02em' }}>Hola, {nombre} 👋</h1>
-        <div style={{ fontSize: 14, color: C.g500, marginTop: 4 }}>{especialidad(clinica?.especialidad).lema}</div>
-      </div>
+      <header className="in-top">
+        <div className="in-top-txt">
+          <div className="eyebrow">{fechaHoy}</div>
+          <h1 className="in-h1">Hola, <b>{nombre}</b></h1>
+          <div style={{ fontSize: 14, color: C.g500, marginTop: 10 }}>{especialidad(clinica?.especialidad).lema}</div>
+        </div>
+        <div className="in-ctl">
+          <SelectorPeriodo valor={periodo} onChange={(p) => setPeriodo({ mes: p.mes === '' ? 0 : p.mes, anio: p.anio })} todosMeses={false} />
+          <AgregarAnio />
+          {sedes.length > 0 && <FiltroSede valor={sede} onChange={setSede} />}
+          <Exportar clinica={nombre} preparar={preparar} />
+        </div>
+      </header>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: C.g700 }}>Período:</span>
-        <SelectorPeriodo valor={periodo} onChange={(p) => setPeriodo({ mes: p.mes === '' ? 0 : p.mes, anio: p.anio })} todosMeses={false} />
-        <AgregarAnio />
-        <div style={{ flex: 1 }} />
-        <Exportar clinica={nombre} preparar={preparar} />
-      </div>
-      {sedes.length > 0 && <div style={{ marginBottom: 18 }}><FiltroSede valor={sede} onChange={setSede} /></div>}
-
-      <Indicadores items={[
-        { label: 'Pacientes del mes', valor: fmtNum(nuevos.length), sub: `${atendidos} ya atendidos · sin canceladas` },
-        { label: 'Desde redes', valor: fmtNum(deRedes), sub: pct(deRedes) },
-        { label: 'Referidos / otros', valor: fmtNum(otros), sub: pct(otros) },
-        { label: 'Citas del mes', valor: fmtNum(citasMes.length), sub: `${cirugias} cirugías · ${procedimientos} procedimientos`, onClick: () => ir('citas') },
-        finanzas && { label: 'Ventas del mes', valor: fmtQ(ventasMes), sub: `Anual: ${fmtQ(ventasAnio)}`, onClick: () => ir('pagos') },
-        finanzas && { label: 'Saldo pendiente', valor: fmtQ(pendienteTotal), color: pendienteTotal > 0 ? C.red : C.black, sub: `${vencidos.length} vencidos`, onClick: () => ir('pagos') },
-      ]} />
-
-      <Seccion>Estado de citas — {esActual ? 'este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</Seccion>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
-        {[...porEstado.map(e => ({ ...e, onClick: () => verCitas({ estado: e.value }) })), { value: 'Eliminada', n: eliminadas, onClick: () => verCitas({ eliminadas: true }) }].map(e => (
-          <div key={e.value} onClick={e.onClick} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '18px 14px', boxShadow: SHADOW, textAlign: 'center', cursor: e.onClick ? 'pointer' : undefined }}>
-            <div style={{ fontSize: 10.5, color: C.g400, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{PLURAL[e.value]}</div>
-            <div style={{ fontSize: 28, fontWeight: 600, color: COLOR_ESTADO[e.value], marginTop: 6 }}>{e.n}</div>
+      <div className="in-fila1">
+        <Panel eyebrow="Resumen" titulo={titulo}>
+          <div className="in-kpis">
+            <Linea label="Pacientes del mes" valor={fmtNum(nuevos.length)} sub={`${atendidos} ya atendidos · sin canceladas`} pct={pctDe(atendidos, nuevos.length)} />
+            <Linea label="Desde redes" valor={fmtNum(deRedes)} sub={pct(deRedes)} pct={pctDe(deRedes, nuevos.length)} />
+            <Linea label="Referidos / otros" valor={fmtNum(otros)} sub={pct(otros)} pct={pctDe(otros, nuevos.length)} />
+            <Linea label="Citas del mes" valor={fmtNum(citasMes.length)} sub={`${cirugias} cirugías · ${procedimientos} procedimientos`} onClick={() => ir('citas')}>
+              <div className="k-barra" role="img" aria-label="Citas del mes por estado">
+                {porEstado.filter(e => e.n > 0).map(e => <span key={e.value} title={`${PLURAL[e.value]}: ${e.n}`} style={{ width: `${pctDe(e.n, citasMes.length)}%`, background: COLOR_ESTADO[e.value] }} />)}
+              </div>
+            </Linea>
           </div>
+        </Panel>
+
+        {finanzas ? (
+          <div className="in-navy">
+            <div>
+              <div className="eyebrow">Ventas del mes</div>
+              <div className="in-navy-n" style={{ marginTop: 8 }}>{fmtQ(ventasMes)}</div>
+              <div className="in-navy-sub" style={{ marginTop: 6 }}>Anual: {fmtQ(ventasAnio)}</div>
+            </div>
+            <hr />
+            <div>
+              <div className="eyebrow">Saldo pendiente</div>
+              <div className="in-navy-n" style={{ marginTop: 8, fontSize: 'clamp(28px, 2.8vw, 38px)', color: pendienteTotal > 0 ? '#FFB3BF' : '#fff' }}>{fmtQ(pendienteTotal)}</div>
+              <div className="in-navy-sub" style={{ marginTop: 6 }}>{vencidos.length} {vencidos.length === 1 ? 'vencido' : 'vencidos'}</div>
+            </div>
+            <button type="button" className="in-navy-btn" onClick={() => ir('pagos')}>Ver pagos <Icon name="flecha" size={15} /></button>
+          </div>
+        ) : (
+          <div className="in-navy">
+            <div>
+              <div className="eyebrow">Hoy</div>
+              <div className="in-navy-n" style={{ marginTop: 8 }}>{citasHoy.length}</div>
+              <div className="in-navy-sub" style={{ marginTop: 6 }}>{citasHoy.length === 1 ? 'cita para hoy' : 'citas para hoy'}</div>
+            </div>
+            <hr />
+            <div>
+              <div className="eyebrow">Próxima cita</div>
+              {sigCita ? (
+                <>
+                  <div style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 300, marginTop: 8, overflowWrap: 'anywhere' }}>{porId[sigCita.paciente_id]?.nombre || '—'}</div>
+                  <div className="in-navy-sub" style={{ marginTop: 4 }}>{fechaCorta(sigCita.fecha)} · {fmtHora(sigCita.hora)}</div>
+                </>
+              ) : <div className="in-navy-sub" style={{ marginTop: 8 }}>No hay citas próximas</div>}
+            </div>
+            <button type="button" className="in-navy-btn" onClick={() => ir('citas')}>Ver citas <Icon name="flecha" size={15} /></button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ margin: '34px 0 14px' }}>
+        <div className="eyebrow">Estado de citas</div>
+        <h2 style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 300, margin: '4px 0 0', letterSpacing: '-0.02em', color: C.black }}>{esActual ? 'Este mes' : `${MESES[periodo.mes]} ${periodo.anio}`}</h2>
+      </div>
+      <div className="in-estados">
+        {[...porEstado.map(e => ({ ...e, onClick: () => verCitas({ estado: e.value }) })), { value: 'Eliminada', n: eliminadas, onClick: () => verCitas({ eliminadas: true }) }].map(e => (
+          <Tocable key={e.value} onClick={e.onClick} label={`${PLURAL[e.value]}: ${e.n}`} className="in-estado lift" style={{ background: PASTEL_ESTADO[e.value] }}>
+            <span className="in-estado-flecha" aria-hidden="true"><Icon name="flecha" size={14} style={{ transform: 'rotate(-45deg)' }} /></span>
+            <div className="in-estado-n">{e.n}</div>
+            <div className="in-estado-l"><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: COLOR_ESTADO[e.value], flexShrink: 0 }} />{PLURAL[e.value]}</div>
+          </Tocable>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 22 }}>
-        <Card title="Pacientes por mes">
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 160, borderBottom: `1px solid ${C.line}` }}>
+      <div className="in-fila3">
+        <Panel eyebrow="Últimos 6 meses" titulo="Pacientes por mes">
+          <div className="in-grafica" role="img" aria-label={`Pacientes por mes: ${seis.map(s => `${MESES[s.mes]} ${s.n}`).join(', ')}`}>
             {seis.map((s, i) => (
-              <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <span style={{ fontSize: 12, marginBottom: 4, color: C.g600 }}>{s.n}</span>
-                <div style={{ width: '62%', height: `${(s.n / maxMes) * 120}px`, minHeight: s.n ? 3 : 0, background: C.grad, opacity: i === 5 ? 1 : 0.75, borderRadius: '6px 6px 0 0' }} />
+              <div key={`${s.anio}-${s.mes}`} className={`in-col${i === 5 ? ' actual' : ''}`}>
+                <span className="in-val">{s.n}</span>
+                <div className="in-barra" style={{ height: `calc((100% - 34px) * ${s.n / maxMes})`, minHeight: s.n ? 6 : 2 }} />
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
-            {seis.map(s => <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: C.g400 }}>{MESES[s.mes].slice(0, 3)}</div>)}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            {seis.map(s => <div key={`${s.anio}-${s.mes}`} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: C.g500, fontWeight: 500 }}>{MESES[s.mes].slice(0, 3)}</div>)}
           </div>
-        </Card>
-        <Card title="Pacientes por red social">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 13, paddingTop: 2 }}>
+        </Panel>
+
+        <Panel eyebrow="Agenda" titulo="Próximas citas" derecha={<button type="button" onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: 'var(--acento-fuerte)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>Ver todas</button>}>
+          {proximas.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay citas próximas</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
+              {proximas.map(c => (
+                <button type="button" key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="in-fila-lista">
+                  <Avatar nombre={porId[c.paciente_id]?.nombre} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 600, fontSize: 14, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{porId[c.paciente_id]?.nombre || '—'}</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[c.tipo, c.servicio, nombreSede(sedes, c.sede_id)].filter(Boolean).join(' · ') || 'Consulta'}</span>
+                  </span>
+                  <span className="in-pildora">{fechaCorta(c.fecha)} · {fmtHora(c.hora)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <CalendarioInicio citas={citas} pacientes={todosP} onDia={(iso) => ir('calendario', iso)} onAbrir={() => ir('calendario')} />
+      </div>
+
+      <div className="in-fila4">
+        <Panel eyebrow="Origen" titulo="Pacientes por red social">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {porRed.map(r => (
-              <div key={r.red} style={{ display: 'grid', gridTemplateColumns: '84px 1fr 28px', gap: 12, alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: C.g600 }}>{r.red}</span>
-                <div style={{ height: 6, background: C.g100, borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.n / maxRed) * 100}%`, background: C.purple, borderRadius: 3 }} />
-                </div>
-                <span style={{ fontSize: 13, color: C.g500, textAlign: 'right' }}>{r.n}</span>
+              <div key={r.red} style={{ display: 'grid', gridTemplateColumns: 'minmax(60px, 92px) minmax(0, 1fr) 30px', gap: 12, alignItems: 'center' }}>
+                <span style={{ fontSize: 13.5, color: C.g700, fontWeight: 500 }}>{r.red}</span>
+                <div className="in-red-barra"><span style={{ width: `${(r.n / maxRed) * 100}%` }} /></div>
+                <span style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 300, color: C.black, textAlign: 'right' }}>{r.n}</span>
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 12.5, color: C.g400, marginTop: 14 }}>
+          <div style={{ fontSize: 12.5, color: C.g500, marginTop: 18 }}>
             Otros orígenes: {porOrigen.filter(o => o.label !== 'Redes sociales').map(o => `${o.label} ${o.valor}`).join(' · ')}
           </div>
-        </Card>
+        </Panel>
+
+        {finanzas && (
+          <Panel eyebrow="Cobros" titulo="Pagos vencidos" derecha={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 600 }}>{fmtQ(pendienteTotal)}</strong></span>}>
+            {vencidos.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay pagos vencidos</div> : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
+                {vencidos.slice(0, 6).map(c => (
+                  <button type="button" key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="in-fila-lista">
+                    <Avatar nombre={porId[c.paciente_id]?.nombre} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontWeight: 600, fontSize: 14, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{porId[c.paciente_id]?.nombre || '—'}</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.concepto} · venció {fmtFecha(c.vence)}</span>
+                    </span>
+                    <span style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 300, color: C.red, whiteSpace: 'nowrap' }}>{fmtQ(saldo(c))}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+        )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 16 }}>
-        <Card title="Próximas citas" right={<button onClick={() => ir('citas')} style={{ background: 'none', border: 'none', color: C.purple, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Ver todas</button>}>
-          {proximas.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay citas próximas</div> : proximas.map((c, i) => (
-            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 12, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>
-              <div style={{ width: 104, fontSize: 13, color: C.g500 }}>{fmtFecha(c.fecha).replace(/ de \d{4}$/, '')}<div>{fmtHora(c.hora)}</div></div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 500 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
-                <div style={{ fontSize: 12.5, color: C.g500 }}>{[c.tipo, c.servicio, nombreSede(sedes, c.sede_id)].filter(Boolean).join(' · ') || 'Consulta'}</div>
-              </div>
-            </div>
-          ))}
-        </Card>
-        <CalendarioInicio citas={citas} pacientes={todosP} onDia={(iso) => ir('calendario', iso)} onAbrir={() => ir('calendario')} />
-        {finanzas && <Card title="Pagos vencidos" right={<span style={{ fontSize: 13, color: C.g500 }}>Saldo total <strong style={{ color: C.black, fontWeight: 500 }}>{fmtQ(pendienteTotal)}</strong></span>}>
-          {vencidos.length === 0 ? <div style={{ fontSize: 13.5, color: C.g400 }}>No hay pagos vencidos</div> : vencidos.slice(0, 6).map((c, i) => (
-            <div key={c.id} onClick={() => ir('expedientes', c.paciente_id)} className="fila" style={{ display: 'flex', gap: 10, padding: '9px 6px', borderTop: i ? `1px solid ${C.g100}` : 'none', cursor: 'pointer', borderRadius: 6 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 500 }}>{porId[c.paciente_id]?.nombre || '—'}</div>
-                <div style={{ fontSize: 12.5, color: C.g500 }}>{c.concepto} · venció {fmtFecha(c.vence)}</div>
-              </div>
-              <span style={{ color: C.red, fontWeight: 500 }}>{fmtQ(saldo(c))}</span>
-            </div>
-          ))}
-        </Card>}
-      </div>
-
-      <Card title="Últimos pacientes" style={{ marginTop: 16 }}>
-        <div style={{ overflowX: 'auto', margin: '-16px -20px -18px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-            <thead><tr>{['Nombre', 'Última cita', 'Hora', 'Origen', 'Estado', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+      <Panel eyebrow="Registro" titulo="Últimos pacientes" style={{ marginTop: 18 }}>
+        <div style={{ overflowX: 'auto', margin: '-6px -8px -4px', padding: '0 8px' }}>
+          <table className="in-tabla">
+            <thead><tr>{['Nombre', 'Última cita', 'Hora', 'Origen', 'Estado', ''].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
             <tbody>
               {ultimos.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: C.g400 }}>Aún no hay pacientes registrados</td></tr>
+                <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: C.g500, borderRadius: 18 }}>Aún no hay pacientes registrados</td></tr>
               ) : ultimos.map(({ p, c }) => {
                 const e = c ? estadoCita(c.estado) : null
                 const cal = c ? linkCalendar(p, c) : null
                 return (
-                  <tr key={p.id} className="fila" onClick={() => ir('expedientes', p.id)} style={{ borderTop: `1px solid ${C.g100}`, cursor: 'pointer' }}>
-                    <td style={{ ...td, fontWeight: 500 }}>{p.nombre}</td>
-                    <td style={td}>{c ? fmtFechaCorta(c.fecha) : '—'}</td>
-                    <td style={td}>{c ? fmtHora(c.hora) : '—'}</td>
-                    <td style={{ ...td, color: C.g600 }}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
-                    <td style={td}>{e ? <Badge color={e.color} bg={e.bg}>{c.estado}</Badge> : '—'}</td>
-                    <td style={td} onClick={ev => ev.stopPropagation()}>
-                      {cal && <button onClick={() => window.open(cal, '_blank', 'noopener')} title="Agregar a Google Calendar" className="btn-ghost" style={{ width: 30, height: 30, borderRadius: 7, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="calendarioMas" size={15} /></button>}
+                  <tr key={p.id} onClick={() => ir('expedientes', p.id)}>
+                    <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, fontWeight: 600 }}><Avatar nombre={p.nombre} size={34} />{p.nombre}</span></td>
+                    <td>{c ? fmtFechaCorta(c.fecha) : '—'}</td>
+                    <td>{c ? fmtHora(c.hora) : '—'}</td>
+                    <td style={{ color: C.g600 }}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
+                    <td>{e ? <Badge color={e.color} bg={e.bg}>{c.estado}</Badge> : '—'}</td>
+                    <td onClick={ev => ev.stopPropagation()}>
+                      {cal && <button onClick={() => window.open(cal, '_blank', 'noopener')} title="Agregar a Google Calendar" aria-label="Agregar a Google Calendar" className="btn-ghost" style={{ width: 32, height: 32, borderRadius: 160, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="calendarioMas" size={15} /></button>}
                     </td>
                   </tr>
                 )
@@ -240,7 +312,7 @@ export function Inicio() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Panel>
     </>
   )
 }

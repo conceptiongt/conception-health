@@ -41,7 +41,9 @@ const APP_URL = (Deno.env.get('APP_URL') || 'https://health.conception-gt.com').
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 // Registered in Google Cloud. It lives on the app's own domain (Vercel proxies /google/callback to this function) so Google's
 // consent screen shows the Conception Health domain instead of the Supabase project host. Constant: never taken from the request.
-const REDIRECT_URI = `${APP_URL}/google/callback`
+// Until the owner registers the app-domain URI in Google Cloud and sets the secret GOOGLE_REDIRECT_URI
+// (= https://health.conception-gt.com/google/callback), the original Supabase URI keeps working. Server-side value only.
+const REDIRECT_URI = Deno.env.get('GOOGLE_REDIRECT_URI') || `${SUPABASE_URL}/functions/v1/google-calendar/callback`
 // calendar.events also allows reading events; calendarlist.readonly only lists the calendars (ids, names, colours) of the account
 const SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'

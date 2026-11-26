@@ -140,9 +140,6 @@ button { transition: background-color .16s, border-color .16s, color .16s; }
 .bloque { background: rgba(255,255,255,0.72); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,0.85); border-radius: 24px; padding: 22px 24px 24px; box-shadow: 0 10px 40px rgba(31,72,160,0.08); }
 .bloque > h3 { margin: 0 0 14px; font-size: 16px; font-weight: 500; letter-spacing: -0.015em; }
 /* Payments by patient */
-.pago-fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 70px 1fr 1fr 1fr 110px; gap: 12px; align-items: center; padding: 12px 16px; font-size: 13.5px; }
-.pago-cab { font-size: 12px; color: #5F6172; background: #F6F8FD; border-bottom: 1px solid #E2E8F4; padding: 10px 16px; }
-@media (max-width: 760px) { .pago-fila { grid-template-columns: minmax(0, 1fr) 1fr 90px; } .pago-fila > :nth-child(2), .pago-fila > :nth-child(3), .pago-fila > :nth-child(4) { display: none; } }
 /* Hue slider of the color picker */
 input.tono { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 6px; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); outline: none; box-shadow: none !important; }
 input.tono::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1px solid rgba(0,0,0,0.3); box-shadow: 0 1px 3px rgba(0,0,0,0.25); cursor: pointer; }
@@ -274,7 +271,6 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 .in-tabla td:last-child { border-radius: 0 18px 18px 0; }
 .in-tabla tbody tr { cursor: pointer; }
 .in-tabla tbody tr:hover td { background: rgba(255,255,255,0.95); }
-.in-tabla tbody tr:focus-visible { outline: 2px solid var(--acento); }
 
 /* ───────── Pagos y saldos ───────── */
 .pg-resumen { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); margin-bottom: 22px; }

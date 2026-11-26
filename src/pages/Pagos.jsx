@@ -108,8 +108,13 @@ export function Pagos() {
   }
   const filas = vista === 'cobros' ? lista.map(resumenCobro) : grupos.map(resumenGrupo)
   const fila = filas.find(f => f.key === sel) || (ancho ? filas[0] : null)
+  // if the selected row leaves the list (filtered out), clear the selection so the modal doesn't reopen by itself
+  const selExiste = sel != null && filas.some(f => f.key === sel)
+  useEffect(() => {
+    if (sel != null && !selExiste) { setSel(null); setDetalleMovil(false) }
+  }, [sel, selExiste])
   const cuenta = (k) => vista === 'cobros' ? base.filter(c => cumple(c, k)).length : agrupar(base.filter(c => cumple(c, k))).length
-  const etiquetaChip = { vencido: 'Vencido', pendiente: 'Con saldo', parcial: 'Abonado', pagado: 'Al día' }
+  const etiquetaChip = { vencido: 'Vencido', pendiente: 'Con saldo', parcial: 'Con saldo', pagado: 'Al día' } // patient rows: old three-state wording (as in the PDF/Excel export)
 
   const nFiltros = [buscar.trim(), tipo, sede, (periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta) ? 'p' : ''].filter(v => v !== '' && v != null).length
   const limpiar = () => { setBuscar(''); setTipo(''); setSede(''); setPeriodo({ mes: '', anio: '', desde: '', hasta: '' }) }
@@ -129,7 +134,6 @@ export function Pagos() {
           <Avatar nombre={pac?.nombre} size={48} oscuro />
           <div style={{ flex: '1 1 150px', minWidth: 0 }}>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 300, fontSize: 24, letterSpacing: '-0.02em', overflowWrap: 'anywhere' }}>{pac?.nombre}</div>
-            <div style={{ fontSize: 12.5, color: '#E8EEF6', marginTop: 2, overflowWrap: 'anywhere' }}>{[pac?.telefono, pac?.email].filter(Boolean).join(' · ') || 'Sin datos de contacto'}</div>
           </div>
           <button type="button" className="pg-btn linea" onClick={() => ir('expedientes', fila.pacienteId)}><Icon name="expedientes" size={15} />Abrir expediente</button>
         </div>
@@ -210,9 +214,9 @@ export function Pagos() {
         <div className="pg-navy">
           <div className="pg-top">
             <div className="pg-titulo">{vista === 'cobros' ? 'Cobros' : 'Pacientes'} <span style={{ color: '#C6D3E8' }}>· {filas.length}</span></div>
-            <div className="pg-tabs" role="tablist" aria-label="Estado de los cobros">
+            <div className="pg-tabs" role="group" aria-label="Estado de los cobros">
               {[{ value: '', label: 'Todos' }, { value: 'deben', label: 'Con saldo' }, { value: 'vencido', label: 'Vencidos' }, { value: 'pagado', label: 'Pagados' }].map(o => (
-                <button key={o.value} type="button" role="tab" aria-selected={estado === o.value} className={`pg-tab${estado === o.value ? ' on' : ''}`} onClick={() => setEstado(o.value)}>{o.label}<span className="n">{cuenta(o.value)}</span></button>
+                <button key={o.value} type="button" aria-pressed={estado === o.value} className={`pg-tab${estado === o.value ? ' on' : ''}`} onClick={() => setEstado(o.value)}>{o.label}<span className="n">{cuenta(o.value)}</span></button>
               ))}
             </div>
             <div className="pg-vista" role="group" aria-label="Vista">
@@ -234,7 +238,7 @@ export function Pagos() {
                   </span>
                   <span style={{ textAlign: 'right' }}>
                     <span className="pg-monto" style={{ display: 'block' }}>{fmtQ(f.monto)}</span>
-                    <span className={`pg-chip ${f.estadoKey}`}>{etiquetaChip[f.estadoKey]}</span>
+                    <span className={`pg-chip ${f.estadoKey}`}>{vista === 'cobros' ? ESTADOS_COBRO[f.estadoKey].label : etiquetaChip[f.estadoKey]}</span>
                   </span>
                 </button>
               ))}

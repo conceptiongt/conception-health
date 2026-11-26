@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { C, SERIF, GLASS } from '../../lib/theme'
 import { Icon } from './Icon'
@@ -8,6 +8,21 @@ let capas = 0
 
 export function Modal({ title, subtitle, onClose, children, maxWidth = 600 }) {
   const [z] = useState(() => 200 + (++capas) * 2)
+  const tituloId = useId()
+  const panelRef = useRef(null)
+  const previo = useRef(typeof document !== 'undefined' ? document.activeElement : null) // who had focus before opening
+  // Focus: if nothing inside took it (autoFocus inputs run first), the panel does; on close it goes back to the opener. No trap.
+  useEffect(() => {
+    const panel = panelRef.current
+    if (panel && !panel.contains(document.activeElement)) panel.focus({ preventScroll: true })
+    const anterior = previo.current
+    return () => {
+      // restore only when focus was left orphaned (real unmount): never take it from a field that holds it (autoFocus, StrictMode re-run)
+      const a = document.activeElement
+      if (a && a !== document.body) return
+      if (anterior && anterior !== document.body && document.contains(anterior)) anterior.focus?.({ preventScroll: true })
+    }
+  }, [])
   useEffect(() => {
     const fn = (e) => { if (e.key === 'Escape' && z === 200 + capas * 2) onClose?.() } // Escape closes only the top window
     window.addEventListener('keydown', fn)
@@ -20,10 +35,10 @@ export function Modal({ title, subtitle, onClose, children, maxWidth = 600 }) {
       className="modal-fondo"
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,35,70,0.28)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', zIndex: z, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
     >
-      <div className="modal-panel" style={{ ...GLASS, background: 'rgba(255,255,255,0.92)', borderRadius: 24, width: '100%', maxWidth, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 70px rgba(20,35,70,0.22)' }}>
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={tituloId} tabIndex={-1} className="modal-panel" style={{ outline: 'none', ...GLASS, background: 'rgba(255,255,255,0.92)', borderRadius: 24, width: '100%', maxWidth, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 70px rgba(20,35,70,0.22)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '22px 26px 16px', position: 'sticky', top: 0, background: 'rgba(255,255,255,0.94)', zIndex: 2, borderBottom: `1px solid ${C.g100}` }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 500, color: C.black, letterSpacing: '-0.015em' }}>{title}</div>
+            <div id={tituloId} style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 500, color: C.black, letterSpacing: '-0.015em' }}>{title}</div>
             {subtitle && <div style={{ fontSize: 13, color: C.g400, marginTop: 2 }}>{subtitle}</div>}
           </div>
           <button onClick={onClose} aria-label="Cerrar" style={{ width: 36, height: 36, borderRadius: 160, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', cursor: 'pointer', color: C.g500, transition: 'background 150ms', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

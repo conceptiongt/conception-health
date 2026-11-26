@@ -44,14 +44,23 @@ export function TarjetaGoogle({ perfil }) {
       const r = await sincronizarTodas(d => setProgreso(`Enviando citas… ${d.sincronizadas} de ${d.total}`))
       if (r?.reconectar) toast.error('Google pidió volver a conectar la cuenta')
       else if (r?.confirmar) toast.error('Falta confirmar la cuenta de Google')
-      else if (r?.pendientes > 0) toast.success(`${r.sincronizadas} de ${r.total} citas enviadas. Use «Sincronizar ahora» para continuar con el resto.`)
+      else if (r && !r.sincronizado) toast.error('Google Calendar ya no está conectado.')
+      else if (r?.fallidas > 0 || r?.pendientes > 0) {
+        const n = Math.max(r.pendientes || 0, r.fallidas || 0)
+        toast.error(`Quedaron ${n} citas sin enviar. Toque "Sincronizar ahora" para reintentar.`)
+      }
       else toast.success(r?.total ? `${r.sincronizadas} de ${r.total} citas al día en Google Calendar` : 'No hay citas próximas que enviar')
     } catch { toast.error('No se pudo sincronizar. Intente de nuevo.') }
     setProgreso(''); setBusy(false); cargar()
   }
   const confirmarCuenta = async () => {
     setBusy(true)
-    try { await confirmarGoogle() } catch { setBusy(false); toast.error('No se pudo confirmar. Intente de nuevo.'); return }
+    try { await confirmarGoogle(est?.google_email) } catch (e) {
+      setBusy(false)
+      if (e?.cuentaCambio) { await cargar(); toast.error('La cuenta conectada cambió. Revise el correo y confirme de nuevo.') }
+      else toast.error('No se pudo confirmar. Intente de nuevo.')
+      return
+    }
     await enviarTodas()
   }
 

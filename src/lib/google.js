@@ -53,14 +53,20 @@ export async function sincronizarTodas(alProgreso) {
     d = await llamar('sync-todas', inicio ? { inicio } : {})
     if (d?.inicio) inicio = d.inicio
     if (d?.sincronizado && alProgreso) alProgreso(d)
-    if (!d?.sincronizado || !(d.pendientes > 0)) break
+    if (!d?.sincronizado || !(d.pendientes > 0)) break // pendientes already includes the failed ones, so the next round retries them
   }
   cache = null
   return d
 }
 
-export async function confirmarGoogle() {
-  await llamar('confirmar')
+// Confirms the account shown on screen; throws { cuentaCambio: true } when the connected account is no longer that one (409)
+export async function confirmarGoogle(google_email) {
+  try { await llamar('confirmar', { google_email }) }
+  catch (e) {
+    cache = null
+    if (e?.context?.status === 409) { const x = new Error('CUENTA_CAMBIO'); x.cuentaCambio = true; throw x }
+    throw e
+  }
   cache = null
 }
 

@@ -14,6 +14,8 @@
 //   POST /opciones       (dueno) { ocultar_nombre }
 //   POST /desconectar    (dueno)           → revokes the token and forgets the connection
 //
+// Deploy order: set the secrets and deploy this function BEFORE applying the SQL (the SQL is what makes the button appear).
+//
 // Secrets (Supabase → Edge Functions → Secrets): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_TOKEN_KEY (base64 of 32 random
 // bytes, AES-256-GCM key for the refresh tokens), optional APP_URL. SUPABASE_* are provided by the platform.
 // Known limits (Fase 2): citas created/changed by Lía server-side and patient deletions are mirrored only at the next
@@ -33,7 +35,6 @@ const CAL_API = 'https://www.googleapis.com/calendar/v3'
 const TZ = 'America/Guatemala' // UTC-6 all year, no DST
 const OFFSET_GT = -6
 const ESTADO_VALIDO_MS = 15 * 60 * 1000
-const MAX_SYNC_TODAS = 200
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const db = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -216,7 +217,8 @@ async function reflejarEvento(ctx: Contexto, cita: any, conocido?: string | null
     }
   }
   if (!r.ok || !r.data?.id) throw new Error(`GCAL_${r.status}`)
-  await db.from('google_eventos').upsert({ cita_id: cita.id, clinica_id: ctx.conn.clinica_id, event_id: String(r.data.id), actualizado_at: new Date().toISOString() })
+  const { error: eUp } = await db.from('google_eventos').upsert({ cita_id: cita.id, clinica_id: ctx.conn.clinica_id, event_id: String(r.data.id), actualizado_at: new Date().toISOString() })
+  if (eUp) throw new Error('DB_EVENTO')
 }
 
 const SIN_CONFIRMAR = 'SIN_CONFIRMAR' as const
@@ -253,7 +255,7 @@ async function marcarBien(clinicaId: string) {
   await db.from('google_conexiones').update({ estado: 'activa', ultimo_error: null, ultimo_sync_at: new Date().toISOString() }).eq('clinica_id', clinicaId)
 }
 
-const COLS_CITA = 'id, clinica_id, paciente_id, fecha, hora, duracion, tipo, servicio, estado, sede_id'
+const COLS_CITA = 'id, clinica_id, paciente_id, fecha, hora, duracion, tipo, estado, sede_id'
 const SELECT_ERR = { error: 'ERROR' }
 
 // ---------- routes ----------
@@ -306,6 +308,8 @@ async function regreso(url: URL) {
       const u = await gfetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${t.access_token}` } })
       email = String((await u.json().catch(() => ({}))).email || '')
     }
+
+    if (!email) { await revocar(aRevocar); return volver('error') } // fail closed: an account we cannot identify is never stored
 
     const cifrado = await cifrar(t.refresh_token, est.clinica_id)
     const { data: previa } = await db.from('google_conexiones').select('google_email, refresh_token_cifrado').eq('clinica_id', est.clinica_id).maybeSingle()
@@ -407,7 +411,7 @@ async function sincronizarTodas(req: Request, p: Perfil) {
     // M3 reconcile: remove the events of citas that no longer exist or were cancelled. Only when every cita was visited, and only
     // when the reads succeed. Not mirrored here (Fase 2): changes by Lía server-side and patient deletions show up at the next run.
     let retiradas = 0
-    if (pendientes === 0) {
+    if (pendientes === 0 && fallidas === 0) {
       const enLista = new Set(lista.map(c => c.id))
       const dudosas = [...eventos.keys()].filter(id => !enLista.has(id))
       let leidas: Map<string, string> | null = new Map()
@@ -419,7 +423,7 @@ async function sincronizarTodas(req: Request, p: Perfil) {
       if (leidas) {
         const sobran = dudosas.filter(id => !leidas!.has(id) || leidas!.get(id) === 'Cancelada') // past citas still existing are kept
         let j = 0
-        while (j < sobran.length && Date.now() - t0 < PRESUPUESTO_MS + 30_000) {
+        while (j < sobran.length && Date.now() - t0 < PRESUPUESTO_MS + 10_000) {
           const lote = sobran.slice(j, j + LOTE); j += lote.length
           const res = await Promise.all(lote.map(async (id) => {
             try { await quitarEvento(ctx, id, eventos.get(id)?.event_id ?? null); return 'ok' } catch (e) { return e instanceof Reconectar ? 'reconectar' : 'fallo' }
@@ -430,7 +434,7 @@ async function sincronizarTodas(req: Request, p: Perfil) {
       }
     }
     await marcarBien(cid)
-    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes, retiradas, inicio })
+    return json(req, { sincronizado: true, total: lista.length, sincronizadas: hechas.length + ok, fallidas, pendientes: pendientes + fallidas, retiradas, inicio })
   } catch (e) {
     if (e instanceof Reconectar) { await marcarError(cid); return json(req, { sincronizado: false, reconectar: true }) }
     console.error('google-calendar sync-todas', e instanceof Error ? e.message : 'error')
@@ -440,9 +444,12 @@ async function sincronizarTodas(req: Request, p: Perfil) {
 
 async function confirmar(req: Request, p: Perfil) {
   if (p.rol !== 'dueno') return json(req, { error: 'SOLO_ADMIN' }, 403)
-  const { data, error } = await db.from('google_conexiones').update({ confirmada: true }).eq('clinica_id', p.clinica_id).eq('estado', 'activa').select('clinica_id')
+  const b = await req.json().catch(() => ({}))
+  const google_email = b?.google_email
+  if (typeof google_email !== 'string' || !google_email || google_email.length > 320) return json(req, { error: 'DATOS' }, 400)
+  const { data, error } = await db.from('google_conexiones').update({ confirmada: true }).eq('clinica_id', p.clinica_id).eq('estado', 'activa').eq('google_email', google_email).select('clinica_id')
   if (error) return json(req, SELECT_ERR, 500)
-  if (!data?.length) return json(req, { error: 'SIN_CONEXION' }, 404)
+  if (!data?.length) return json(req, { error: 'CUENTA_CAMBIO' }, 409)
   return json(req, { ok: true })
 }
 

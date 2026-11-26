@@ -1,4 +1,5 @@
 -- PROPUESTA (NO APLICADA) · 2026-11-26
+-- Deploy order: set the secrets and deploy this function BEFORE applying the SQL (the SQL is what makes the button appear).
 -- Qué hace: prepara la base para conectar el Google Calendar de cada clínica (las citas se copian en un solo sentido,
 --   de la plataforma a Google, y Google envía los recordatorios):
 --   1. google_conexiones: la cuenta de Google de la clínica y su token de renovación CIFRADO (AES-256-GCM, la llave vive

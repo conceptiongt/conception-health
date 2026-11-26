@@ -11,11 +11,13 @@ const cors = {
 }
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 const CODIGO = /^[A-Za-z0-9-]{1,40}$/
-const LIMITE_CODIGO = 8 // attempts per IP every hour (shared with crear-cuenta)
+const LIMITE_CODIGO = 8 // attempts per IP every hour per IP and per user (shared with crear-cuenta for the IP counter)
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-async function permitido(ip: string) {
+// `clave` is the IP, or 'u:' + user id (a second counter so rotating IPs does not lift the limit for a signed-in account)
+async function permitido(clave: string) {
+  const ip = clave
   const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const { count } = await db.from('limite_publico').select('id', { count: 'exact', head: true }).eq('ip', ip).eq('accion', 'codigo').gte('at', desde)
   if ((count ?? 0) >= LIMITE_CODIGO) return false
@@ -41,7 +43,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}))
   const codigo = String(body?.codigo || '').replace(/\s+/g, '')
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'desconocida'
-  if (!(await permitido(ip))) return json({ error: 'DEMASIADOS_INTENTOS' }, 429)
+  if (!(await permitido(ip)) || !(await permitido('u:' + user.id))) return json({ error: 'DEMASIADOS_INTENTOS' }, 429)
   if (!CODIGO.test(codigo)) return json({ ok: false })
 
   const { data, error } = await db.rpc('promo_canjear', { p_clinica: perfil.clinica_id, p_codigo: codigo, p_ip: ip })

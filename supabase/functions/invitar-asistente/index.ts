@@ -26,6 +26,10 @@ Deno.serve(async (req) => {
   const { data: perfil } = await db.from('perfiles').select('clinica_id, rol').eq('user_id', user.id).maybeSingle()
   if (perfil?.rol !== 'dueno') return json({ error: 'SOLO_ADMIN' }, 403)
 
+  // an expired account is read-only: no new users until it is reactivated
+  const { data: vencida } = await db.rpc('clinica_vencida_de', { p_clinica: perfil.clinica_id })
+  if (vencida === true) return json({ error: 'CUENTA_VENCIDA' }, 403)
+
   const { email: e } = await req.json().catch(() => ({}))
   const email = String(e || '').trim().toLowerCase()
   const { data: clinica } = await db.from('clinicas').select('nombre').eq('id', perfil.clinica_id).single()

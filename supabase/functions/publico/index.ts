@@ -140,6 +140,12 @@ Deno.serve(async (req) => {
     return json({ clinica: marca(destino.clinica), paciente: destino.paciente && { nombre: destino.paciente.nombre, telefono: destino.paciente.telefono, email: destino.paciente.email }, completado: !!destino.paciente?.registro_completado_at })
   }
 
+  // an expired account is read-only: it does not receive new registrations (viewing the form, the portal and shared documents keep working)
+  const cl = destino.clinica
+  if (cl.plan !== 'prueba' && !(cl.plan_activo && (!cl.plan_hasta || new Date(cl.plan_hasta) > new Date()))) {
+    return json({ error: 'CUENTA_VENCIDA', mensaje: 'Esta clínica no está recibiendo registros en este momento.' }, 403)
+  }
+
   // registro_guardar: honeypot + minimum time on the page, then strict field validation
   if (body.sitio_web) return json({ ok: true }) // bots fill the hidden field
   if (typeof body.ms === 'number' && body.ms < 3000) return json({ error: 'MUY_RAPIDO' }, 400)

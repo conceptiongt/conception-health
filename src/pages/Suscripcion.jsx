@@ -12,41 +12,24 @@ import { Modal } from '../components/ui/Modal'
 import { Campo, Input } from '../components/ui/Campos'
 import { toast } from '../components/ui/Toast'
 
-export function Suscripcion() {
-  const { clinica, perfil, planActivo, pacientes, recargarSesion } = useDatos()
-  const planActual = PLANES.find(p => p.value === clinica?.plan)
-  const abrir = (link) => link && window.open(link, '_blank', 'noopener')
-  const [confirmar, setConfirmar] = useState(false)
-  const [cancelando, setCancelando] = useState(false)
-  const cancelada = !!clinica?.cancelada_at
-
-  // Free period from an invitation code (no Recurrente subscription behind it)
+// What the account is living on: a free period from an invitation code (no Recurrente subscription behind it) or a paid plan
+function estadoPlan(clinica, planActivo) {
   const suscrita = !!clinica?.recurrente_suscripcion_id
   const promoFuturo = !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date()
-  const promoActiva = promoFuturo && planActivo && !suscrita
-  const promoTermino = !!clinica?.promo_hasta && !promoFuturo && !planActivo
-  const puedeCanjear = !planActivo && !clinica?.promo_codigo_id && !suscrita
-  const [codigo, setCodigo] = useState('')
-  const [canjeando, setCanjeando] = useState(false)
-
-  const canjear = async (e) => {
-    e.preventDefault()
-    const c = codigo.replace(/\s+/g, '').toUpperCase()
-    if (!c) { toast.error('Escriba su código de invitación.'); return }
-    setCanjeando(true)
-    const { data, error } = await supabase.functions.invoke('canjear-codigo', { method: 'POST', body: { codigo: c } })
-    setCanjeando(false)
-    let r = data
-    if (error) { try { r = await error.context.json() } catch { r = null } }
-    if (r?.ok) {
-      toast.success(`Código aplicado: su cuenta está activa gratis hasta el ${fmtFechaLocal(r.hasta)}.`)
-      setCodigo('')
-      recargarSesion()
-    } else if (r?.motivo === 'ya_activa') toast.error('Su cuenta ya tiene un plan activo o ya usó un código.')
-    else if (r?.error === 'DEMASIADOS_INTENTOS') toast.error('Demasiados intentos. Espere una hora e intente de nuevo.')
-    else if (r && r.ok === false) toast.error('El código no es válido o ya venció.')
-    else toast.error('No se pudo aplicar el código. Intente de nuevo.')
+  return {
+    suscrita, promoFuturo,
+    cancelada: !!clinica?.cancelada_at,
+    promoActiva: promoFuturo && planActivo && !suscrita,
+    puedeCanjear: !planActivo && !clinica?.promo_codigo_id && !suscrita, // one code per clinic, and only while there is no active plan
   }
+}
+
+export function Suscripcion() {
+  const { clinica, planActivo, pacientes, recargarSesion } = useDatos()
+  const planActual = PLANES.find(p => p.value === clinica?.plan)
+  const [confirmar, setConfirmar] = useState(false)
+  const [cancelando, setCancelando] = useState(false)
+  const { cancelada, suscrita, promoFuturo, promoActiva } = estadoPlan(clinica, planActivo)
 
   const cancelar = async () => {
     setCancelando(true)
@@ -79,6 +62,7 @@ export function Suscripcion() {
               : planActivo
               ? (cancelada
                   ? `Cancelada · puede seguir usando su plan hasta el ${fmtFecha(clinica.plan_hasta)}`
+                  : suscrita && promoFuturo ? `Su plan está activo. Los días de prueba que le quedaban se conservan hasta el ${fmtFechaLocal(clinica.promo_hasta)}.`
                   : clinica.plan_hasta ? `Se renueva automáticamente · próximo cobro cerca del ${fmtFecha(clinica.plan_hasta)}` : 'Suscripción activa')
               : `${pacientes.length} de ${LIMITE_PRUEBA} pacientes usados en la prueba gratis`}
           </div>
@@ -93,14 +77,65 @@ export function Suscripcion() {
 
       {promoActiva && (
         <div style={{ ...GLASS, borderRadius: 20, padding: '14px 18px', marginTop: 16, fontSize: 14, color: C.g700, lineHeight: 1.5 }}>
-          Prueba gratis activa hasta el <strong>{fmtFechaLocal(clinica.promo_hasta)}</strong> ({diasRestantes(clinica.promo_hasta)} días restantes).
+          Prueba gratis activa hasta el <strong>{fmtFechaLocal(clinica.promo_hasta)}</strong> ({diasRestantes(clinica.promo_hasta)} {diasRestantes(clinica.promo_hasta) === 1 ? 'día restante' : 'días restantes'}).
+          Después, si no activa un plan, solo podrá descargar sus datos.
         </div>
       )}
-      {promoTermino && (
-        <div style={{ ...GLASS, borderRadius: 20, padding: '14px 18px', marginTop: 16, fontSize: 14, color: C.g700, lineHeight: 1.5 }}>
-          Su prueba gratis terminó el <strong>{fmtFechaLocal(clinica.promo_hasta)}</strong>. Sus datos siguen guardados; active un plan para seguir registrando pacientes.
-        </div>
+
+      <Planes />
+
+      {confirmar && (
+        <Modal title="Cancelar suscripción" subtitle={clinica?.nombre} onClose={() => setConfirmar(false)} maxWidth={480}>
+          <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
+            ¿Está seguro de que desea cancelar su plan <strong>{planActual?.nombre}</strong>?
+            <ul style={{ margin: '12px 0 0', paddingLeft: 20, color: C.g600 }}>
+              <li>No se le volverá a cobrar.</li>
+              <li>Podrá seguir usando su plan hasta el <strong>{fmtFecha(clinica?.plan_hasta)}</strong>.</li>
+              <li>Después de esa fecha la cuenta queda solo para descargar sus datos (Excel y PDF) hasta que vuelva a suscribirse.</li>
+              <li>Sus pacientes y expedientes <strong>no se borran</strong>. Puede volver a suscribirse cuando quiera.</li>
+            </ul>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 22, flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={() => setConfirmar(false)}>Mantener mi plan</Button>
+            <Button variant="danger" onClick={cancelar} disabled={cancelando} style={{ background: C.red, color: '#fff', border: `1px solid ${C.red}` }}>
+              {cancelando ? 'Cancelando…' : 'Sí, cancelar'}
+            </Button>
+          </div>
+        </Modal>
       )}
+    </>
+  )
+}
+
+// Invitation-code card + the plans + the payment note. Also used by the screen of an expired account (CuentaVencida).
+export function Planes() {
+  const { clinica, perfil, planActivo, recargarSesion } = useDatos()
+  const { cancelada, promoActiva, puedeCanjear } = estadoPlan(clinica, planActivo)
+  const abrir = (link) => link && window.open(link, '_blank', 'noopener')
+  const [codigo, setCodigo] = useState('')
+  const [canjeando, setCanjeando] = useState(false)
+
+  const canjear = async (e) => {
+    e.preventDefault()
+    const c = codigo.replace(/\s+/g, '').toUpperCase()
+    if (!c) { toast.error('Escriba su código de invitación.'); return }
+    setCanjeando(true)
+    const { data, error } = await supabase.functions.invoke('canjear-codigo', { method: 'POST', body: { codigo: c } })
+    setCanjeando(false)
+    let r = data
+    if (error) { try { r = await error.context.json() } catch { r = null } }
+    if (r?.ok) {
+      toast.success(`Código aplicado: su cuenta está activa gratis hasta el ${fmtFechaLocal(r.hasta)}.`)
+      setCodigo('')
+      recargarSesion()
+    } else if (r?.motivo === 'ya_activa') toast.error('Su cuenta ya tiene un plan activo o ya usó un código.')
+    else if (r?.error === 'DEMASIADOS_INTENTOS') toast.error('Demasiados intentos. Espere una hora e intente de nuevo.')
+    else if (r && r.ok === false) toast.error('El código no es válido o ya venció.')
+    else toast.error('No se pudo aplicar el código. Intente de nuevo.')
+  }
+
+  return (
+    <>
       {puedeCanjear && esAdmin(perfil) && (
         <form noValidate onSubmit={canjear} style={{ ...GLASS, borderRadius: 20, padding: '16px 18px', marginTop: 16 }}>
           <div style={{ fontSize: 14.5, fontWeight: 700, color: C.black }}>¿Tiene un código de invitación?</div>
@@ -161,25 +196,6 @@ export function Suscripcion() {
         El pago se realiza de forma segura en Recurrente. <strong>Use el mismo correo de su cuenta ({perfil.email})</strong> para que su plan se active.
         Si ya pagó y aún no ve su plan activo, <button onClick={recargarSesion} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 700, cursor: 'pointer', padding: 0 }}>actualice aquí</button>.
       </div>
-
-      {confirmar && (
-        <Modal title="Cancelar suscripción" subtitle={clinica?.nombre} onClose={() => setConfirmar(false)} maxWidth={480}>
-          <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
-            ¿Está seguro de que desea cancelar su plan <strong>{planActual?.nombre}</strong>?
-            <ul style={{ margin: '12px 0 0', paddingLeft: 20, color: C.g600 }}>
-              <li>No se le volverá a cobrar.</li>
-              <li>Podrá seguir usando su plan hasta el <strong>{fmtFecha(clinica?.plan_hasta)}</strong>.</li>
-              <li>Sus pacientes y expedientes <strong>no se borran</strong>. Puede volver a suscribirse cuando quiera.</li>
-            </ul>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 22, flexWrap: 'wrap' }}>
-            <Button variant="ghost" onClick={() => setConfirmar(false)}>Mantener mi plan</Button>
-            <Button variant="danger" onClick={cancelar} disabled={cancelando} style={{ background: C.red, color: '#fff', border: `1px solid ${C.red}` }}>
-              {cancelando ? 'Cancelando…' : 'Sí, cancelar'}
-            </Button>
-          </div>
-        </Modal>
-      )}
     </>
   )
 }

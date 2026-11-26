@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { cuentaVencida } from '../lib/constantes'
 
 // Current session + the user's profile and clinic.
 // `recuperando` is true after opening a "restablecer contraseña" email link.
@@ -31,5 +32,6 @@ export function useSesion() {
 
   const cargando = session === undefined || (session && (perfil === undefined || clinica === undefined))
   const planActivo = !!clinica?.plan_activo && (!clinica.plan_hasta || new Date(clinica.plan_hasta) > new Date())
-  return { session, perfil, clinica, cargando, recuperando, setRecuperando, recargar: cargar, planActivo }
+  const vencida = cuentaVencida(clinica)
+  return { session, perfil, clinica, cargando, recuperando, setRecuperando, recargar: cargar, planActivo, vencida }
 }

@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
-import { slug } from '../lib/excel'
 import { resumenDatos } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
@@ -12,6 +11,7 @@ import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Campo, Input, Select, Textarea, Grid, filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
+import { prepararPacientes, infoPaciente } from '../lib/exportar'
 import { CitaModal } from '../components/CitaModal'
 import { ProductosPaciente } from '../components/ProductosPaciente'
 import { CobroDetalle, AbonoModal, estadoDeCuenta, ESTADOS_COBRO, estadoCobro, Progreso } from '../components/Pagos'
@@ -79,30 +79,9 @@ export function Expedientes({ abrirId }) {
   const lista = atencion ? sinAtencion.filter(p => fechas[atencion].has(p.id)) : sinAtencion
   const filtroTexto = `${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'}${atencion ? ` · ${atencion}` : ''}`
   const hoy = hoyISO()
-  const info = (p) => {
-    const cs = citas.filter(c => c.paciente_id === p.id)
-    const ultima = cs.filter(c => c.fecha <= hoy).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
-    const proxima = cs.filter(c => c.fecha > hoy).sort((a, b) => a.fecha.localeCompare(b.fecha))[0]
-    const deuda = cobros.filter(c => c.paciente_id === p.id).reduce((n, c) => n + saldo(c), 0)
-    return { consultas: cs.length, ultima, proxima, deuda }
-  }
+  const info = (p) => infoPaciente(p, citas, cobros)
 
-  const preparar = () => ({
-    titulo: 'Pacientes', subtitulo: filtroTexto,
-    secciones: [{ tabla: { headers: ['Paciente', 'Teléfono', 'Correo', 'Origen', 'Consultas', 'Última cita', 'Próxima cita', ...(finanzas ? ['Saldo'] : [])],
-      filas: lista.map(p => { const i = info(p); return [p.nombre, p.telefono || '—', p.email || '—', p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), i.consultas, i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—', ...(finanzas ? [fmtQ(i.deuda)] : [])] }) } }],
-    excel: { archivo: atencion ? `pacientes_${slug(atencion)}` : 'pacientes', hojas: [{ nombre: 'Pacientes', columnas: [
-      { header: 'Paciente', key: 'n', width: 30 }, { header: 'Teléfono', key: 't', width: 14 }, { header: 'Correo', key: 'e', width: 28 }, { header: 'DPI', key: 'dpi', width: 16 }, { header: 'Origen', key: 'o', width: 15 },
-      { header: 'Red social', key: 'r', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 }, { header: 'Registrado', key: 'reg', width: 12 },
-      { header: 'Consultas', key: 'c', width: 10 }, { header: 'Última cita', key: 'u', width: 12 }, { header: 'Próxima cita', key: 'px', width: 12 },
-      ...(finanzas ? [{ header: 'Saldo pendiente', key: 's', width: 15, moneda: true }] : []), { header: 'Tipo de sangre', key: 'sg', width: 12 },
-      { header: 'Contacto de emergencia', key: 'ce', width: 24 }, { header: 'Tel. emergencia', key: 'te', width: 15 },
-      { header: 'Alergias', key: 'al', width: 25 }, { header: 'Enfermedades', key: 'en', width: 25 }, { header: 'Medicamentos', key: 'me', width: 25 },
-    ], filas: lista.map(p => { const i = info(p); return {
-      n: p.nombre, t: p.telefono, e: p.email, dpi: p.dpi, ce: p.contacto_emergencia, te: p.telefono_emergencia, o: origenLabel(p.origen), r: p.red, ref: p.referido_por, reg: p.created_at.slice(0, 10), c: i.consultas,
-      u: i.ultima?.fecha, px: i.proxima?.fecha, s: i.deuda, sg: p.tipo_sangre, al: p.alergias, en: p.enfermedades, me: p.medicamentos,
-    } }) }] },
-  })
+  const preparar = () => prepararPacientes({ lista, citas, cobros, finanzas, filtroTexto, atencion })
 
   const sel = filtroStyle
   return (

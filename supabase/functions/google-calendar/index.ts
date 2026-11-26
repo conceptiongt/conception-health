@@ -124,6 +124,14 @@ async function quien(req: Request): Promise<Perfil | null> {
   return perfil ? perfil as Perfil : null
 }
 
+// An expired account is read-only: routes that create or change calendar data answer 403 CUENTA_VENCIDA.
+// Same definition as the database: a plan other than 'prueba' that is no longer active/paid.
+async function cuentaVencida(clinicaId: string): Promise<boolean> {
+  const { data: c } = await db.from('clinicas').select('plan, plan_activo, plan_hasta').eq('id', clinicaId).maybeSingle()
+  return !!c && c.plan !== 'prueba' && !(c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date()))
+}
+const RUTAS_BLOQUEADAS = ['/start', '/sync', '/sync-todas', '/evento', '/confirmar', '/opciones']
+
 // ---------- Google ----------
 async function tokenPorRefresh(refresh: string): Promise<string> {
   const r = await gfetch(TOKEN_URL, {
@@ -517,6 +525,7 @@ async function meetCita(req: Request, p: Perfil) {
   const citaId = String(b?.cita_id || '')
   if (!UUID.test(citaId)) return json(req, { error: 'DATOS' }, 400)
   const crear = b?.crear === true
+  if (crear && await cuentaVencida(p.clinica_id)) return json(req, { error: 'CUENTA_VENCIDA' }, 403)
   const { data: leida, error: eLeer } = await db.from('citas').select(COLS_CITA).eq('id', citaId).maybeSingle()
   if (eLeer) return json(req, SELECT_ERR, 502)
   // a cita of another clinic answers exactly like a missing one, and only THIS clinic's connection is used
@@ -821,6 +830,7 @@ Deno.serve(async (req) => {
     const p = await quien(req)
     if (!p) return json(req, { error: 'SESION' }, 401)
     if (p.rol === 'soporte') return json(req, { error: 'SIN_PERMISO' }, 403)
+    if (RUTAS_BLOQUEADAS.includes(r) && await cuentaVencida(p.clinica_id)) return json(req, { error: 'CUENTA_VENCIDA' }, 403)
     if (r === '/start') return await iniciar(req, p)
     if (r === '/sync') return await sincronizar(req, p)
     if (r === '/evento') return await sincronizarEvento(req, p)

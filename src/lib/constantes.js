@@ -84,6 +84,14 @@ export const USUARIOS_INCLUIDOS = 2
 export const PRECIO_USUARIO_EXTRA = 'Q75' // per extra user per month
 export const LINK_USUARIO_EXTRA = null // Recurrente link for the "Usuario adicional" product (pending)
 
+// An account is «vencida» (read-only: the owner can only download data, activate a plan or delete the account) when it has had a plan
+// ('prueba' = never had one, keeps the 3-patient trial) and that plan is no longer active/paid. Same definition as clinica_vencida() in the database.
+export const cuentaVencida = (clinica) => {
+  if (MODO_DEMO || !clinica) return false
+  const activo = !!clinica.plan_activo && (!clinica.plan_hasta || new Date(clinica.plan_hasta) > new Date())
+  return (clinica.plan || 'prueba') !== 'prueba' && !activo
+}
+
 export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
 
 // Lía is being finished on its own; until then the menu shows a "coming soon" page

@@ -11,6 +11,7 @@ import { Panel, Avatar, Tocable } from '../components/ui/Panel'
 import { filtroStyle } from '../components/ui/Campos'
 import { Desplegable } from '../components/ui/Desplegable'
 import { Exportar } from '../components/Documento'
+import { prepararPagos, resumenPagos, agruparPorPaciente } from '../lib/exportar'
 import { SelectorPeriodo, RangoFechas, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
 import { ESTADOS_COBRO, estadoCobro, tipoCobro, sedeCobro, CobroDetalle, AbonoModal } from '../components/Pagos'
 
@@ -67,31 +68,10 @@ export function Pagos() {
   })
   const lista = base.filter(c => cumple(c, estado)).sort((a, b) => (estadoCobro(b, hoy) === 'vencido') - (estadoCobro(a, hoy) === 'vencido') || b.fecha.localeCompare(a.fecha))
 
-  const total = lista.reduce((n, c) => n + totalCobro(c), 0)
-  const pagado = lista.reduce((n, c) => n + Number(c.pagado || 0), 0)
-  const vencidos = lista.filter(c => estadoCobro(c, hoy) === 'vencido')
-  const agrupar = (arr) => Object.values(arr.reduce((g, c) => { (g[c.paciente_id] ||= { p: porId[c.paciente_id], cobros: [] }).cobros.push(c); return g }, {}))
-  const grupos = agrupar(lista)
-    .map(g => ({ ...g, total: g.cobros.reduce((n, c) => n + totalCobro(c), 0), pagado: g.cobros.reduce((n, c) => n + Number(c.pagado || 0), 0), vencido: g.cobros.some(c => estadoCobro(c, hoy) === 'vencido') }))
-    .map(g => ({ ...g, saldo: Math.max(0, g.total - g.pagado) }))
-    .sort((a, b) => b.vencido - a.vencido || b.saldo - a.saldo || a.p.nombre.localeCompare(b.p.nombre, 'es'))
-  const alDia = grupos.filter(g => g.saldo <= 0).length
+  const { total, pagado, vencidos, grupos, alDia } = resumenPagos(lista, porId, hoy)
 
   const filtroTexto = [textoPeriodo(periodo), sede && nombreSede(sedes, sede), tipo, estado && { deben: 'Con saldo', vencido: 'Vencidos', pagado: 'Pagados' }[estado]].filter(Boolean).join(' · ')
-  const preparar = () => ({
-    titulo: 'Pagos y saldos', subtitulo: filtroTexto,
-    secciones: [
-      { resumen: [['Total cobrado', fmtQ(total)], ['Pagado', fmtQ(pagado)], ['Saldo pendiente', fmtQ(total - pagado)], ['Pacientes al día', `${alDia} de ${grupos.length}`]] },
-      { titulo: 'Por paciente', tabla: { headers: ['Paciente', 'Cobros', 'Total', 'Pagado', 'Saldo', 'Estado'],
-        filas: grupos.map(g => [g.p.nombre, g.cobros.length, fmtQ(g.total), fmtQ(g.pagado), fmtQ(g.saldo), g.saldo <= 0 ? 'Al día' : g.vencido ? 'Vencido' : 'Con saldo']) } },
-    ],
-    excel: { archivo: 'pagos-y-saldos', hojas: [{ nombre: 'Cobros', columnas: [
-      { header: 'Fecha', key: 'f', width: 12 }, { header: 'Paciente', key: 'p', width: 30 }, { header: 'Concepto', key: 'c', width: 30 }, { header: 'Tipo', key: 't', width: 16 },
-      { header: 'Sede', key: 's', width: 14 }, { header: 'Total', key: 'tot', width: 13, moneda: true }, { header: 'Pagado', key: 'pag', width: 13, moneda: true },
-      { header: 'Saldo', key: 'sal', width: 13, moneda: true }, { header: 'Fecha límite', key: 'v', width: 12 }, { header: 'Estado', key: 'e', width: 12 },
-    ], filas: lista.map(c => ({ f: c.fecha, p: porId[c.paciente_id]?.nombre, c: c.concepto, t: tipoCobro(c, citas, servicios), s: nombreSede(sedes, sedeCobro(c, citas, pacientes)),
-      tot: totalCobro(c), pag: Number(c.pagado || 0), sal: saldo(c), v: c.vence, e: ESTADOS_COBRO[estadoCobro(c)].label })) }] },
-  })
+  const preparar = () => prepararPagos({ lista, pacientes, citas, servicios, sedes, filtroTexto })
 
 
   // ── rows of the navy list ──
@@ -114,7 +94,7 @@ export function Pagos() {
   useEffect(() => {
     if (sel != null && !selExiste) { setSel(null); setDetalleMovil(false) }
   }, [sel, selExiste])
-  const cuenta = (k) => vista === 'cobros' ? base.filter(c => cumple(c, k)).length : agrupar(base.filter(c => cumple(c, k))).length
+  const cuenta = (k) => vista === 'cobros' ? base.filter(c => cumple(c, k)).length : agruparPorPaciente(base.filter(c => cumple(c, k))).length
   const etiquetaChip = { vencido: 'Vencido', pendiente: 'Con saldo', parcial: 'Con saldo', pagado: 'Al día' } // patient rows: old three-state wording (as in the PDF/Excel export)
 
   const nFiltros = [buscar.trim(), tipo, sede, (periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta) ? 'p' : ''].filter(v => v !== '' && v != null).length

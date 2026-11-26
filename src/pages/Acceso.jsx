@@ -115,12 +115,12 @@ export function Acceso() {
     const { data, error } = await supabase.functions.invoke('crear-cuenta', {
       body: { nombre: nombre.trim(), especialidad: esp, email: correo, password, sitio, t: Date.now() - abierto, ...(!asistente && codigo ? { codigo } : {}) },
     })
-    let codigo = data?.error
-    if (error) { try { codigo = (await error.context?.json())?.error } catch { /* sin detalle */ } }
+    let codigoError = data?.error
+    if (error) { try { codigoError = (await error.context?.json())?.error } catch { /* sin detalle */ } }
     if (error || !data?.ok) {
       setBusy(false)
       // an invited assistant without a clinic name: the server asks for the missing data
-      setMsg({ tipo: 'error', t: ERRORES_CREAR[codigo] || 'No se pudo crear la cuenta. Intente de nuevo en unos minutos.' })
+      setMsg({ tipo: 'error', t: ERRORES_CREAR[codigoError] || 'No se pudo crear la cuenta. Intente de nuevo en unos minutos.' })
       return
     }
     const { error: e2 } = await supabase.auth.signInWithPassword({ email: correo, password })

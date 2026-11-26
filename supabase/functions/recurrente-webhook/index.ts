@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
     const fin = sub?.current_period_end ? new Date(sub.current_period_end).getTime() : Date.now() + 31 * DIA
     // A payment must never SHORTEN access: if the clinic still has a free-trial (invitation code) period running past the paid period,
     // keep that later date. Otherwise the computed period end applies, as before.
-    const { data: actual } = await db.from('clinicas').select('plan_hasta').eq('id', clinicaId).single()
+    const { data: actual } = await db.from('clinicas').select('plan, plan_hasta, promo_hasta').eq('id', clinicaId).single()
     const existente = actual?.plan_hasta ? new Date(actual.plan_hasta).getTime() : 0
     const nuevoHasta = fin + 3 * DIA // 3 days of grace for the next charge
     const cambios: Record<string, unknown> = {
@@ -116,7 +116,13 @@ Deno.serve(async (req) => {
       recurrente_email: email,
       cancelada_at: null,
     }
-    if (plan) cambios.plan = plan
+    // While a free-trial (invitation code) period is still running, a payment for a LOWER plan must not downgrade the plan the clinic
+    // is enjoying. Nothing else is stored: there is no job to restore it later, so the plan only changes downward at the next payment
+    // event after promo_hasta (each renewal event goes through this same path and sets the plan from the product/amount, when identifiable).
+    const RANGO: Record<string, number> = { prueba: 0, basico: 1, lia: 1, max: 2, ultra: 3 }
+    const promoVigente = !!actual?.promo_hasta && new Date(actual.promo_hasta).getTime() > Date.now()
+    const bajaPlan = promoVigente && plan && (RANGO[plan] ?? 0) < (RANGO[actual?.plan ?? 'prueba'] ?? 0)
+    if (plan && !bajaPlan) cambios.plan = plan
     if (subId) cambios.recurrente_suscripcion_id = subId
     const { error } = await db.from('clinicas').update(cambios).eq('id', clinicaId)
     resultado = error ? `error: ${error.message}` : `activado${plan ? ' ' + plan : ' (plan sin identificar)'}`

@@ -105,9 +105,14 @@ Deno.serve(async (req) => {
     const sub = subId ? await obtenerSuscripcion(subId) : null
     const plan = detectarPlan(p) || detectarPlan(sub)
     const fin = sub?.current_period_end ? new Date(sub.current_period_end).getTime() : Date.now() + 31 * DIA
+    // A payment must never SHORTEN access: if the clinic still has a free-trial (invitation code) period running past the paid period,
+    // keep that later date. Otherwise the computed period end applies, as before.
+    const { data: actual } = await db.from('clinicas').select('plan_hasta').eq('id', clinicaId).single()
+    const existente = actual?.plan_hasta ? new Date(actual.plan_hasta).getTime() : 0
+    const nuevoHasta = fin + 3 * DIA // 3 days of grace for the next charge
     const cambios: Record<string, unknown> = {
       plan_activo: true,
-      plan_hasta: new Date(fin + 3 * DIA).toISOString(), // 3 days of grace for the next charge
+      plan_hasta: new Date(existente > Date.now() ? Math.max(existente, nuevoHasta) : nuevoHasta).toISOString(),
       recurrente_email: email,
       cancelada_at: null,
     }

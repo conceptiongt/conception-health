@@ -43,21 +43,21 @@ export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','
 // Trial accounts can register this many patients (also enforced by the database)
 export const LIMITE_PRUEBA = 3
 
-// Subscription plans (checkout handled by Recurrente). Prices are not announced yet: `precio: null`
-// shows "Precio por anunciar" and hides the subscribe button.
+// Subscription plans (checkout handled by Recurrente). A priced plan with a Recurrente `link` shows its subscribe button.
+// `proximamente: true` plans (Ultra, Lía) show "Próximamente" and no button. `precio: null` without it shows "Precio por anunciar".
 // Básico = Health; Max = Básico + inventory per location; Ultra = Max + Lía; Lía = only the receptionist.
 export const PLANES = [
   {
     value: 'basico',
     nombre: 'Básico',
-    precio: null, // was Q275 / mes
+    precio: 'Q275',
     link: 'https://app.recurrente.com/s/conception/healt',
     incluye: ['Pacientes ilimitados', 'Citas y seguimiento', 'Expedientes con fotos', 'Cobros y saldos', 'Reportes en Excel y PDF'],
   },
   {
     value: 'max',
     nombre: 'Max',
-    precio: null, // was Q375 / mes
+    precio: 'Q375',
     link: 'https://app.recurrente.com/s/conception/conception-healt-max',
     incluye: ['Todo lo del plan Básico', 'Inventario por sede', 'Descarga de productos desde el expediente', 'Avisos de existencia baja'],
   },
@@ -65,6 +65,7 @@ export const PLANES = [
     value: 'ultra',
     nombre: 'Ultra',
     precio: null,
+    proximamente: true,
     link: null, // Recurrente link pending
     incluye: ['Todo lo del plan Max', 'Lía, su recepcionista virtual en WhatsApp', 'Agenda y seguimiento automáticos', 'Cada paciente que agenda Lía llega con su expediente'],
   },
@@ -72,6 +73,7 @@ export const PLANES = [
     value: 'lia',
     nombre: 'Lía',
     precio: null, // price and Recurrente link pending
+    proximamente: true,
     link: null,
     incluye: ['Recepcionista virtual en su WhatsApp', 'Contesta y agenda las 24 horas', 'Recontacta, confirma y recuerda citas', 'Agenda de citas (sin expedientes ni cobros)'],
   },

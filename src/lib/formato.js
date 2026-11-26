@@ -9,6 +9,14 @@ export function fmtFecha(iso) {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
   return `${d} de ${MESES[m - 1].toLowerCase()} de ${y}`
 }
+// A timestamp shown as a calendar date in the viewer's own timezone (fmtFecha reads the UTC date part)
+export function fmtFechaLocal(ts) {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return `${d.getDate()} de ${MESES[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`
+}
+// whole days left until a timestamp (0 when it has passed)
+export const diasRestantes = (ts) => Math.max(0, Math.ceil((new Date(ts).getTime() - Date.now()) / 86400000))
 export function fmtFechaCorta(iso) {
   if (!iso) return '—'
   const [y, m, d] = iso.slice(0, 10).split('-')

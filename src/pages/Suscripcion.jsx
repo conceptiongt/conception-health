@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, SERIF, SHADOW } from '../lib/theme'
+import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
+import { esAdmin } from '../lib/permisos'
 import { PLANES, LIMITE_PRUEBA } from '../lib/constantes'
-import { fmtFecha } from '../lib/formato'
+import { fmtFecha, fmtFechaLocal, diasRestantes } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Badge } from '../components/ui/Varios'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { Modal } from '../components/ui/Modal'
+import { Campo, Input } from '../components/ui/Campos'
 import { toast } from '../components/ui/Toast'
 
 export function Suscripcion() {
@@ -17,6 +19,34 @@ export function Suscripcion() {
   const [confirmar, setConfirmar] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const cancelada = !!clinica?.cancelada_at
+
+  // Free period from an invitation code (no Recurrente subscription behind it)
+  const suscrita = !!clinica?.recurrente_suscripcion_id
+  const promoFuturo = !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date()
+  const promoActiva = promoFuturo && planActivo && !suscrita
+  const promoTermino = !!clinica?.promo_hasta && !promoFuturo && !planActivo
+  const puedeCanjear = !planActivo && !clinica?.promo_codigo_id && !suscrita
+  const [codigo, setCodigo] = useState('')
+  const [canjeando, setCanjeando] = useState(false)
+
+  const canjear = async (e) => {
+    e.preventDefault()
+    const c = codigo.replace(/\s+/g, '').toUpperCase()
+    if (!c) { toast.error('Escriba su código de invitación.'); return }
+    setCanjeando(true)
+    const { data, error } = await supabase.functions.invoke('canjear-codigo', { method: 'POST', body: { codigo: c } })
+    setCanjeando(false)
+    let r = data
+    if (error) { try { r = await error.context.json() } catch { r = null } }
+    if (r?.ok) {
+      toast.success(`Código aplicado: su cuenta está activa gratis hasta el ${fmtFechaLocal(r.hasta)}.`)
+      setCodigo('')
+      recargarSesion()
+    } else if (r?.motivo === 'ya_activa') toast.error('Su cuenta ya tiene un plan activo o ya usó un código.')
+    else if (r?.error === 'DEMASIADOS_INTENTOS') toast.error('Demasiados intentos. Espere una hora e intente de nuevo.')
+    else if (r && r.ok === false) toast.error('El código no es válido o ya venció.')
+    else toast.error('No se pudo aplicar el código. Intente de nuevo.')
+  }
 
   const cancelar = async () => {
     setCancelando(true)
@@ -41,25 +71,54 @@ export function Suscripcion() {
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.14em' }}>PLAN ACTUAL</div>
           <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 700, color: C.black, marginTop: 2 }}>
-            {planActivo && planActual ? `Plan ${planActual.nombre}` : 'Versión de prueba'}
+            {promoActiva ? 'Prueba gratis' : planActivo && planActual ? `Plan ${planActual.nombre}` : 'Versión de prueba'}
           </div>
           <div style={{ fontSize: 13.5, color: C.g500, marginTop: 2 }}>
-            {planActivo
+            {promoActiva
+              ? `Plan completo gratis hasta el ${fmtFechaLocal(clinica.promo_hasta)}`
+              : planActivo
               ? (cancelada
                   ? `Cancelada · puede seguir usando su plan hasta el ${fmtFecha(clinica.plan_hasta)}`
                   : clinica.plan_hasta ? `Se renueva automáticamente · próximo cobro cerca del ${fmtFecha(clinica.plan_hasta)}` : 'Suscripción activa')
               : `${pacientes.length} de ${LIMITE_PRUEBA} pacientes usados en la prueba gratis`}
           </div>
         </div>
-        {planActivo
+        {promoActiva
+          ? <Badge color={C.green} bg={C.greenLight}>Prueba gratis</Badge>
+          : planActivo
           ? (cancelada ? <Badge color={C.orange} bg={C.orangeLight}>Cancelada</Badge> : <Badge color={C.green} bg={C.greenLight}>Activa</Badge>)
           : <Badge color={C.amber} bg={C.amberLight}>Prueba</Badge>}
-        {planActivo && !cancelada && <Button variant="danger" size="sm" onClick={() => setConfirmar(true)}>Cancelar suscripción</Button>}
+        {planActivo && !cancelada && !promoActiva && <Button variant="danger" size="sm" onClick={() => setConfirmar(true)}>Cancelar suscripción</Button>}
       </div>
+
+      {promoActiva && (
+        <div style={{ ...GLASS, borderRadius: 20, padding: '14px 18px', marginTop: 16, fontSize: 14, color: C.g700, lineHeight: 1.5 }}>
+          Prueba gratis activa hasta el <strong>{fmtFechaLocal(clinica.promo_hasta)}</strong> ({diasRestantes(clinica.promo_hasta)} días restantes).
+        </div>
+      )}
+      {promoTermino && (
+        <div style={{ ...GLASS, borderRadius: 20, padding: '14px 18px', marginTop: 16, fontSize: 14, color: C.g700, lineHeight: 1.5 }}>
+          Su prueba gratis terminó el <strong>{fmtFechaLocal(clinica.promo_hasta)}</strong>. Sus datos siguen guardados; active un plan para seguir registrando pacientes.
+        </div>
+      )}
+      {puedeCanjear && esAdmin(perfil) && (
+        <form noValidate onSubmit={canjear} style={{ ...GLASS, borderRadius: 20, padding: '16px 18px', marginTop: 16 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: C.black }}>¿Tiene un código de invitación?</div>
+          <div style={{ fontSize: 13, color: C.g500, margin: '2px 0 12px' }}>Si tiene un código, su cuenta queda activa gratis por el tiempo indicado.</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Campo label="Código de invitación">
+                <Input value={codigo} onChange={v => setCodigo(v.replace(/\s+/g, '').toUpperCase())} maxLength={40} autoComplete="off" placeholder="Ej. A1B2C3D4E5" />
+              </Campo>
+            </div>
+            <Button type="submit" variant="brand" disabled={canjeando}>{canjeando ? 'Aplicando…' : 'Aplicar código'}</Button>
+          </div>
+        </form>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 16, marginTop: 16 }}>
         {PLANES.map(p => {
-          const actual = planActivo && !cancelada && clinica?.plan === p.value
+          const actual = planActivo && !cancelada && !promoActiva && clinica?.plan === p.value
           const destacado = p.value === 'ultra'
           return (
             <div key={p.value} style={{ borderRadius: 22, padding: 1.5, boxShadow: SHADOW, background: actual || destacado ? C.grad : C.line }}>
@@ -70,7 +129,9 @@ export function Suscripcion() {
                 </div>
                 <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Inventario por sede', ultra: 'Max + Lía, su recepcionista virtual', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
-                  {p.precio
+                  {p.proximamente
+                    ? <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.g400, lineHeight: '46px' }}>Próximamente</span>
+                    : p.precio
                     ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 600, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
                     : <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.g400, lineHeight: '46px' }}>Precio por anunciar</span>}
                 </div>
@@ -83,12 +144,12 @@ export function Suscripcion() {
                     </div>
                   ))}
                 </div>
-                <div style={{ marginTop: 24 }}>
-                  {actual
+                <div style={{ marginTop: 24, minHeight: 40 }}>
+                  {p.proximamente ? null : actual
                     ? <Button variant="ghost" icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Gestionar suscripción</Button>
                     : p.link && p.precio
                       ? <Button variant={destacado ? 'brand' : 'primary'} icon="suscripcion" style={{ width: '100%' }} onClick={() => abrir(p.link)}>Suscribirme al plan {p.nombre}</Button>
-                      : <Button variant="ghost" style={{ width: '100%' }} disabled>Próximamente</Button>}
+                      : <Button variant="ghost" style={{ width: '100%' }} disabled>Precio por anunciar</Button>}
                 </div>
               </div>
             </div>

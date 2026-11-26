@@ -8,6 +8,7 @@ import { ESPECIALIDADES } from '../lib/especialidades'
 import { Logo } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { toast } from '../components/ui/Toast'
+import { fmtFechaLocal } from '../lib/formato'
 
 const redirect = () => window.location.origin
 const CORREO_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -82,6 +83,9 @@ export function Acceso() {
   const [email, setEmail] = useState(params.get('correo') || '')
   const [password, setPassword] = useState('')
   const [password2, setPassword2] = useState('')
+  // invitation code (owner sign-up only); ?codigo=XXXX prefills it
+  const limpiarCodigo = (v) => String(v || '').replace(/[^A-Za-z0-9-]/g, '').toUpperCase().slice(0, 40)
+  const [codigo, setCodigo] = useState(() => limpiarCodigo(params.get('codigo')))
   const [sitio, setSitio] = useState('') // honeypot: people never see it
   const [abierto] = useState(() => Date.now())
   const [msg, setMsg] = useState(null)
@@ -109,7 +113,7 @@ export function Acceso() {
     setBusy(true); setMsg(null)
     const correo = email.trim().toLowerCase()
     const { data, error } = await supabase.functions.invoke('crear-cuenta', {
-      body: { nombre: nombre.trim(), especialidad: esp, email: correo, password, sitio, t: Date.now() - abierto },
+      body: { nombre: nombre.trim(), especialidad: esp, email: correo, password, sitio, t: Date.now() - abierto, ...(!asistente && codigo ? { codigo } : {}) },
     })
     let codigo = data?.error
     if (error) { try { codigo = (await error.context?.json())?.error } catch { /* sin detalle */ } }
@@ -122,7 +126,13 @@ export function Acceso() {
     const { error: e2 } = await supabase.auth.signInWithPassword({ email: correo, password })
     setBusy(false)
     if (e2) { cambiar('entrar'); setMsg({ tipo: 'ok', t: 'Su cuenta está lista. Inicie sesión con su correo y contraseña.' }) }
-    else if (params.get('crear')) window.history.replaceState(null, '', window.location.pathname)
+    else {
+      if (params.get('crear')) window.history.replaceState(null, '', window.location.pathname)
+      // the session starts right after; the toast container is always mounted
+      if (data.promo === 'ok') toast.success(`Código aplicado: su cuenta está activa gratis hasta el ${fmtFechaLocal(data.promo_hasta)}.`)
+      else if (data.promo === 'invalido') toast.error('El código no es válido o ya venció. Su cuenta se creó en modo de prueba; puede intentar de nuevo en Suscripción.')
+      else if (data.promo === 'ya_activa') toast.error('Su cuenta ya tenía un plan activo, por eso no se aplicó el código.')
+    }
   }
 
   // sign in without a password: a one-time link to the email (only for accounts that already exist)
@@ -194,6 +204,11 @@ export function Acceso() {
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required maxLength={120} autoComplete="email" /></Campo>
           <Campo label="Contraseña" ayuda="Mínimo 8 caracteres"><Input type="password" value={password} onChange={setPassword} required autoComplete="new-password" /></Campo>
           <Campo label="Repita la contraseña"><Input type="password" value={password2} onChange={setPassword2} required autoComplete="new-password" /></Campo>
+          {!asistente && (
+            <Campo label="Código de invitación (opcional)" ayuda="Si tiene un código, su cuenta queda activa gratis por el tiempo indicado.">
+              <Input value={codigo} onChange={v => setCodigo(limpiarCodigo(v))} maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+            </Campo>
+          )}
           <input value={sitio} onChange={e => setSitio(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0 }} />
           <Button type="submit" size="lg" disabled={busy}>{busy ? 'Creando su cuenta…' : 'Crear cuenta y entrar'}</Button>
           <div>{link('Ya tengo cuenta', 'enlace')}</div>

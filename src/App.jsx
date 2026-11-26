@@ -29,6 +29,7 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, esSoporte, puede } from './lib/permisos'
+import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
@@ -139,6 +140,9 @@ function Aplicacion({ sesion }) {
 
   const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
   const enPrueba = !planActivo
+  // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
+  const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
+  const promoDias = promoActiva ? diasRestantes(clinica.promo_hasta) : 0
   const usados = datos?.pacientes.length ?? 0
 
   const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
@@ -228,6 +232,18 @@ function Aplicacion({ sesion }) {
             </div>
           )}
           {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
+          {promoActiva && (
+            <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>
+                  {promoDias <= 7 ? `Su prueba gratis termina en ${promoDias} ${promoDias === 1 ? 'día' : 'días'}` : `Prueba gratis hasta el ${fmtFechaLocal(clinica.promo_hasta)}`}
+                </div>
+                <div style={{ fontSize: 13, color: C.g500 }}>{promoDias <= 7 ? `Termina el ${fmtFechaLocal(clinica.promo_hasta)}. Active un plan para seguir registrando pacientes.` : 'Tiene la plataforma completa sin costo.'}</div>
+              </div>
+              {esAdmin(perfil) && <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>}
+            </div>
+          )}
           {enPrueba && (
             <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>

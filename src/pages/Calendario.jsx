@@ -3,7 +3,7 @@ import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
 import { ESTADOS_CITA, MESES, estadoCita } from '../lib/constantes'
 import { tiposDe } from '../lib/especialidades'
 import { puede, esSoporte } from '../lib/permisos'
-import { hoyISO, fmtHora, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
+import { hoyISO, fmtHora, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import {
   DIAS_CORTOS, DIAS_INICIAL, PALETA, aMinutos, agruparPorDia, colorDeCita, colorDeClave, duracionCita, esISO,
   fechaLarga, guardarPrefillCita, guardarPreferencias, agruparGoogle, leerVerGoogle, guardarVerGoogle, guardarVista, inicioSemana, leerPreferencias, leerVista, matrizMes, mayuscula, partesISO,
@@ -557,7 +557,6 @@ function DetalleCita({ cita: c, paciente: p, sedes, clinica, perfil, onClose, on
   if (!p) return null
   const e = estadoCita(c.estado)
   const wa = linkWhatsApp(p.telefono, mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre))
-  const cal = linkCalendar(p, c)
   const agendo = c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')
   const dato = (k, v) => v ? <div><div style={{ fontSize: 11, fontWeight: 700, color: C.g400, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{k}</div><div style={{ fontSize: 14.5, color: C.black, marginTop: 3, overflowWrap: 'anywhere' }}>{v}</div></div> : null
   return (
@@ -577,7 +576,6 @@ function DetalleCita({ cita: c, paciente: p, sedes, clinica, perfil, onClose, on
         <Button icon="editar" onClick={onEditar}>Editar cita</Button>
         <Button variant="ghost" icon="expedientes" onClick={onExpediente}>Ver expediente</Button>
         {wa && <Button variant="ghost" icon="mensaje" onClick={() => window.open(wa, '_blank', 'noopener')}>WhatsApp</Button>}
-        {cal && <Button variant="ghost" icon="calendarioMas" onClick={() => window.open(cal, '_blank', 'noopener')}>Agregar a Google Calendar</Button>}
       </div>
     </Modal>
   )

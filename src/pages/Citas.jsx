@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SHADOW } from '../lib/theme'
 import { TIPOS_CITA, ESTADOS_CITA, ORIGENES, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtFechaCorta, fmtHora, linkCalendar, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
+import { fmtFechaCorta, fmtHora, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import { SelectorPeriodo, RangoFechas, AgregarAnio, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
 import { slug } from '../lib/excel'
 import { useDatos } from '../hooks/useDatos'
@@ -196,7 +196,6 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
             const e = estadoCita(c.estado)
             const abiertaEsta = abierta === c.id
             const wa = linkWhatsApp(p.telefono, mensaje(p, c))
-            const cal = linkCalendar(p, c)
             const agendo = c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')
             return [
               <tr key={c.id} className="fila" onClick={() => setAbierta(abiertaEsta ? null : c.id)}
@@ -235,7 +234,6 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
                         <button style={accion} onClick={() => onExpediente(p)}><Icon name="expedientes" size={15} />Ver expediente</button>
                         <button style={accion} onClick={() => onEditar(c)}><Icon name="editar" size={15} />Editar cita</button>
                         {wa && <button style={accion} onClick={() => window.open(wa, '_blank', 'noopener')}><Icon name="mensaje" size={15} />WhatsApp</button>}
-                        {cal && <button style={accion} onClick={() => window.open(cal, '_blank', 'noopener')}><Icon name="calendarioMas" size={15} />Google Calendar</button>}
                       </div>
                     </div>
                   </td>

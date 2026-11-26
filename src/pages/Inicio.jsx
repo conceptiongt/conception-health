@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SERIF } from '../lib/theme'
 import { MESES, ESTADOS_CITA, ORIGENES, REDES, estadoCita, origenLabel } from '../lib/constantes'
-import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO, linkCalendar } from '../lib/formato'
+import { fmtQ, fmtNum, fmtFecha, fmtFechaCorta, fmtHora, saldo, totalCobro, hoyISO } from '../lib/formato'
 import { slug } from '../lib/excel'
 import { especialidad } from '../lib/especialidades'
 import { puede } from '../lib/permisos'
@@ -289,13 +289,12 @@ export function Inicio() {
       <Panel eyebrow="Registro" titulo="Últimos pacientes" style={{ marginTop: 18 }}>
         <div style={{ overflowX: 'auto', margin: '-6px -8px -4px', padding: '0 8px' }}>
           <table className="in-tabla">
-            <thead><tr>{['Nombre', 'Última cita', 'Hora', 'Origen', 'Estado', ''].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Nombre', 'Última cita', 'Hora', 'Origen', 'Estado'].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
             <tbody>
               {ultimos.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: C.g500, borderRadius: 18 }}>Aún no hay pacientes registrados</td></tr>
+                <tr><td colSpan={5} style={{ padding: 28, textAlign: 'center', color: C.g500, borderRadius: 18 }}>Aún no hay pacientes registrados</td></tr>
               ) : ultimos.map(({ p, c }) => {
                 const e = c ? estadoCita(c.estado) : null
-                const cal = c ? linkCalendar(p, c) : null
                 return (
                   <tr key={p.id} onClick={() => ir('expedientes', p.id)}>
                     <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, fontWeight: 600 }}><Avatar nombre={p.nombre} size={34} />{p.nombre}</span></td>
@@ -303,9 +302,6 @@ export function Inicio() {
                     <td>{c ? fmtHora(c.hora) : '—'}</td>
                     <td style={{ color: C.g600 }}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
                     <td>{e ? <Badge color={e.color} bg={e.bg}>{c.estado}</Badge> : '—'}</td>
-                    <td onClick={ev => ev.stopPropagation()}>
-                      {cal && <button onClick={() => window.open(cal, '_blank', 'noopener')} title="Agregar a Google Calendar" aria-label="Agregar a Google Calendar" className="btn-ghost" style={{ width: 32, height: 32, borderRadius: 160, border: `1px solid ${C.g200}`, background: '#fff', color: C.g500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="calendarioMas" size={15} /></button>}
-                    </td>
                   </tr>
                 )
               })}

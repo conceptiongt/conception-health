@@ -525,7 +525,9 @@ async function bajarFoto(mediaId: string) {
   if (!r.ok) return undefined
   return { media_type: meta.mime_type as string, data: encodeBase64(new Uint8Array(await r.arrayBuffer())) }
 }
-const planConLia = (c: any) => ['ultra', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
+// Expired account (read-only): has a plan that is no longer active/paid. A clinic that never had a plan ('prueba') is not expired.
+const cuentaVencida = (c: any) => !!c && c.plan !== 'prueba' && !(c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date()))
+const planConLia = (c: any) => !cuentaVencida(c) && ['ultra', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
 function textoDe(m: any) {
   if (m.type === 'text') return m.text?.body || ''
   if (m.type === 'image') return m.image?.caption || ''
@@ -620,6 +622,8 @@ Deno.serve(async (req) => {
     if (!perfil || perfil.rol === 'soporte') return json({ error: 'sin_sesion' }, 401)
     const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()
     const body = await req.json().catch(() => ({}))
+    // an expired account is read-only: the receptionist does not reply, test or send (disconnecting the number stays allowed)
+    if (cuentaVencida(clinica) && body.accion !== 'desconectar_whatsapp') return json({ error: 'CUENTA_VENCIDA' }, 403)
 
     if (body.accion === 'reiniciar') {
       await db.from('lia_conversaciones').delete().eq('clinica_id', clinica.id).eq('prueba', true)

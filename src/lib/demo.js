@@ -99,7 +99,7 @@ const DB = {
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   // fictional support-code history (the real database never exposes the hash column)

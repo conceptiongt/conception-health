@@ -11,6 +11,8 @@ const CORS = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 const EMAIL = /^[^@\s<>"']+@[^@\s<>"']+\.[a-z]{2,}$/i
 const LIMITE = 5 // accounts per IP every 10 minutes
+const LIMITE_CODIGO = 8 // invitation-code attempts per IP every hour
+const CODIGO = /^[A-Za-z0-9-]{1,40}$/
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
@@ -19,6 +21,15 @@ async function permitido(ip: string) {
   const { count } = await db.from('limite_publico').select('id', { count: 'exact', head: true }).eq('ip', ip).eq('accion', 'crear_cuenta').gte('at', desde)
   if ((count ?? 0) >= LIMITE) return false
   await db.from('limite_publico').insert({ ip, accion: 'crear_cuenta' })
+  return true
+}
+
+// Counts every attempt (valid or not) so a code cannot be guessed by brute force from one connection
+async function codigoPermitido(ip: string) {
+  const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const { count } = await db.from('limite_publico').select('id', { count: 'exact', head: true }).eq('ip', ip).eq('accion', 'codigo').gte('at', desde)
+  if ((count ?? 0) >= LIMITE_CODIGO) return false
+  await db.from('limite_publico').insert({ ip, accion: 'codigo' })
   return true
 }
 
@@ -45,6 +56,11 @@ Deno.serve(async (req) => {
   const { data: pendiente } = inv ? { data: null } : await db.from('perfiles').select('user_id').ilike('email', email).neq('rol', 'dueno').eq('password_creada', false).maybeSingle()
   if (!inv && !pendiente && (!nombre || !especialidad)) return json({ error: 'FALTAN_DATOS' }, 400)
 
+  // optional invitation code: a bad format never blocks the sign-up, it only means the promo is not applied
+  const codigoCrudo = String(b.codigo || '').replace(/\s+/g, '')
+  const quiereCodigo = codigoCrudo.length > 0
+  const codigoValido = quiereCodigo && CODIGO.test(codigoCrudo)
+
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'desconocida'
   if (!(await permitido(ip))) return json({ error: 'DEMASIADOS_INTENTOS' }, 429)
 
@@ -65,5 +81,22 @@ Deno.serve(async (req) => {
   }
   // they already chose their password: skip the "create your password" screen
   await db.from('perfiles').update({ password_creada: true }).eq('user_id', data.user.id)
-  return json({ ok: true, asistente: !!inv })
+
+  // Redeem the code only for a new clinic owner. An invited assistant joins an existing clinic (no clinic is created): the code is ignored.
+  // The account always exists at this point; the promo outcome is reported next to it. The code itself is never logged or echoed.
+  let promo: 'ok' | 'invalido' | 'ya_activa' | null = null
+  let promoHasta: string | null = null
+  if (quiereCodigo && !inv) {
+    const { data: perfil } = await db.from('perfiles').select('clinica_id, rol').eq('user_id', data.user.id).maybeSingle()
+    if (perfil?.rol === 'dueno' && perfil.clinica_id) {
+      if (!codigoValido || !(await codigoPermitido(ip))) promo = 'invalido'
+      else {
+        const { data: r, error: e3 } = await db.rpc('promo_canjear', { p_clinica: perfil.clinica_id, p_codigo: codigoCrudo, p_ip: ip })
+        if (e3 || !r) promo = 'invalido'
+        else if (r.ok) { promo = 'ok'; promoHasta = r.hasta }
+        else promo = r.motivo === 'ya_activa' ? 'ya_activa' : 'invalido'
+      }
+    }
+  }
+  return json({ ok: true, asistente: !!inv, promo, promo_hasta: promoHasta })
 })

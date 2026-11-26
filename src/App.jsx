@@ -11,6 +11,7 @@ import { Citas } from './pages/Citas'
 import { Calendario } from './pages/Calendario'
 import { Expedientes } from './pages/Expedientes'
 import { Suscripcion } from './pages/Suscripcion'
+import { CuentaVencida } from './pages/CuentaVencida'
 import { Configuracion } from './pages/Configuracion'
 import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
@@ -29,6 +30,7 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, esSoporte, puede } from './lib/permisos'
+import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
@@ -85,7 +87,7 @@ function AppPrivada() {
 }
 
 function Aplicacion({ sesion }) {
-  const { perfil, clinica, planActivo, recargar: recargarSesion } = sesion
+  const { perfil, clinica, planActivo, vencida, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
   const acc = accesos(clinica, planActivo)
   // the section lives in the address (#/citas), so reloading the page stays where you were
@@ -101,20 +103,34 @@ function Aplicacion({ sesion }) {
   }, [])
 
   useEffect(() => { aplicarMarca(clinica?.color) }, [clinica?.color])
+  // an expired account has a single screen: any other address (#/citas, #/suscripcion…) lands here
+  useEffect(() => {
+    if (!vencida) return
+    const fijar = () => { if (window.location.hash !== '#/cuenta-vencida') window.history.replaceState(null, '', '#/cuenta-vencida') }
+    fijar()
+    window.addEventListener('hashchange', fijar)
+    return () => window.removeEventListener('hashchange', fijar)
+  }, [vencida])
+  // when the account is reactivated (it was expired and no longer is), go to Inicio
+  const eraVencida = useRef(vencida)
+  useEffect(() => {
+    if (eraVencida.current && !vencida) ir('inicio')
+    eraVencida.current = vencida
+  }, [vencida])
 
   // first entry with a specialty: fill Tarifas with its suggested services (once)
   const sugiriendo = useRef(false)
   useEffect(() => {
-    if (!datos || esSoporte(perfil) || !puede(perfil, 'configuracion') || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
+    if (vencida || !datos || esSoporte(perfil) || !puede(perfil, 'configuracion') || !clinica?.especialidad || clinica.sugeridos_cargados || sugiriendo.current) return
     sugiriendo.current = true
     cargarSugeridos(clinica, datos.servicios).then(() => { recargar(); recargarSesion() })
-  }, [datos, clinica, recargar, recargarSesion])
+  }, [vencida, datos, clinica, recargar, recargarSesion])
   const [sinEspecialidad, setSinEspecialidad] = useState(true)
 
   // Conception Studio link: refresh its status and send this clinic's monthly totals when data changes
   const syncTimer = useRef(null)
   useEffect(() => {
-    if (!datos || !esAdmin(perfil) || !clinica?.studio_clave || !['pendiente', 'aprobado'].includes(clinica.studio_estado)) return
+    if (vencida || !datos || !esAdmin(perfil) || !clinica?.studio_clave || !['pendiente', 'aprobado'].includes(clinica.studio_estado)) return
     clearTimeout(syncTimer.current)
     syncTimer.current = setTimeout(async () => {
       const e = await estadoVinculo(clinica.studio_clave)
@@ -126,7 +142,7 @@ function Aplicacion({ sesion }) {
       if (e.estado === 'aprobado') await sincronizar(clinica, datos)
     }, 2000)
     return () => clearTimeout(syncTimer.current)
-  }, [datos, clinica, recargarSesion])
+  }, [vencida, datos, clinica, recargarSesion])
 
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
@@ -139,12 +155,31 @@ function Aplicacion({ sesion }) {
 
   const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
   const enPrueba = !planActivo
+  // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
+  const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
+  const promoDias = promoActiva ? diasRestantes(clinica.promo_hasta) : 0
+  // a cancelled subscription also ends: 7 days before, warn that afterwards the account is read-only (an active one renews by itself)
+  const subTermina = planActivo && !promoActiva && !!clinica?.cancelada_at && !!clinica?.plan_hasta
+  const subDias = subTermina ? diasRestantes(clinica.plan_hasta) : 0
+  const aviso = promoActiva ? { dias: promoDias, fin: clinica.promo_hasta } : subTermina && subDias <= 7 ? { dias: subDias, fin: clinica.plan_hasta } : null
+  // a paid plan (not promo, not cancelled) whose end date is within 3 days: the renewal charge has not been confirmed (owner only)
+  const sinConfirmar = esAdmin(perfil) && planActivo && !promoActiva && !clinica?.cancelada_at && !!clinica?.plan_hasta && diasRestantes(clinica.plan_hasta) <= 3
   const usados = datos?.pacientes.length ?? 0
 
   const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
+
+  // expired account: read-only screen (download data, activate a plan or delete the account); nothing else is rendered
+  if (vencida) {
+    return (
+      <DatosContext.Provider value={ctx}>
+        {esSoporte(perfil) && <div style={{ padding: '14px clamp(14px, 3vw, 40px) 0' }}><BannerSoporte clinica={clinica} onSalir={recargarSesion} /></div>}
+        {!datos && !error ? <PantallaCarga /> : <CuentaVencida errorDatos={!datos && !!error} onReintentar={recargar} />}
+      </DatosContext.Provider>
+    )
+  }
 
   return (
     <DatosContext.Provider value={ctx}>
@@ -228,6 +263,27 @@ function Aplicacion({ sesion }) {
             </div>
           )}
           {datos && clinica && esAdmin(perfil) && !clinica.especialidad && sinEspecialidad && <ElegirEspecialidad clinica={clinica} onListo={() => { setSinEspecialidad(false); recargarSesion() }} onDespues={() => setSinEspecialidad(false)} />}
+          {sinConfirmar && (
+            <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
+              <div style={{ flex: 1, minWidth: 220, fontWeight: 700, fontSize: 14 }}>
+                No pudimos confirmar su pago. Si no se renueva antes del {fmtFechaLocal(clinica.plan_hasta)}, la cuenta quedará solo para descargar sus datos.
+              </div>
+              <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>
+            </div>
+          )}
+          {aviso && (aviso.dias <= 7 || promoActiva) && (
+            <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>
+                  {aviso.dias <= 7 ? `Su período termina en ${aviso.dias} ${aviso.dias === 1 ? 'día' : 'días'}. Después solo podrá descargar sus datos.` : `Prueba gratis hasta el ${fmtFechaLocal(aviso.fin)}`}
+                </div>
+                <div style={{ fontSize: 13, color: C.g500 }}>{aviso.dias <= 7 ? `Termina el ${fmtFechaLocal(aviso.fin)}. Active un plan para seguir usando la plataforma.` : 'Tiene la plataforma completa sin costo.'}</div>
+              </div>
+              {esAdmin(perfil) && <Button variant="brand" size="sm" onClick={() => ir('suscripcion')}>Ver planes</Button>}
+            </div>
+          )}
           {enPrueba && (
             <div style={{ background: C.periwinkle, borderRadius: 24, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: '#fff', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="estrella" size={18} /></div>

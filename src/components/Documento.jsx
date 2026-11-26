@@ -105,7 +105,8 @@ function Documento({ titulo, subtitulo, clinica: nombreClinica, secciones, onRea
 
 // "Excel", "Ver PDF" (opens in another window, where it can be downloaded) and "Imprimir" buttons.
 // `preparar()` returns { titulo, subtitulo, secciones, excel: { hojas, archivo } } (may be async)
-export function Exportar({ clinica, preparar, size = 'sm' }) {
+// `compacto`: only «Excel» and «PDF» (used by the screen of an expired account, where there is nothing to print)
+export function Exportar({ clinica, preparar, size = 'sm', compacto = false }) {
   const datos = useDatos()
   const [doc, setDoc] = useState(null)
   const [pdf, setPdf] = useState(null) // document being turned into a PDF
@@ -156,8 +157,8 @@ export function Exportar({ clinica, preparar, size = 'sm' }) {
   return (
     <>
       <Button variant="ghost" size={size} onClick={excel} disabled={busy} icon="excel">Excel</Button>
-      <Button variant="ghost" size={size} onClick={verEnPdf} disabled={busy} title="Se abre en otra ventana, desde donde puede descargarlo" icon="pdf">Ver PDF</Button>
-      <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} icon="imprimir">Imprimir</Button>
+      <Button variant="ghost" size={size} onClick={verEnPdf} disabled={busy} title="Se abre en otra ventana, desde donde puede descargarlo" icon="pdf">{compacto ? 'PDF' : 'Ver PDF'}</Button>
+      {!compacto && <Button variant="ghost" size={size} onClick={imprimir} disabled={busy} icon="imprimir">Imprimir</Button>}
       {doc && <Documento clinica={clinica} titulo={doc.titulo} subtitulo={doc.subtitulo} secciones={doc.secciones} onReady={onReady} />}
       {pdf && <Documento clinica={clinica} titulo={pdf.titulo} subtitulo={pdf.subtitulo} secciones={pdf.secciones} refPdf={refPdf} />}
     </>

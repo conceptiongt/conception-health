@@ -9,6 +9,7 @@ import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla } from '../components/ui/Varios'
 import { Button } from '../components/ui/Button'
 import { Exportar } from '../components/Documento'
+import { prepararCitas } from '../lib/exportar'
 import { CitaModal } from '../components/CitaModal'
 import { toast } from '../components/ui/Toast'
 import { Icon } from '../components/ui/Icon'
@@ -85,23 +86,7 @@ export function Citas() {
     ], filas: eliminadasVisibles.map(r => ({ f: r.fecha, p: r.paciente_nombre, t: r.tipo, m: r.motivo, u: r.eliminado_por_nombre, e: cuandoEliminada(r.eliminado_at) })) }] },
   })
 
-  const preparar = () => verEliminadas ? prepararEliminadas() : ({
-    titulo: 'Citas',
-    subtitulo: filtroTexto,
-    secciones: [{ tabla: {
-      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Agendó'],
-      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')] }),
-    } }],
-    excel: { archivo: `citas_${slug(filtroTexto)}`, hojas: [{ nombre: 'Citas', columnas: [
-      { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'Hora', key: 'hora', width: 8 }, { header: 'Paciente', key: 'paciente', width: 30 },
-      { header: 'Teléfono', key: 'tel', width: 14 }, { header: 'Tipo', key: 'tipo', width: 18 }, { header: 'Estado', key: 'estado', width: 13 },
-      { header: 'Origen', key: 'origen', width: 16 }, { header: 'Red social', key: 'red', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 },
-      { header: 'Agendó', key: 'agendo', width: 20 }, { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Sede', key: 'sede', width: 16 }, { header: 'Notas', key: 'notas', width: 40 },
-    ], filas: visibles.map(c => { const p = porId[c.paciente_id]; return {
-      sede: nombreSede(sedes, c.sede_id), fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, estado: c.estado,
-      origen: origenLabel(p.origen), red: p.red, ref: p.referido_por, agendo: c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : ''), proc: c.procedimiento, notas: c.notas,
-    } }) }] },
-  })
+  const preparar = () => verEliminadas ? prepararEliminadas() : prepararCitas({ visibles, porId, sedes, filtroTexto })
 
   const sel = filtroStyle
 

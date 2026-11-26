@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, SHADOW } from '../lib/theme'
+import { C } from '../lib/theme'
 import { MESES, METODOS_PAGO } from '../lib/constantes'
-import { fmtQ, fmtFechaCorta, hoyISO, totalCobro, saldo } from '../lib/formato'
+import { fmtQ, fmtFechaCorta, hoyISO } from '../lib/formato'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Card, Indicadores, Tabla, Cargando, Badge } from '../components/ui/Varios'
 import { Button } from '../components/ui/Button'
@@ -10,10 +10,9 @@ import { Modal } from '../components/ui/Modal'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
 import { toast } from '../components/ui/Toast'
 import { Exportar } from '../components/Documento'
-import { SelectorPeriodo, RangoFechas, FiltroSede, enPeriodo, textoPeriodo, nombreSede } from '../components/Filtros'
-import { sedeCobro } from '../components/Pagos'
+import { cargarFinanzas, calcularFinanzas, prepararFinanzas } from '../lib/exportar'
+import { SelectorPeriodo, RangoFechas, FiltroSede, textoPeriodo, nombreSede } from '../components/Filtros'
 import { BotonesSubir, tipoArchivo } from '../components/SubirArchivos'
-import { totalOC } from '../components/inventario/Compras'
 import { confirmar } from '../components/ui/Confirmar'
 
 export const CATEGORIAS_GASTO = ['Renta', 'Sueldos y planilla', 'Insumos médicos', 'Servicios (luz, agua, internet)', 'Publicidad', 'Mantenimiento', 'Impuestos', 'Honorarios', 'Otros']
@@ -27,68 +26,15 @@ export function Finanzas() {
   const [d, setD] = useState(null) // { abonos, gastos, ordenes, lineas }
   const [gasto, setGasto] = useState(undefined) // undefined: closed, null: new, object: edit
 
-  const cargar = useCallback(async () => {
-    const [a, g, o, l] = await Promise.all([
-      supabase.from('abonos').select('*'), supabase.from('gastos').select('*').order('fecha', { ascending: false }),
-      supabase.from('ordenes_compra').select('*'), supabase.from('ordenes_compra_lineas').select('*'),
-    ])
-    setD({ abonos: a.data || [], gastos: g.data || [], ordenes: o.data || [], lineas: l.data || [] })
-  }, [])
+  const cargar = useCallback(async () => { setD(await cargarFinanzas()) }, [])
   useEffect(() => { cargar() }, [cargar])
   if (!d) return <Cargando />
 
-  // everything follows the chosen location
-  const cobroPorId = Object.fromEntries(cobros.map(c => [c.id, c]))
-  const deSede = (id) => !sede || id === sede
-  const cobrosS = cobros.filter(c => deSede(sedeCobro(c, citas, pacientes)))
-  const abonosS = d.abonos.filter(a => cobroPorId[a.cobro_id] && deSede(sedeCobro(cobroPorId[a.cobro_id], citas, pacientes)))
-  const gastosS = d.gastos.filter(g => deSede(g.sede_id))
-  // inventory purchases received count as expenses (by order date)
-  const compras = d.ordenes.filter(o => ['recibida', 'parcial'].includes(o.estado) && deSede(o.sede_id))
-    .map(o => ({ id: 'oc' + o.id, fecha: o.fecha, categoria: 'Compras de inventario', concepto: `Orden de compra OC-${String(o.numero).padStart(4, '0')}`, monto: totalOC(d.lineas.filter(l => l.orden_id === o.id), o), sede_id: o.sede_id, automatico: true }))
-    .filter(g => g.monto > 0)
-  const salidas = [...gastosS, ...compras]
-
-  const enP = (iso) => enPeriodo(iso, periodo)
-  const ingresos = abonosS.filter(a => enP(a.fecha)).reduce((n, a) => n + Number(a.monto), 0)
-  const egresos = salidas.filter(g => enP(g.fecha)).reduce((n, g) => n + Number(g.monto), 0)
-  const facturado = cobrosS.filter(c => enP(c.fecha)).reduce((n, c) => n + totalCobro(c), 0)
-  const porCobrar = cobrosS.reduce((n, c) => n + saldo(c), 0)
-  const utilidad = ingresos - egresos
-
-  // last 12 months up to the chosen one
-  const fin = periodo.anio !== '' && periodo.mes !== '' ? new Date(periodo.anio, periodo.mes, 1) : new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-  const meses = Array.from({ length: 12 }, (_, i) => { const x = new Date(fin.getFullYear(), fin.getMonth() - 11 + i, 1); return { y: x.getFullYear(), m: x.getMonth() } })
-  const delMes = (iso, { y, m }) => !!iso && Number(iso.slice(0, 4)) === y && Number(iso.slice(5, 7)) - 1 === m
-  const serie = meses.map(mm => ({ ...mm,
-    ingresos: abonosS.filter(a => delMes(a.fecha, mm)).reduce((n, a) => n + Number(a.monto), 0),
-    gastos: salidas.filter(g => delMes(g.fecha, mm)).reduce((n, g) => n + Number(g.monto), 0) }))
-  const tope = Math.max(1, ...serie.flatMap(s => [s.ingresos, s.gastos]))
-
-  // where the money comes from and where it goes
-  const porConcepto = Object.entries(abonosS.filter(a => enP(a.fecha)).reduce((acc, a) => { const k = cobroPorId[a.cobro_id]?.concepto || 'Otros'; acc[k] = (acc[k] || 0) + Number(a.monto); return acc }, {})).sort((a, b) => b[1] - a[1])
-  const porCategoria = Object.entries(salidas.filter(g => enP(g.fecha)).reduce((acc, g) => { acc[g.categoria] = (acc[g.categoria] || 0) + Number(g.monto); return acc }, {})).sort((a, b) => b[1] - a[1])
-  const lista = salidas.filter(g => enP(g.fecha)).sort((a, b) => b.fecha.localeCompare(a.fecha))
+  const calculo = calcularFinanzas({ cobros, citas, pacientes, d, sede, periodo })
+  const { cobroPorId, facturado, porCobrar, ingresos, egresos, utilidad, serie, tope, porConcepto, porCategoria, lista } = calculo
 
   const titulo = `${textoPeriodo(periodo)}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
-  const preparar = () => ({
-    titulo: `Finanzas ${titulo}`, subtitulo: clinica?.nombre,
-    secciones: [
-      { resumen: [['Ingresos cobrados', fmtQ(ingresos)], ['Gastos', fmtQ(egresos)], ['Utilidad', fmtQ(utilidad)], ['Por cobrar', fmtQ(porCobrar)]] },
-      { titulo: 'Ingresos por servicio', tabla: { headers: ['Servicio', 'Cobrado'], filas: porConcepto.map(([k, v]) => [k, fmtQ(v)]) } },
-      { titulo: 'Gastos por categoría', tabla: { headers: ['Categoría', 'Monto'], filas: porCategoria.map(([k, v]) => [k, fmtQ(v)]) } },
-      { titulo: 'Detalle de gastos', tabla: { headers: ['Fecha', 'Categoría', 'Concepto', 'Sede', 'Monto'], filas: lista.map(g => [fmtFechaCorta(g.fecha), g.categoria, g.concepto, nombreSede(sedes, g.sede_id) || '—', fmtQ(g.monto)]) } },
-      { titulo: 'Últimos 12 meses', tabla: { headers: ['Mes', 'Ingresos', 'Gastos', 'Utilidad'], filas: serie.map(s => [`${MESES[s.m]} ${s.y}`, fmtQ(s.ingresos), fmtQ(s.gastos), fmtQ(s.ingresos - s.gastos)]) } },
-    ],
-    excel: { archivo: 'finanzas', hojas: [
-      { nombre: 'Resumen', columnas: [{ header: 'Indicador', key: 'k', width: 28 }, { header: 'Monto', key: 'v', width: 16, moneda: true }],
-        filas: [['Ingresos cobrados', ingresos], ['Gastos', egresos], ['Utilidad', utilidad], ['Facturado', facturado], ['Por cobrar (total)', porCobrar]].map(([k, v]) => ({ k, v })) },
-      { nombre: 'Gastos', columnas: [{ header: 'Fecha', key: 'f', width: 12 }, { header: 'Categoría', key: 'c', width: 24 }, { header: 'Concepto', key: 'co', width: 36 }, { header: 'Proveedor', key: 'p', width: 22 }, { header: 'Sede', key: 's', width: 16 }, { header: 'Método', key: 'm', width: 14 }, { header: 'Monto', key: 'v', width: 14, moneda: true }],
-        filas: lista.map(g => ({ f: g.fecha, c: g.categoria, co: g.concepto, p: g.proveedor, s: nombreSede(sedes, g.sede_id), m: g.metodo, v: Number(g.monto) })) },
-      { nombre: '12 meses', columnas: [{ header: 'Mes', key: 'm', width: 16 }, { header: 'Ingresos', key: 'i', width: 14, moneda: true }, { header: 'Gastos', key: 'g', width: 14, moneda: true }, { header: 'Utilidad', key: 'u', width: 14, moneda: true }],
-        filas: serie.map(s => ({ m: `${MESES[s.m]} ${s.y}`, i: s.ingresos, g: s.gastos, u: s.ingresos - s.gastos })) },
-    ] },
-  })
+  const preparar = () => prepararFinanzas({ ...calculo, titulo, clinica, sedes })
 
   const barraLista = (items, total, color) => items.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Sin movimientos en este período</div> : items.slice(0, 8).map(([k, v]) => (
     <div key={k} style={{ marginBottom: 10 }}>

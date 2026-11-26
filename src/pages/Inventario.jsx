@@ -11,6 +11,7 @@ import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { filtroStyle } from '../components/ui/Campos'
 import { Exportar } from '../components/Documento'
+import { prepararInventario } from '../lib/exportar'
 import { toast } from '../components/ui/Toast'
 import { puede } from '../lib/permisos'
 import { OPERACIONES, MovimientoModal, ProductoModal, SedeModal, eliminarDelInventario } from '../components/inventario/Formularios'
@@ -322,17 +323,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
       && (estado === 'inactivo' ? !p.activo : !estado || e.clave === estado))
   const conteo = (clave) => inv.productos.filter(p => p.activo && estadoProducto(inv, visibles, p).clave === clave).length
 
-  const preparar = () => ({
-    titulo: 'Inventario', subtitulo: sedeFiltro ? visibles[0]?.nombre : 'Todas las sedes',
-    secciones: [{ tabla: { headers: ['Producto', 'Unidad', ...visibles.map(s => s.nombre), ...(visibles.length > 1 ? ['Total'] : []), 'Mínimo', 'Estado'],
-      filas: lista.map(({ p, e }) => [p.nombre, p.unidad, ...visibles.map(s => fmtCant(existencia(inv, s.id, p.id))), ...(visibles.length > 1 ? [fmtCant(e.total)] : []), fmtCant(p.stock_minimo), e.label]) } }],
-    excel: { archivo: 'inventario', hojas: [{ nombre: 'Existencias', columnas: [
-      { header: 'Producto', key: 'p', width: 30 }, { header: 'Categoría', key: 'c', width: 16 }, { header: 'Unidad', key: 'u', width: 10 },
-      ...visibles.map((s, i) => ({ header: s.nombre, key: 's' + i, width: 14 })), { header: 'Total', key: 't', width: 10 },
-      { header: 'Mínimo por sede', key: 'm', width: 14 }, ...(costos ? [{ header: 'Costo', key: 'co', width: 12, moneda: true }, { header: 'Valor', key: 'v', width: 14, moneda: true }] : []), { header: 'Estado', key: 'e', width: 14 },
-    ], filas: lista.map(({ p, e }) => ({ p: p.nombre, c: p.categoria, u: p.unidad, ...Object.fromEntries(visibles.map((s, i) => ['s' + i, existencia(inv, s.id, p.id)])),
-      t: e.total, m: Number(p.stock_minimo), co: p.costo != null ? Number(p.costo) : null, v: e.total * (Number(p.costo) || 0), e: e.label })) }] },
-  })
+  const preparar = () => prepararInventario({ inv, lista, visibles, sedeFiltro, costos })
 
   const chip = (valor, label, n) => (
     <button key={valor} onClick={() => setEstado(valor)} style={{ padding: '7px 13px', borderRadius: 20, border: `1px solid ${estado === valor ? C.black : C.g200}`, background: estado === valor ? C.black : '#fff', color: estado === valor ? '#fff' : C.g600, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>

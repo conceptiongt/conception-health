@@ -37,8 +37,10 @@ function cargar(clinicaId) {
     const [a, l, p, pr, pf] = await Promise.all([
       todo('atenciones', '*', 'confirmada_at'), todo('atencion_insumos', COLUMNAS_LINEA, 'created_at'), todo('pendientes_bodega', '*', 'created_at'),
       supabase.from('productos').select('id, nombre, unidad, departamento_id'),
-      supabase.from('perfiles').select('permisos'),
+      supabase.from('perfiles').select('permisos, activo'),
     ])
+    // deactivated users do not count as linked; if the activo column is not there yet, ask again without it
+    const pfFinal = pf.error ? await supabase.from('perfiles').select('permisos') : pf
     const error = a.error || l.error || p.error
     if (error) {
       if (faltaSQL(error)) { store.faltante = true; poner({ ...VACIO, cargado: true }) } // not applied yet: hidden, no noise
@@ -48,7 +50,7 @@ function cargar(clinicaId) {
     // product names are only for labels: without inventory access they simply stay empty
     poner({ disponible: true, cargado: true, atenciones: a.filas, lineas: l.filas, pendientes: p.filas, productos: pr.error ? [] : pr.data || [],
       // doctors that already have a user linked: the «no doctor linked» fallback of puedeConfirmar needs them
-      vinculados: new Set(pf.error ? [] : (pf.data || []).map(x => x.permisos?.profesional_id).filter(Boolean)), version: store.estado.version + 1 })
+      vinculados: new Set(pfFinal.error ? [] : (pfFinal.data || []).filter(x => x.activo !== false).map(x => x.permisos?.profesional_id).filter(Boolean)), version: store.estado.version + 1 })
     return true
   })().finally(() => { store.enCurso = null })
   return store.enCurso

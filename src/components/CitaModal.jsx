@@ -24,6 +24,10 @@ import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 import { SelectorFechaHora } from './SelectorFechaHora'
+import { BloqueCirugia } from './BloqueCirugia'
+import { useCirugiaDeCita } from '../hooks/useCirugias'
+import { usaCirugias } from '../lib/calendario'
+import { fechaDe as fechaCirugia } from '../lib/quirofanos'
 import { useAgenda } from '../hooks/useAgenda'
 import { MeetCita } from './EnlaceMeet'
 import { FaltanDatos } from './EmergenciaBits'
@@ -36,6 +40,8 @@ import { useAtenciones } from '../hooks/useAtenciones'
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
   const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir, hospital } = useDatos()
   const hosp = hospital.disponible // hospital account with its tables ready
+  // a cita that is a booked surgery: its date, time and doctor are read-only here (changed by re-programming in Quirófanos)
+  const cir = useCirugiaDeCita(cita?.id, !!cita && usaCirugias(clinica))
   const { bloqueos } = useAgenda()
   const ins = useAtenciones()
   const atencionConfirmada = !!cita && ins.activo && ins.atenciones.some(a => a.cita_id === cita.id) // estado locked until the owner corrects it
@@ -118,12 +124,12 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
-      fecha: f.fecha, hora: f.hora || null, agendo_nombre: f.agendo.trim() || null,
+      ...(cir ? {} : { fecha: f.fecha, hora: f.hora || null }), agendo_nombre: f.agendo.trim() || null,
       ...(esEmergencia ? {} : { tipo: f.tipo || null, ...(atencionConfirmada ? {} : { estado: f.estado }) }),
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
-      ...(hosp ? { departamento_id: f.departamento_id || null, profesional_id: f.profesional_id || null } : {}),
+      ...(hosp ? { departamento_id: f.departamento_id || null, ...(cir ? {} : { profesional_id: f.profesional_id || null }) } : {}),
     }
     setBusy(true)
     const { data: guardada, error } = cita
@@ -141,7 +147,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
       if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`)
     }
     setBusy(false)
-    if (error) { toast.error('No se pudo guardar la cita'); return }
+    if (error) { toast.error(/ATENCION_CONFIRMADA/.test(error.message || '') ? 'Esta cita ya tiene la atención confirmada. Para cambiarla, primero use «Corregir».' : /CIRUGIA_USAR_QUIROFANOS/.test(error.message || '') ? 'Una cirugía suspendida se vuelve a programar en Quirófanos, con «Volver a programar».' : 'No se pudo guardar la cita'); return }
     toast.success(cita ? 'Cita actualizada' : 'Cita agregada')
     sincronizarCita(guardada?.id) // mirror to the clinic's Google Calendar (silent, never blocks)
     onGuardado()
@@ -153,7 +159,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const motivo = await confirmar({
       titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`,
       mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.',
-        ...(esEmergencia ? ['Se perderá el registro de la emergencia (gravedad, motivo, tiempos y resultado).'] : [])],
+        ...(esEmergencia ? ['Se perderá el registro de la emergencia (gravedad, motivo, tiempos y resultado).'] : []),
+        ...(cir ? [`Es una cirugía programada: también se libera ${hospital.recursos.find(r => r.id === cir.quirofano_id)?.nombre || 'el quirófano'} y el equipo.`] : [])],
       aceptar: 'Eliminar cita', peligro: true,
       motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_ELIMINAR_CITA },
     })
@@ -161,7 +168,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     setBusy(true)
     const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id, p_motivo: motivo })
     setBusy(false)
-    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : 'No se pudo eliminar'); return }
+    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : /ATENCION_CONFIRMADA/.test(error.message || '') ? 'Esta cita ya tiene la atención confirmada. Para cambiarla, primero use «Corregir».' : /CIRUGIA_REALIZADA/.test(error.message || '') ? 'No se puede eliminar una cirugía realizada.' : 'No se pudo eliminar'); return }
     toast.success(data?.productos ? 'Cita eliminada; los productos regresaron al inventario' : 'Cita eliminada')
     sincronizarCita(cita.id) // the cita is gone: the function removes its Google event
     onGuardado()
@@ -228,8 +235,9 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <section className="bloque">
             <h3>Datos de la cita</h3>
             <Grid min={190}>
-              <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
-              {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
+              {cir ? <BloqueCirugia cir={cir} liberando={['Cancelada', 'No asistió', 'Reagendada'].includes(f.estado)} onReprogramar={() => { onClose(); ir('quirofanos', fechaCirugia(Date.parse(cir.inicio))) }} />
+                : <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />}
+              {hosp && !cir && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
               {atencionConfirmada
                 ? <Campo label="Estado" ayuda="Atención confirmada: para cambiarlo, corríjala primero"><Input value={f.estado} onChange={() => {}} readOnly aria-readonly="true" /></Campo>
                 : esEmergencia

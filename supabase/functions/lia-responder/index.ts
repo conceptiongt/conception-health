@@ -617,9 +617,12 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: u } = await db.auth.getUser(jwt)
     if (!u?.user) return json({ error: 'sin_sesion' }, 401)
-    const { data: perfil } = await db.from('perfiles').select('clinica_id, rol').eq('user_id', u.user.id).maybeSingle()
+    // (activo: a deactivated hospital staff user has no session; the column may not exist yet, then retry without it)
+    let pr = await db.from('perfiles').select('clinica_id, rol, activo').eq('user_id', u.user.id).maybeSingle()
+    if (pr.error) pr = await db.from('perfiles').select('clinica_id, rol').eq('user_id', u.user.id).maybeSingle()
+    const perfil = pr.data as { clinica_id: string, rol: string, activo?: boolean } | null
     // Temporary Conception support profiles never use the receptionist from the app
-    if (!perfil || perfil.rol === 'soporte') return json({ error: 'sin_sesion' }, 401)
+    if (!perfil || perfil.rol === 'soporte' || perfil.activo === false) return json({ error: 'sin_sesion' }, 401)
     const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()
     const body = await req.json().catch(() => ({}))
     // an expired account is read-only: the receptionist does not reply, test or send (disconnecting the number stays allowed)

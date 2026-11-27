@@ -54,6 +54,8 @@ const P = {
   emergencia: <><circle cx="12" cy="12" r="10"/><path d="M12 7.5v9M7.5 12h9"/></>,
   arriba: <><polyline points="18 15 12 9 6 15"/></>,
   abajo: <><polyline points="6 9 12 15 18 9"/></>,
+  quirofano: <><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M6 11h3l1.5-3 3 6 1.5-3H18"/><path d="M9 21h6M12 17v4"/></>,
+  cama: <><path d="M3 19V6"/><path d="M3 15h18v4"/><path d="M21 15v-3a3 3 0 0 0-3-3h-8v6"/><circle cx="6.5" cy="11.5" r="1.6"/></>,
   lia: <><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.3-4.2A8 8 0 1 1 20 11.5z"/><path d="m8.6 11.6 2.2 2.2 4.6-4.5"/></>,
 }
 

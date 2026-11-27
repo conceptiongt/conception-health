@@ -59,8 +59,11 @@ Deno.serve(async (req) => {
   const detalle = String(body?.detalle || '').slice(0, 1000)
 
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-  const { data: perfil } = await db.from('perfiles').select('clinica_id, rol, email').eq('user_id', user.id).maybeSingle()
-  if (!perfil) return json({ error: 'Cuenta no encontrada' }, 404)
+  // activo: a deactivated hospital staff user has no session (the column may not exist yet: then retry without it)
+  let pr = await db.from('perfiles').select('clinica_id, rol, email, activo').eq('user_id', user.id).maybeSingle()
+  if (pr.error) pr = await db.from('perfiles').select('clinica_id, rol, email').eq('user_id', user.id).maybeSingle()
+  const perfil = pr.data
+  if (!perfil || perfil.activo === false) return json({ error: 'Cuenta no encontrada' }, 404)
   // Temporary Conception support sessions can never delete accounts
   if (perfil.rol === 'soporte') return json({ error: 'El acceso de soporte no puede eliminar cuentas.' }, 403)
   const { data: clinica } = await db.from('clinicas').select('*').eq('id', perfil.clinica_id).single()

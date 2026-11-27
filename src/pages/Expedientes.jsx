@@ -8,6 +8,9 @@ import { FaltanDatos, BloqueEmergencia, EtiquetaTriage } from '../components/Eme
 import { CompletarDatosModal } from '../components/EmergenciaModales'
 import { TIPO_EMERGENCIA } from '../lib/emergencias'
 import { colorProfesional } from '../hooks/useHospital'
+import { useEstanciasPaciente } from '../hooks/useCamas'
+import { usaCamas } from '../lib/calendario'
+import { EtiquetaIngreso, Hospitalizaciones } from '../components/Hospitalizaciones'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -158,11 +161,15 @@ const TABS = [
   { value: 'archivos', label: 'Fotos y documentos', icono: 'camara' },
   { value: 'cobros', label: 'Cobros', icono: 'cartera', permiso: 'finanzas' },
   { value: 'productos', label: 'Productos usados', icono: 'caja', inventario: true },
+  { value: 'hospitalizaciones', label: 'Hospitalizaciones', icono: 'cama', hospital: true },
 ]
 
 function Expediente({ paciente, onVolver }) {
-  const { citas, cobros, clinica, perfil, recargar, acc, sedes, emergencias } = useDatos()
+  const { citas, cobros, clinica, perfil, recargar, acc, sedes, emergencias, hospital } = useDatos()
   const clinico = puede(perfil, 'expedientes')
+  // hospital: the patient's stays (current + past) and the «Ingresado — Cama X» tag
+  const conCamas = usaCamas(clinica) && hospital.tablas && clinico
+  const { estancias } = useEstanciasPaciente(paciente.id, conCamas)
   const finanzas = puede(perfil, 'finanzas')
   const [tab, setTab] = useState('consultas')
   const [portal, setPortal] = useState(false)
@@ -190,9 +197,10 @@ function Expediente({ paciente, onVolver }) {
   const eliminar = async () => {
     if (!await confirmar(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos, documentos y cobros)? Esta acción no se puede deshacer.`)) return
     const paths = (archivos || []).map(a => a.path)
-    if (paths.length) await supabase.storage.from('expedientes').remove(paths)
+    // Delete the row first: the database can refuse it (hospitalizations / surgeries); only then are the files removed
     const { error } = await supabase.from('pacientes').delete().eq('id', paciente.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' || /CIRUGIA_REALIZADA/.test(error.message || '') ? 'No se puede eliminar: el paciente tiene hospitalizaciones o cirugías registradas.' : 'No se pudo eliminar'); return }
+    if (paths.length) await supabase.storage.from('expedientes').remove(paths)
     toast.success('Paciente eliminado')
     await recargar()
     onVolver()
@@ -209,7 +217,7 @@ function Expediente({ paciente, onVolver }) {
   return (
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={<>{paciente.nombre}{paciente.sin_identificar && <FaltanDatos paciente={paciente} style={{ marginLeft: 12, fontSize: 13, verticalAlign: 'middle' }} />}</>} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+      <Encabezado titulo={<>{paciente.nombre}{paciente.sin_identificar && <FaltanDatos paciente={paciente} style={{ marginLeft: 12, fontSize: 13, verticalAlign: 'middle' }} />}{conCamas && estancias?.some(e => !e.egreso_at) && <span style={{ fontSize: 14, fontFamily: 'inherit', verticalAlign: 'middle', marginLeft: 8 }}><EtiquetaIngreso estancias={estancias} /></span>}</>} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <EnlacePaciente paciente={paciente} />
         {clinico && <Button size="sm" variant="ghost" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
         {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
@@ -234,12 +242,13 @@ function Expediente({ paciente, onVolver }) {
         <Stat label="Fotos y documentos" valor={archivos ? archivos.length : '…'} />
       </div>
 
-      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => (!t.inventario || (acc.inventario && puede(perfil, 'inventario'))) && (!t.permiso || puede(perfil, t.permiso)) && (clinico || ['consultas', 'cobros'].includes(t.value)))} valor={tab} onChange={setTab} /></div>
+      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => (!t.inventario || (acc.inventario && puede(perfil, 'inventario'))) && (!t.permiso || puede(perfil, t.permiso)) && (!t.hospital || conCamas) && (clinico || ['consultas', 'cobros'].includes(t.value)))} valor={tab} onChange={setTab} /></div>
 
       {tab === 'ficha' && clinico && <FichaPaciente paciente={paciente} onEditar={() => setEditando(true)} />}
       {tab === 'consultas' && <Consultas citas={misCitas} clinico={clinico} onAbrir={setCitaAbierta} onCompartir={(c) => setCompartir(c)} onCambio={recargar} />}
       {tab === 'archivos' && clinico && <Archivos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
       {tab === 'productos' && acc.inventario && <ProductosPaciente paciente={paciente} citas={misCitas} />}
+      {tab === 'hospitalizaciones' && conCamas && <Hospitalizaciones estancias={estancias} />}
       {tab === 'cobros' && finanzas && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
 
       {completar && <CompletarDatosModal item={completar} onClose={() => setCompletar(null)} />}

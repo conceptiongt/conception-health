@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import { MESES, ESTADOS_CITA } from './constantes'
 import { valido, mezclar, contraste } from './theme'
 import { toast } from '../components/ui/Toast'
+import { esHospital } from './especialidades'
 
 export const DIAS_LARGOS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
 export const DIAS_CORTOS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
@@ -156,14 +157,15 @@ export function estiloColor(hex) {
   return { base, fondo, texto, borde: mezclar(base, '#FFFFFF', 0.55) }
 }
 
-// prefs = { colorPor: 'tipo' | 'estado', colores: { 'tipo:Cirugía': '#RRGGBB', 'estado:Pendiente': '#RRGGBB' } }
-export const PREFS_DEFECTO = { colorPor: 'tipo', colores: {} }
+// prefs = { colorPor: 'tipo' | 'estado', colores: { 'tipo:Cirugía': '#RRGGBB', 'estado:Pendiente': '#RRGGBB' }, cirugias: true | false }
+// `cirugias`: the clinic turned on the operating-room calendar (Configuración → Calendario de cirugías)
+export const PREFS_DEFECTO = { colorPor: 'tipo', colores: {}, cirugias: false }
 export function normalizarPrefs(p) {
   const colores = {}
   const entradas = Object.entries(p?.colores && typeof p.colores === 'object' ? p.colores : {})
     .filter(([k, v]) => typeof k === 'string' && k.length <= 80 && valido(v)).slice(0, 40)
   for (const [k, v] of entradas) colores[k] = v.toUpperCase()
-  return { colorPor: p?.colorPor === 'estado' ? 'estado' : 'tipo', colores }
+  return { colorPor: p?.colorPor === 'estado' ? 'estado' : 'tipo', colores, cirugias: p?.cirugias === true }
 }
 export const colorDeCita = (cita, prefs) => {
   const por = prefs.colorPor
@@ -189,6 +191,13 @@ export function leerPreferencias(clinica) {
   const local = leerLocal(clinica)
   return local && typeof local === 'object' ? normalizarPrefs(local) : { ...PREFS_DEFECTO }
 }
+
+// Hospital Básico (plan 'basico') does not include operating rooms nor beds; trial, Max and other hospital plans do
+const hospitalBasico = (clinica) => esHospital(clinica?.especialidad) && clinica?.plan === 'basico'
+// Hospitals have the operating-room calendar (except Hospital Básico); any other clinic when it turned it on (any plan)
+export const usaCirugias = (clinica) => !!clinica && (esHospital(clinica.especialidad) ? !hospitalBasico(clinica) : leerPreferencias(clinica).cirugias === true)
+// Beds: hospitals only (except Hospital Básico)
+export const usaCamas = (clinica) => !!clinica && esHospital(clinica.especialidad) && !hospitalBasico(clinica)
 
 // Returns { remoto, fallo, prefs } — when remoto is true the caller refreshes the session so `clinica` carries the new value
 export async function guardarPreferencias(clinica, prefs) {

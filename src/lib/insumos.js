@@ -50,7 +50,7 @@ const MENSAJES = {
   DATOS_INVALIDOS: 'Revise los insumos y las cantidades',
   PRODUCTO_AJENO: 'Uno de los insumos ya no existe',
   PRODUCTO_INACTIVO: 'Uno de los insumos está desactivado: quítelo de la lista',
-  ATENCION_CONFIRMADA: 'La atención ya está confirmada: para cambiar el estado, la persona administradora debe corregirla primero',
+  ATENCION_CONFIRMADA: 'Esta cita ya tiene la atención confirmada. Para cambiarla, primero use «Corregir».',
   SEDE_AJENA: 'La sede elegida no existe',
   SIN_SEDE: 'Elija la sede de la que salen los insumos',
   SIN_INVENTARIO: 'Su plan no incluye inventario',

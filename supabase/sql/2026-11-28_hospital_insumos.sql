@@ -1,4 +1,4 @@
--- PROPUESTA (NO APLICADA) · 2026-11-28 · Hospital, etapa 4: insumos por especialidad, «Confirmar atención» y Pendientes de bodega
+-- APLICADA en producción · 2026-11-28 · Hospital, etapa 4: insumos por especialidad, «Confirmar atención» y Pendientes de bodega
 --
 -- Qué hace (solo cuentas hospital: clinicas.especialidad = 'hospital'; las clínicas normales no cambian en nada)
 --   1. UNA sola bodega: cada producto puede llevar una etiqueta opcional de especialidad (productos.departamento_id). Sin etiqueta = general.

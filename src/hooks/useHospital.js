@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { esHospital } from '../lib/especialidades'
+import { usaCirugias } from '../lib/calendario'
 
-// Hospital structure (specialties, doctors and staff, areas and beds). Loaded once for hospital accounts and shared through the data context
-// as `hospital` (see App.jsx). When the tables do not exist yet (migration not applied) it reports `disponible: false` with empty lists, silently.
+// Hospital structure (specialties, doctors and staff, areas and beds). Loaded once for hospital accounts (and for clinics that turned on the
+// operating-room calendar) and shared through the data context as `hospital` (see App.jsx). When the tables do not exist yet (migration not
+// applied) it reports `disponible: false` with empty lists, silently.
+// `disponible` keeps meaning «hospital mode is ready» (specialty + doctor on appointments), so it is only true for hospital accounts;
+// `tablas` is true whenever the lists could be read (also for a non-hospital clinic with the surgery calendar).
 
 export const FUNCIONES = [
   { value: 'medico', label: 'Médico' },
@@ -40,14 +44,15 @@ export const nombreCorto = (p) => {
   return partes.length > 2 ? partes.slice(0, 2).join(' ') : partes.join(' ')
 }
 
-const VACIO = { esHospital: false, disponible: false, cargado: true, departamentos: [], profesionales: [], areas: [], recursos: [], departamento: () => undefined, profesional: () => undefined, recargar: async () => {} }
+const VACIO = { esHospital: false, disponible: false, tablas: false, cargado: true, departamentos: [], profesionales: [], areas: [], recursos: [], departamento: () => undefined, profesional: () => undefined, recargar: async () => {} }
 export const HOSPITAL_VACIO = VACIO
 
 // A missing table means the migration has not been applied
-const tablaFaltante = (e) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache|Could not find the table/i.test(e.message || ''))
+export const tablaFaltante = (e) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache|Could not find the (table|function)/i.test(e.message || ''))
 
 export function useCargarHospital(clinica) {
-  const activo = !!clinica?.id && esHospital(clinica?.especialidad)
+  const esHosp = !!clinica?.id && esHospital(clinica?.especialidad)
+  const activo = !!clinica?.id && usaCirugias(clinica)
   const [estado, setEstado] = useState({ disponible: false, cargado: !activo, departamentos: [], profesionales: [], areas: [], recursos: [] })
 
   const recargar = useCallback(async () => {
@@ -57,8 +62,10 @@ export function useCargarHospital(clinica) {
     const errores = [d, p, a, r].map(x => x.error).filter(Boolean)
     if (errores.length) {
       // not applied yet (or not readable): no hospital data, no noise for the user
-      if (!errores.every(tablaFaltante)) console.warn('Hospital: no se pudieron leer los datos', errores[0].message)
-      setEstado({ disponible: false, cargado: true, departamentos: [], profesionales: [], areas: [], recursos: [] })
+      if (errores.every(tablaFaltante)) { setEstado({ disponible: false, cargado: true, departamentos: [], profesionales: [], areas: [], recursos: [] }); return }
+      // a transient failure never flips a loaded hospital to «not available»: keep what we had
+      console.warn('Hospital: no se pudieron leer los datos', errores[0].message)
+      setEstado(prev => (prev.disponible ? prev : { ...prev, cargado: true }))
       return
     }
     const porNombre = (x, y) => (x.nombre || '').localeCompare(y.nombre || '', 'es')
@@ -70,15 +77,16 @@ export function useCargarHospital(clinica) {
       recursos: (r.data || []).sort((x, y) => (x.orden - y.orden) || (x.nombre || '').localeCompare(y.nombre || '', 'es', { numeric: true })),
     })
   }, [activo])
-  useEffect(() => { recargar() }, [recargar])
+  // turning the surgery calendar on later: show the loading state (not «Disponible pronto») until the first read finishes
+  useEffect(() => { if (activo) setEstado(prev => (prev.disponible || !prev.cargado ? prev : { ...prev, cargado: false })); recargar() }, [recargar, activo])
 
   return useMemo(() => {
     if (!activo) return VACIO
     const { departamentos, profesionales } = estado
     return {
-      ...estado, esHospital: true, recargar,
+      ...estado, esHospital: esHosp, tablas: estado.disponible, disponible: estado.disponible && esHosp, recargar,
       departamento: (id) => departamentos.find(x => x.id === id),
       profesional: (id) => profesionales.find(x => x.id === id),
     }
-  }, [activo, estado, recargar])
+  }, [activo, esHosp, estado, recargar])
 }

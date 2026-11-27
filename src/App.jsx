@@ -18,6 +18,8 @@ import { Configuracion } from './pages/Configuracion'
 import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
 import { Pagos } from './pages/Pagos'
+import { Quirofanos } from './pages/Quirofanos'
+import { Camas } from './pages/Camas'
 import { Finanzas } from './pages/Finanzas'
 import { Emergencias } from './pages/Emergencias'
 import { urlLogo, iniciales } from './lib/marca'
@@ -33,21 +35,28 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, esSoporte, puede } from './lib/permisos'
+import { usaCirugias, usaCamas } from './lib/calendario'
 import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
+import { esPersonal, filtrarPorMedico, marcarPersonal } from './lib/usuariosHospital'
+import { useInactividad } from './hooks/useInactividad'
+import { Modal } from './components/ui/Modal'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
 import { SoporteEntrada, BannerSoporte, useEsAgente } from './components/SoporteSesion'
 
 const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
-  { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
+  { id: 'registrar', label: 'Registrar paciente', icono: 'registrar', permiso: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'calendario', label: 'Calendario', icono: 'calendario' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
   { id: 'finanzas', label: 'Finanzas', icono: 'actividad', soloAdmin: true },
   { id: 'inventario', label: 'Inventario', icono: 'caja', permiso: 'inventario' },
+  // only for accounts with the surgery calendar (every hospital, or a clinic that turned it on) / only for hospitals
+  { id: 'quirofanos', label: 'Quirófanos', icono: 'quirofano', permiso: 'quirofano', cirugias: true },
+  { id: 'camas', label: 'Camas', icono: 'cama', permiso: 'camas', hospital: true, camas: true },
 ]
 // Hospital accounts only: right after Inicio (see `navegacion` below)
 const NAV_EMERGENCIAS = { id: 'emergencias', label: 'Emergencias', icono: 'emergencia', permiso: 'emergencias', hospital: true }
@@ -55,20 +64,22 @@ const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario', 'emergencias']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario', 'emergencias', 'quirofanos', 'camas']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion', soloAdmin: true },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes', permiso: 'configuracion' },
 ]
 // what each user can open (the administrator decides for assistants in Configuración)
 const permitido = (perfil, n, esHosp = true) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso)) && (!n.hospital || esHosp)
+// a page that does not exist for this account (Quirófanos without the calendar, Camas outside hospitals or on the Hospital Básico plan) is not in the menu and its address goes to Inicio
+const existe = (clinica, n) => (!n.cirugias || usaCirugias(clinica)) && (!n.camas || usaCamas(clinica))
 const TODAS = [...NAV, NAV_EMERGENCIAS, ...NAV_LIA, ...NAV_CUENTA]
-// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }; "#/emergencias/historial" → { vista: 'emergencias', sub: 'historial' }
+// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" (also #/quirofanos/2026-11-26) → { vista, fecha }; "#/emergencias/historial" → { vista: 'emergencias', sub: 'historial' }
 function leerRuta() {
   const [, v, id] = window.location.hash.split('?')[0].split('/') // a query like ?google=ok is not part of the route
   return TODAS.some(n => n.id === v) ? {
     vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
-    fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
+    fecha: (v === 'calendario' || v === 'quirofanos') && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
     sub: v === 'emergencias' && id === 'historial' ? 'historial' : null,
   } : {}
 }
@@ -85,7 +96,7 @@ function AppPrivada() {
   let contenido
   if (s.cargando) contenido = <PantallaCarga />
   else if (!s.session) contenido = <Acceso />
-  else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} />
+  else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} session={s.session} />
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
@@ -98,6 +109,10 @@ function Aplicacion({ sesion }) {
   const hospital = useCargarHospital(clinica)
   const emergencias = useCargarEmergencias(clinica, recargarSilencioso, datos?.citas)
   const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
+  // staff users (no e-mail) are signed out after 15 minutes without input; a 60 s warning comes first. «Cambiar de usuario» returns to the staff login.
+  const personal = esPersonal(perfil)
+  const salirPersonal = () => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut({ scope: 'local' }) } // this device only: other devices keep their own session
+  const inactividad = useInactividad(personal, salirPersonal)
   const acc = accesos(clinica, planActivo)
   // Emergencias go right after Inicio, for hospital accounts only
   const navegacion = esHosp ? [NAV[0], NAV_EMERGENCIAS, ...NAV.slice(1)] : NAV
@@ -159,14 +174,16 @@ function Aplicacion({ sesion }) {
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
-    setFechaCal(v === 'calendario' ? extra ?? null : null)
+    setFechaCal(v === 'calendario' || v === 'quirofanos' ? extra ?? null : null)
     setSubVista(v === 'emergencias' && extra === 'historial' ? 'historial' : null)
-    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario' || v === 'emergencias') && extra ? '/' + extra : ''}`
+    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario' || v === 'quirofanos' || v === 'emergencias') && extra ? '/' + extra : ''}`
     if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital, emergencias }
+  // hospital staff without «ver todos los pacientes»: the lists show only their linked doctor's patients and citas (on-screen limit, not a database rule)
+  const datosVisibles = filtrarPorMedico(datos, perfil)
+  const ctx = { ...(datosVisibles || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital, emergencias }
   const enPrueba = !planActivo
   // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
   const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
@@ -179,7 +196,7 @@ function Aplicacion({ sesion }) {
   const sinConfirmar = esAdmin(perfil) && planActivo && !promoActiva && !clinica?.cancelada_at && !!clinica?.plan_hasta && diasRestantes(clinica.plan_hasta) <= 3
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan, clinica) || 'activo'}` : 'Versión de prueba')
+  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · ${esPersonal(perfil) ? perfil.puesto || 'personal' : 'asistente'} · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan, clinica) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
@@ -232,11 +249,11 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-            {[['MENÚ', navegacion], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n, esHosp))).map(([titulo, items]) => (
+            {[['MENÚ', navegacion], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n, esHosp) && existe(clinica, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {items.filter(n => permitido(perfil, n, esHosp)).map(n => {
+                  {items.filter(n => permitido(perfil, n, esHosp) && existe(clinica, n)).map(n => {
                     const activo = vista === n.id
                     return (
                       <button key={n.id} className={`nav-item${activo ? ' activo' : ''}`} onClick={() => ir(n.id)} style={{
@@ -260,9 +277,10 @@ function Aplicacion({ sesion }) {
           <div style={{ margin: 16, padding: '12px 14px', borderRadius: 18, border: '1px solid var(--menu-linea)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: 'var(--menu-titulo)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em' }}>SESIÓN</div>
-              <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
+              <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email || perfil.usuario}</div>
+              {personal && <button type="button" onClick={salirPersonal} style={{ background: 'none', border: 'none', padding: 0, marginTop: 3, color: 'var(--acento-fuerte)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>Cambiar de usuario</button>}
             </div>
-            <button onClick={() => { limpiarGoogle(); supabase.auth.signOut() }} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={() => personal ? salirPersonal() : (limpiarGoogle(), supabase.auth.signOut())} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
             </button>
           </div>
@@ -312,6 +330,7 @@ function Aplicacion({ sesion }) {
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
             : vista === 'emergencias' && !esHosp ? <Inicio />
+            : TODAS.some(n => n.id === vista && !existe(clinica, n)) ? <Inicio />
             : TODAS.some(n => n.id === vista && !permitido(perfil, n, esHosp)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
             : vista === 'lia' && esHosp ? <Inicio />
@@ -322,6 +341,8 @@ function Aplicacion({ sesion }) {
             : vista === 'citas' ? <Citas />
             : vista === 'calendario' ? <Calendario fechaInicial={fechaCal} />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
+            : vista === 'quirofanos' ? <Quirofanos fechaInicial={fechaCal} />
+            : vista === 'camas' ? <Camas />
             : vista === 'pagos' ? <Pagos />
             : vista === 'finanzas' ? <Finanzas />
             : vista === 'emergencias' ? <Emergencias sub={subVista} />
@@ -330,6 +351,15 @@ function Aplicacion({ sesion }) {
           </div>
         </main>
       </div>
+      {personal && inactividad.restante !== null && (
+        <Modal title="Su sesión se cerrará por inactividad" subtitle={`Se cerrará en ${inactividad.restante} ${inactividad.restante === 1 ? 'segundo' : 'segundos'}`} onClose={inactividad.seguir} maxWidth={440}>
+          <div style={{ fontSize: 14.5, color: C.g600, lineHeight: 1.6 }}>Por la seguridad de los pacientes, la sesión se cierra cuando no se usa durante unos minutos. Si sigue trabajando, toque el botón.</div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={salirPersonal}>Cambiar de usuario</Button>
+            <Button onClick={inactividad.seguir}>Seguir conectado</Button>
+          </div>
+        </Modal>
+      )}
     </DatosContext.Provider>
   )
 }
@@ -348,16 +378,32 @@ function SinPermiso() {
 
 // The account exists but is not linked to a clinic (e.g. the administrator removed the user).
 // Conception's support agents land here too: they get the code screen instead.
-function SinAcceso({ recargar }) {
+function SinAcceso({ recargar, session }) {
   const agente = useEsAgente()
   if (agente === null) return <PantallaCarga />
   if (agente) return <SoporteEntrada onListo={recargar} />
+  // a hospital staff user who is still signed in after being deactivated (the database already closed their data): app_metadata.alta travels in the token
+  if (session?.user?.app_metadata?.alta === 'hospital') return <Desactivado />
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
         <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario no tiene acceso</div>
         <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Este correo no está vinculado a ninguna clínica. Si trabaja en un consultorio, pida al administrador que le invite de nuevo.</div>
         <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); supabase.auth.signOut() }}>Cerrar sesión</Button>
+      </div>
+    </div>
+  )
+}
+
+// A hospital staff user the administrator deactivated: mi_clinica() is already NULL for them, this is the clear screen instead of an error
+function Desactivado() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
+        <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario fue desactivado</div>
+        <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Su usuario fue desactivado. Consulte al administrador.</div>
+        <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut({ scope: 'local' }) }}>Cerrar sesión</Button>
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import { CompletarDatosModal } from '../components/EmergenciaModales'
 import { TIPO_EMERGENCIA } from '../lib/emergencias'
 import { colorProfesional } from '../hooks/useHospital'
 import { useEstanciasPaciente } from '../hooks/useCamas'
+import { usaCamas } from '../lib/calendario'
 import { EtiquetaIngreso, Hospitalizaciones } from '../components/Hospitalizaciones'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
@@ -167,7 +168,7 @@ function Expediente({ paciente, onVolver }) {
   const { citas, cobros, clinica, perfil, recargar, acc, sedes, emergencias, hospital } = useDatos()
   const clinico = puede(perfil, 'expedientes')
   // hospital: the patient's stays (current + past) and the «Ingresado — Cama X» tag
-  const conCamas = esHospital(clinica?.especialidad) && hospital.tablas && clinico
+  const conCamas = usaCamas(clinica) && hospital.tablas && clinico
   const { estancias } = useEstanciasPaciente(paciente.id, conCamas)
   const finanzas = puede(perfil, 'finanzas')
   const [tab, setTab] = useState('consultas')
@@ -198,7 +199,7 @@ function Expediente({ paciente, onVolver }) {
     const paths = (archivos || []).map(a => a.path)
     if (paths.length) await supabase.storage.from('expedientes').remove(paths)
     const { error } = await supabase.from('pacientes').delete().eq('id', paciente.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' || /CIRUGIA_REALIZADA/.test(error.message || '') ? 'No se puede eliminar: el paciente tiene hospitalizaciones o cirugías registradas.' : 'No se pudo eliminar'); return }
     toast.success('Paciente eliminado')
     await recargar()
     onVolver()

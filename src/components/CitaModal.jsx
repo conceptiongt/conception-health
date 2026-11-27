@@ -143,7 +143,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
       if (errores) toast.error(`${errores} archivo(s) no se pudieron subir`)
     }
     setBusy(false)
-    if (error) { toast.error('No se pudo guardar la cita'); return }
+    if (error) { toast.error(/CIRUGIA_USAR_QUIROFANOS/.test(error.message || '') ? 'Una cirugía suspendida se vuelve a programar en Quirófanos, con «Volver a programar».' : 'No se pudo guardar la cita'); return }
     toast.success(cita ? 'Cita actualizada' : 'Cita agregada')
     sincronizarCita(guardada?.id) // mirror to the clinic's Google Calendar (silent, never blocks)
     onGuardado()
@@ -164,7 +164,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     setBusy(true)
     const { data, error } = await supabase.rpc('cita_eliminar', { p_cita: cita.id, p_motivo: motivo })
     setBusy(false)
-    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : 'No se pudo eliminar'); return }
+    if (error) { toast.error(error.message?.includes('SIN_PERMISO') ? 'Su usuario no tiene permiso para eliminar citas' : /CIRUGIA_REALIZADA/.test(error.message || '') ? 'No se puede eliminar una cirugía realizada.' : 'No se pudo eliminar'); return }
     toast.success(data?.productos ? 'Cita eliminada; los productos regresaron al inventario' : 'Cita eliminada')
     sincronizarCita(cita.id) // the cita is gone: the function removes its Google event
     onGuardado()

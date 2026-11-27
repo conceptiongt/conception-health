@@ -81,7 +81,7 @@ export function Citas() {
       if (cir && cir.estado !== 'suspendida' && !await confirmar({ titulo: '¿Liberar el quirófano?', mensaje: [`Esta cita es una cirugía programada. Con el estado «${nuevo}» se libera ${hospital.recursos.find(r => r.id === cir.quirofano_id)?.nombre || 'el quirófano'} y el equipo.`], aceptar: 'Sí, liberar', cancelar: 'No cambiar' })) { recargar(); return }
     }
     const { error } = await supabase.from('citas').update({ estado: nuevo }).eq('id', c.id)
-    if (error) { toast.error('No se pudo cambiar el estado'); return }
+    if (error) { toast.error(/CIRUGIA_USAR_QUIROFANOS/.test(error.message || '') ? 'Una cirugía suspendida se vuelve a programar en Quirófanos, con «Volver a programar».' : 'No se pudo cambiar el estado'); recargar(); return }
     sincronizarCita(c.id)
     recargar()
   }

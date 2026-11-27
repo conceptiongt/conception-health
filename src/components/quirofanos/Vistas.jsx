@@ -116,7 +116,8 @@ export function VistaDia({ fecha, quirofanos, cirugias, bloqueos, equipo, movil,
                 const p = pos(c.ini, c.fin)
                 const est = equipo.estilo(c.cirujano_id)
                 const pac = equipo.pacPorCita(c.cita_id)
-                const an = c.anestesiologo_id ? equipo.corto(c.anestesiologo_id) : null
+                const an = c.anestesiologo_id ? equipo.nombreProf(c.anestesiologo_id) : null
+                const equipoTexto = `${equipo.nombreProf(c.cirujano_id)}${an ? ` · Anest. ${an}` : ''}`
                 const corto = p.height < 52
                 const limpieza = (c.limpieza_min || 0) * PX_MIN
                 return (
@@ -135,7 +136,7 @@ export function VistaDia({ fecha, quirofanos, cirugias, bloqueos, equipo, movil,
                           {p.height > 72 && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.procedimiento || 'Cirugía'}</div>}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 8, background: est.base, flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{equipo.corto(c.cirujano_id)}{an ? ` · Anest. ${an}` : ''}</span>
+                            <span title={equipoTexto} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{equipoTexto}</span>
                           </div>
                         </>}
                     </button>

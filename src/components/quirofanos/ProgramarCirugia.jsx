@@ -13,6 +13,7 @@ import { Campo, Input, Textarea } from '../ui/Campos'
 import { Desplegable } from '../ui/Desplegable'
 import { Icon } from '../ui/Icon'
 import { toast } from '../ui/Toast'
+import { sincronizarCita } from '../../lib/google'
 import { MiniCalendario } from '../MiniCalendario'
 import { PacientePicker } from '../PacientePicker'
 import { CampoHora } from '../CampoHora'
@@ -90,7 +91,7 @@ export function ProgramarCirugia({ cirugia, inicial, onClose, onGuardado }) {
     const cirujano = equipo.profesional(f.cirujano)
     setBusy(true)
     setError('')
-    const { error: err } = await programarCirugia({
+    const { data: citaId, error: err } = await programarCirugia({
       cita: cirugia?.cita_id, paciente: f.paciente, quirofano: f.quirofano, cirujano: f.cirujano, anestesiologo: f.anes || null, inicio: ini, minutos, limpieza: f.limpieza,
       procedimiento: f.procedimiento.trim(), ayudantes: f.ayudantes.trim(), nota: f.nota.trim(),
       departamento: hospital.disponible && cirujano?.departamento_id && hospital.departamento(cirujano.departamento_id)?.activo ? cirujano.departamento_id : null,
@@ -105,6 +106,7 @@ export function ProgramarCirugia({ cirugia, inicial, onClose, onGuardado }) {
       return
     }
     toast.success(cirugia ? 'Cirugía reprogramada' : 'Cirugía programada')
+    sincronizarCita(citaId || cirugia?.cita_id) // mirror to the clinic's Google Calendar (silent, never blocks)
     await recargar()
     onGuardado()
   }

@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import { C } from '../lib/theme'
 import { hoyISO } from '../lib/formato'
-import { usaCirugias } from '../lib/calendario'
-import { esHospital } from '../lib/especialidades'
+import { usaCirugias, usaCamas } from '../lib/calendario'
 import { puede } from '../lib/permisos'
 import { estadoAhora, fechaDe, horaDe } from '../lib/quirofanos'
 import { useDatos } from '../hooks/useDatos'
@@ -15,7 +14,7 @@ import { Panel } from './ui/Panel'
 export function InicioQuirofanosCamas() {
   const { clinica, perfil, hospital, ir } = useDatos()
   const conQ = usaCirugias(clinica) && puede(perfil, 'quirofano') && hospital.tablas
-  const conC = esHospital(clinica?.especialidad) && puede(perfil, 'camas') && hospital.tablas
+  const conC = usaCamas(clinica) && puede(perfil, 'camas') && hospital.tablas
   const hoy = hoyISO()
   const q = useCirugias({ desde: hoy, hasta: hoy, activo: conQ, ms: 60000 })
   const c = useCamas({ activo: conC, ms: 60000 })

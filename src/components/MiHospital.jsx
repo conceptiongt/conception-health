@@ -293,7 +293,7 @@ export function Personal({ compacto = false }) {
     }
     if (!await confirmar({ mensaje: `¿Eliminar a ${p.nombre} de su lista de médicos y personal?`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('profesionales').delete().eq('id', p.id)
-    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene citas. Puede desactivarlo.' : 'No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene cirugías u hospitalizaciones registradas. Puede desactivarlo.' : 'No se pudo eliminar'); return }
     toast.success('Eliminado')
     hospital.recargar()
   }
@@ -415,7 +415,7 @@ export function Areas({ compacto = false }) {
     const n = recursosDe(a.id).length
     if (!await confirmar({ mensaje: `¿Eliminar el área «${a.nombre}»${n ? ` y sus ${plural(n, 'quirófano, cama o cubículo', 'quirófanos, camas o cubículos')}` : ''}?`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('areas').delete().eq('id', a.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene cirugías u hospitalizaciones registradas. Puede desactivarlo.' : 'No se pudo eliminar'); return }
     toast.success('Área eliminada')
     hospital.recargar()
   }
@@ -579,7 +579,7 @@ function RecursoModal({ r, onClose, onGuardado }) {
   const eliminar = async () => {
     if (!await confirmar({ mensaje: `¿Eliminar «${r.nombre}»?`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('recursos').delete().eq('id', r.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene cirugías u hospitalizaciones registradas. Puede desactivarlo.' : 'No se pudo eliminar'); return }
     toast.success('Eliminado')
     onGuardado()
   }

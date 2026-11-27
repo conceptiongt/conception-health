@@ -12,6 +12,7 @@ import { Desplegable } from '../ui/Desplegable'
 import { Badge } from '../ui/Varios'
 import { Icon } from '../ui/Icon'
 import { toast } from '../ui/Toast'
+import { sincronizarCita } from '../../lib/google'
 import { confirmar } from '../ui/Confirmar'
 import { Segmentos } from '../ui/Varios'
 import { Interruptor } from '../MensajePaciente'
@@ -47,6 +48,7 @@ export function DetalleCirugia({ cirugia, onClose, onReprogramar, onEditarCita, 
     setBusy(false)
     if (error) { toast.error(textoError(error, { quirofano: q?.nombre, cirujano: cir?.nombre, anestesiologo: an?.nombre })); return }
     toast.success(exito)
+    sincronizarCita(cirugia.cita_id) // the cita state changed: mirror it to Google (silent)
     await onCambio()
     onClose()
   }

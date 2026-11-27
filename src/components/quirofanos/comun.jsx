@@ -58,6 +58,8 @@ export function textoError(error, nombres = {}) {
     case 'REFERENCIA_AJENA': return 'Uno de los datos elegidos no pertenece a su clínica. Actualice la pantalla.'
     case 'DATOS_INVALIDOS': return 'Revise los datos: algo no es válido (duración, médico o quirófano).'
     case 'CIRUGIA_USAR_QUIROFANOS': return 'La fecha y la hora de una cirugía se cambian en Quirófanos, con «Reprogramar».'
+    case 'CIRUGIA_REALIZADA': return 'No se puede eliminar una cirugía realizada.'
+    case 'PLAN': return 'Su plan no incluye este módulo.'
     case 'CAMA_OCUPADA': return 'Esa cama ya está ocupada. Elija otra cama.'
     case 'PACIENTE_INGRESADO': return 'Este paciente ya está ingresado en otra cama.'
     default: return 'No se pudo guardar. Intente de nuevo.'

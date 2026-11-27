@@ -125,7 +125,7 @@ export const OPCIONES_DURACION = [30, 60, 90, 120, 180, 240]
 export const OPCIONES_LIMPIEZA = [0, 15, 30]
 
 // Server error → { codigo, detalle: { titulo, ini, fin } | null }. The message of a database error carries the short code.
-export const CODIGOS_CIRUGIA = ['SIN_PERMISO', 'NO_ENCONTRADO', 'REFERENCIA_AJENA', 'DATOS_INVALIDOS', 'CHOQUE_QUIROFANO', 'CHOQUE_CIRUJANO', 'CHOQUE_ANESTESIOLOGO', 'CAMA_OCUPADA', 'PACIENTE_INGRESADO', 'FUERA_DE_SERVICIO', 'CIRUGIA_USAR_QUIROFANOS']
+export const CODIGOS_CIRUGIA = ['SIN_PERMISO', 'NO_ENCONTRADO', 'REFERENCIA_AJENA', 'DATOS_INVALIDOS', 'CHOQUE_QUIROFANO', 'CHOQUE_CIRUJANO', 'CHOQUE_ANESTESIOLOGO', 'CAMA_OCUPADA', 'PACIENTE_INGRESADO', 'FUERA_DE_SERVICIO', 'CIRUGIA_USAR_QUIROFANOS', 'CIRUGIA_REALIZADA', 'PLAN']
 export function leerError(error) {
   const texto = `${error?.message || ''}`
   const codigo = CODIGOS_CIRUGIA.find(c => texto.includes(c)) || null

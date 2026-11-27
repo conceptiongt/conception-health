@@ -142,7 +142,16 @@ function aplicar(r, d) {
 // ─── operating rooms and beds (same rules as supabase/migraciones-propuestas/2026-11-28_hospital_quirofanos_camas.sql) ───
 const TABLAS_RPC = ['cirugias', 'reservas', 'estancias', 'estancia_notas']
 const fallaH = (message, details) => ({ data: null, error: { message, details: details || null } })
-const guardiaDemo = () => (DB.perfiles[0].rol === 'soporte' ? fallaH('SIN_PERMISO') : null)
+// same checks as hospital_guardia(p_permiso): support session, the assistant's own permission, the plan (Hospital Básico has neither module), beds only for hospitals
+const guardia = (modulo) => {
+  const perfil = DB.perfiles[0], c = DB.clinicas[0]
+  if (perfil.rol === 'soporte') return fallaH('SIN_PERMISO')
+  if (perfil.rol !== 'dueno' && perfil.permisos?.[modulo] === false) return fallaH('SIN_PERMISO')
+  if (modulo === 'camas' && c.especialidad !== 'hospital') return fallaH('SIN_PERMISO')
+  if (c.especialidad === 'hospital' && c.plan === 'basico') return fallaH('PLAN')
+  return null
+}
+const guardiaDemo = () => guardia('quirofano')
 const MIN = 60000
 const aLocal = (ms) => new Date(ms - 6 * 3600 * 1000).toISOString() // Guatemala is UTC-6 all year
 const detalle = (r) => `${r.titulo || ''}|${new Date(r.ini).toISOString()}|${new Date(r.fin).toISOString()}`
@@ -176,13 +185,16 @@ function limpiarHuerfanos() {
 function triggersCita(fila, cambios) {
   const cir = DB.cirugias.find(c => c.cita_id === fila.id)
   if (!cir) return null
-  if (['fecha', 'hora', 'duracion', 'profesional_id'].some(k => k in cambios && cambios[k] !== fila[k])) return { code: 'P0001', message: 'CIRUGIA_USAR_QUIROFANOS' }
+  if (['fecha', 'hora', 'duracion', 'profesional_id', 'tipo', 'paciente_id'].some(k => k in cambios && cambios[k] !== fila[k])) return { code: 'P0001', message: 'CIRUGIA_USAR_QUIROFANOS' }
+  // un-cancelling a suspended surgery by hand would leave a confirmed cita with no room and no team
+  const cancela = ['Cancelada', 'No asistió', 'Reagendada']
+  if ('estado' in cambios && cancela.includes(fila.estado) && !cancela.includes(cambios.estado) && cir.estado === 'suspendida') return { code: 'P0001', message: 'CIRUGIA_USAR_QUIROFANOS' }
   return null
 }
 function sincronizarEstadoCita(fila) {
   const cir = DB.cirugias.find(c => c.cita_id === fila.id)
   if (!cir) return
-  if (['Cancelada', 'No asistió', 'Reagendada'].includes(fila.estado)) { soltarCirugia(fila.id); if (['programada', 'en_curso'].includes(cir.estado)) cir.estado = 'suspendida' }
+  if (['Cancelada', 'No asistió', 'Reagendada'].includes(fila.estado)) { if (['programada', 'en_curso'].includes(cir.estado)) { soltarCirugia(fila.id); cir.estado = 'suspendida' } } // a finished surgery keeps its history
   else if (fila.estado === 'Asistió' && ['programada', 'en_curso'].includes(cir.estado)) cir.estado = 'realizada'
 }
 const recursoDe = (idr) => DB.recursos.find(r => r.id === idr)
@@ -245,7 +257,16 @@ function cirugiaEstado(a) {
     const e = reservar({ ...c, cita_id: c.cita_id, ini: Date.parse(c.inicio), fin: Date.parse(c.fin) }); if (e) return e
     Object.assign(c, { estado: 'programada', nota }); if (cita) cita.estado = 'Confirmada'
   } else if (nuevo === 'suspendida') { soltarCirugia(c.cita_id); Object.assign(c, { estado: 'suspendida', nota }); if (cita) cita.estado = 'Cancelada' }
-  else if (nuevo === 'realizada') { Object.assign(c, { estado: 'realizada', nota }); if (cita) cita.estado = 'Asistió' }
+  else if (nuevo === 'realizada') {
+    // finished earlier than planned: it ends now; the room (after its cleaning) and the doctors are free from then on
+    const ini = Date.parse(c.inicio), fin = Date.parse(c.fin), ahora = Date.now()
+    if (ini < ahora && fin > ahora) {
+      const nuevoFin = Math.max(ini + MIN, ahora)
+      c.fin = new Date(nuevoFin).toISOString()
+      DB.reservas.filter(r => r.cita_id === c.cita_id && r.motivo === 'cirugia').forEach(r => { r.fin = r.recurso_tipo === 'quirofano' ? nuevoFin + c.limpieza_min * MIN : nuevoFin })
+    }
+    Object.assign(c, { estado: 'realizada', nota }); if (cita) cita.estado = 'Asistió'
+  }
   else Object.assign(c, { estado: 'en_curso', nota })
   return { data: null, error: null }
 }
@@ -273,7 +294,7 @@ const disponibilidad = (a) => {
   return { data: DB.reservas.filter(r => r.ini < h && d < r.fin).sort((x, y) => x.ini - y.ini).map(r => ({ id: r.id, recurso_tipo: r.recurso_tipo, recurso_id: r.recurso_id, inicio: new Date(r.ini).toISOString(), fin: new Date(r.fin).toISOString(), cita_id: r.cita_id, motivo: r.motivo, titulo: r.titulo })), error: null }
 }
 // beds
-const guardiaCamas = () => guardiaDemo() || (DB.clinicas[0].especialidad === 'hospital' ? null : fallaH('SIN_PERMISO'))
+const guardiaCamas = () => guardia('camas')
 function camaValida(idc) {
   const r = recursoDe(idc)
   if (!r) return fallaH('REFERENCIA_AJENA')
@@ -415,6 +436,12 @@ function from(t) {
         const copia = JSON.stringify(DB.existencias)
         for (const r of quitar) { const err = aplicar(r, -r.delta); if (err) { DB.existencias = JSON.parse(copia); return { error: err } } }
       }
+      // finished / in-progress surgeries and hospitalizations are history: they block deleting their cita / patient / room / bed / doctor (like the database)
+      const citasQuitar = t === 'citas' ? quitar : t === 'pacientes' ? DB.citas.filter(c => quitar.some(p => p.id === c.paciente_id)) : []
+      if (citasQuitar.some(c => DB.cirugias.some(x => x.cita_id === c.id && ['realizada', 'en_curso'].includes(x.estado)))) return { data: null, error: { code: 'P0001', message: 'CIRUGIA_REALIZADA' } }
+      if (t === 'pacientes' && DB.estancias.some(e => quitar.some(p => p.id === e.paciente_id))) return { data: null, error: { code: '23503', message: 'update or delete on table "pacientes" violates foreign key constraint on table "estancias"' } }
+      if ((t === 'recursos' || t === 'profesionales') && quitar.some(r => DB.reservas.some(x => x.recurso_id === r.id) || DB.estancias.some(e => e.cama_id === r.id) || DB.cirugias.some(x => x.quirofano_id === r.id || x.cirujano_id === r.id))) return { data: null, error: { code: '23503', message: `update or delete on table "${t}" violates foreign key constraint: it still has reservations` } }
+      if (t === 'areas' && DB.recursos.some(r => quitar.some(a => a.id === r.area_id) && (DB.reservas.some(x => x.recurso_id === r.id) || DB.estancias.some(e => e.cama_id === r.id) || DB.cirugias.some(x => x.quirofano_id === r.id)))) return { data: null, error: { code: '23503', message: 'update or delete on table "areas" violates foreign key constraint: it still has reservations' } }
       if (t === 'pacientes') quitar.forEach(p => ['citas', 'cobros', 'archivos', 'emergencias'].forEach(k => { DB[k] = DB[k].filter(x => x.paciente_id !== p.id) }))
       // same effect as the foreign keys of the hospital tables: citas.departamento_id / profesional_id are NO ACTION (23503 when referenced),
       // servicios.departamento_id and profesionales.departamento_id are SET NULL
@@ -519,6 +546,10 @@ function emergenciaRpc(fn, a) {
     DB.cobros.filter(x => x.cita_id === em.cita_id).forEach(x => { x.paciente_id = destino.id })
     DB.inventario_movimientos.filter(x => x.cita_id === em.cita_id).forEach(x => { x.paciente_id = destino.id })
     if (!DB.citas.some(x => x.paciente_id === actual.id)) {
+      // hospitalizations follow the merge; a destination already admitted refuses it (the whole call is undone)
+      const suyas = DB.estancias.filter(e => e.paciente_id === actual.id)
+      if (suyas.some(e => !e.egreso_at) && DB.estancias.some(e => !e.egreso_at && e.paciente_id === destino.id)) { DB.citas.find(x => x.id === em.cita_id).paciente_id = actual.id; em.paciente_id = actual.id; return fallaH('PACIENTE_INGRESADO') }
+      suyas.forEach(e => { e.paciente_id = destino.id })
       DB.archivos.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
       DB.cobros.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
       DB.inventario_movimientos.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
@@ -535,6 +566,7 @@ async function rpc(fn, a) {
   if (fn === 'google_estado') return { data: null, error: null } // Google Calendar is not available in the demo (card shows «Disponible pronto»)
   if (fn === 'cita_eliminar') {
     const c = DB.citas.find(x => x.id === a.p_cita)
+    if (DB.cirugias.some(x => x.cita_id === c.id && ['realizada', 'en_curso'].includes(x.estado))) return { data: null, error: { message: 'CIRUGIA_REALIZADA' } }
     const pac = DB.pacientes.find(x => x.id === c.paciente_id)
     DB.citas_eliminadas.unshift({ id: crypto.randomUUID(), cita_id: c.id, paciente_nombre: pac?.nombre, fecha: c.fecha, hora: c.hora, tipo: c.tipo, motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
     const n = DB.cobros.filter(x => x.cita_id === c.id).length

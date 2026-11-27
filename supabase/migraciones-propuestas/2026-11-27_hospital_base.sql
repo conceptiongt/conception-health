@@ -255,3 +255,15 @@ begin
   end loop;
 end
 $$;
+
+-- ---------------------------------------------------------------------------------------------------------
+-- Users included by plan. Clinics keep 2 + usuarios_extra. Hospital accounts (clinicas.especialidad = 'hospital'):
+-- 8 (Hospital Básico and trial/promo) or 15 (Hospital Max), plus usuarios_extra. Same signature and attributes
+-- as the live function (used by the invitacion_limite trigger and by usuarios_ocupados checks).
+-- Dry run on production inside a rolled-back transaction (2026-11-27): clinic → 2, hospital → 8, hospital max → 15.
+-- Rollback: restore `select 2 + coalesce((select usuarios_extra from clinicas where id = cid), 0)`.
+create or replace function public.usuarios_permitidos(cid uuid) returns integer
+language sql stable security definer set search_path to 'public' as $$
+  select (case when c.especialidad = 'hospital' then (case when c.plan = 'max' then 15 else 8 end) else 2 end) + coalesce(c.usuarios_extra, 0)
+    from clinicas c where c.id = cid
+$$;

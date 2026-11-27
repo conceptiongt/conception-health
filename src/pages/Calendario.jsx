@@ -17,6 +17,7 @@ import { Icon } from '../components/ui/Icon'
 import { Modal } from '../components/ui/Modal'
 import { toast } from '../components/ui/Toast'
 import { CitaModal } from '../components/CitaModal'
+import { PanelAtencion } from '../components/ConfirmarAtencion'
 import { SelectorColor } from '../components/SelectorColor'
 import { TarjetaGoogle } from '../components/TarjetaGoogle'
 import { googleEstado, eventosGoogle, alAvisoGoogle } from '../lib/google'
@@ -585,6 +586,7 @@ function DetalleCita({ cita: c, paciente: p, sedes, hospital, clinica, perfil, o
       </div>
       {c.notas && <div style={{ marginTop: 16 }}>{dato('Notas', c.notas)}</div>}
       <MeetCita cita={c} telefono={p.telefono} perfil={perfil} />
+      <PanelAtencion cita={c} paciente={p} arriba={16} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.g100}` }}>
         <Button icon="editar" onClick={onEditar}>Editar cita</Button>
         <Button variant="ghost" icon="expedientes" onClick={onExpediente}>Ver expediente</Button>

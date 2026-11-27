@@ -19,6 +19,9 @@ import { CategoriasModal } from '../components/inventario/Selectores'
 import { Paquetes, ConteoModal } from '../components/inventario/Paquetes'
 import { Compras, OrdenModal, OrdenDetalle, Proveedores, ProveedorModal, enCamino, numeroOC } from '../components/inventario/Compras'
 import { confirmar } from '../components/ui/Confirmar'
+import { Desplegable } from '../components/ui/Desplegable'
+import { useAtenciones } from '../hooks/useAtenciones'
+import { PendientesBodega } from '../components/inventario/Pendientes'
 
 // product costs and inventory value: administrator, or assistants with "costos"
 const useCostos = () => puede(useDatos().perfil, 'costos')
@@ -32,6 +35,7 @@ export function Inventario() {
   const { inv, recargar: recargarInv } = useInventario()
   const costos = useCostos()
   const comprar = useCompras()
+  const ins = useAtenciones() // hospital supplies: «Pendientes de bodega» (inactive for clinics and before the SQL is applied)
   const [movs, setMovs] = useState(null)
   const [tab, setTab] = useState('resumen')
   const [sedeFiltro, setSedeFiltro] = useState('')
@@ -58,7 +62,7 @@ export function Inventario() {
     setCompras({ ordenes: o.data || [], lineas: l.data || [] })
   }, [])
   useEffect(() => { cargarMovs(); cargarCompras() }, [cargarMovs, cargarCompras])
-  const recargar = () => { recargarInv(); cargarMovs(); cargarCompras() }
+  const recargar = () => { recargarInv(); cargarMovs(); cargarCompras(); ins.recargar() }
 
   if (!inv || !movs || !compras) return <Cargando />
   if (inv.error) return <div style={{ color: C.red, padding: 30 }}>No se pudo cargar el inventario: {inv.error}</div>
@@ -102,6 +106,7 @@ export function Inventario() {
     { value: 'productos', label: 'Productos', icono: 'caja' },
     { value: 'reabastecer', label: `Reabastecer${reabastecer.length ? ` (${reabastecer.length})` : ''}`, icono: 'alerta' },
     { value: 'paquetes', label: 'Paquetes', icono: 'archivo' },
+    ...(ins.activo ? [{ value: 'pendientes', label: `Pendientes de bodega${ins.nPendientes ? ` (${ins.nPendientes})` : ''}`, icono: 'alerta' }] : []),
     { value: 'compras', label: `Compras${abiertas ? ` (${abiertas})` : ''}`, icono: 'cartera' },
     { value: 'proveedores', label: 'Proveedores', icono: 'usuarios' },
     { value: 'sedes', label: 'Sedes', icono: 'sede' },
@@ -149,6 +154,13 @@ export function Inventario() {
         })}
       </div>
 
+      {ins.activo && ins.nPendientes > 0 && tab !== 'pendientes' && (
+        <div role="status" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 18, background: C.amberLight, color: C.amber, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Icon name="alerta" size={19} />
+          <span style={{ flex: 1, minWidth: 200, fontSize: 14.5, fontWeight: 600 }}>{ins.nPendientes === 1 ? '1 insumo pendiente de bodega' : `${ins.nPendientes} insumos pendientes de bodega`}: faltó existencia cuando se confirmó una atención.</span>
+          <Button size="sm" variant="ghost" onClick={() => setTab('pendientes')}>Ver pendientes</Button>
+        </div>
+      )}
       <div style={{ marginBottom: 18 }}><Pestanas opciones={TABS} valor={tab} onChange={setTab} /></div>
 
       {tab === 'resumen' && (listo
@@ -157,6 +169,7 @@ export function Inventario() {
       {tab === 'productos' && <Productos inv={inv} sedes={sedes} sedeFiltro={sedeFiltro} setSedeFiltro={setSedeFiltro} abrir={setDetalle} onNuevo={() => setProducto(null)} onCategorias={() => setCategorias(true)} />}
       {tab === 'reabastecer' && <Reabastecer filas={reabastecer} vencen={vencen} inv={inv} operar={operar} crearOrdenes={comprar ? crearOrdenes : null} />}
       {tab === 'paquetes' && <Paquetes inv={inv} onCambio={recargarInv} />}
+      {tab === 'pendientes' && ins.activo && <PendientesBodega inv={inv} onCambio={recargar} />}
       {tab === 'eliminados' && <Eliminados />}
       {tab === 'compras' && comprar && <Compras inv={inv} compras={compras} onNueva={nuevaOrden} onAbrir={(o) => setOrdenAbierta(o.id)} />}
       {tab === 'proveedores' && comprar && <Proveedores inv={inv} compras={compras} onEditar={(p) => setProveedor({ p })} onNuevaOrden={nuevaOrden} />}
@@ -307,11 +320,15 @@ function Resumen({ inv, movs, sedes, productos, reabastecer, vencen, operar, ver
 
 // ─── Products: cards (or list) with status and stock per location ───
 function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCategorias }) {
-  const { clinica } = useDatos()
+  const { clinica, hospital } = useDatos()
   const costos = useCostos()
   const [buscar, setBuscar] = useState('')
   const [estado, setEstado] = useState('')
   const [categoria, setCategoria] = useState('')
+  const [esp, setEsp] = useState('') // hospital: '' all · '__general' without specialty · a departamento id
+  // the specialty tag exists only in hospital accounts whose database has the column (migration applied)
+  const conEsp = !!hospital?.disponible && hospital.departamentos.length > 0 && inv.productos.every(p => 'departamento_id' in p)
+  const depDe = (p) => (conEsp && p.departamento_id ? hospital.departamento(p.departamento_id) : undefined)
   const visibles = sedeFiltro ? sedes.filter(s => s.id === sedeFiltro) : sedes
   const categorias = [...new Set(inv.productos.filter(p => p.activo && p.categoria).map(p => p.categoria))].sort()
   const q = buscar.trim().toLowerCase()
@@ -320,6 +337,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
     .map(p => ({ p, e: estadoProducto(inv, visibles, p) }))
     .filter(({ p, e }) => (!q || p.nombre.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q))
       && (!categoria || p.categoria === categoria)
+      && (!conEsp || !esp || (esp === '__general' ? !p.departamento_id : p.departamento_id === esp))
       && (estado === 'inactivo' ? !p.activo : !estado || e.clave === estado))
   const conteo = (clave) => inv.productos.filter(p => p.activo && estadoProducto(inv, visibles, p).clave === clave).length
 
@@ -340,6 +358,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
         </div>
         <select value={sedeFiltro} onChange={e => setSedeFiltro(e.target.value)} style={sel}><option value="">Todas las sedes</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
         {categorias.length > 0 && <select value={categoria} onChange={e => setCategoria(e.target.value)} style={sel}><option value="">Toda categoría</option>{categorias.map(c => <option key={c}>{c}</option>)}</select>}
+        {conEsp && <Desplegable ariaLabel="Especialidad" value={esp} onChange={setEsp} options={[{ value: '', label: 'Toda especialidad' }, { value: '__general', label: 'General (sin especialidad)' }, ...hospital.departamentos.filter(d => d.activo || d.id === esp).map(d => ({ value: d.id, label: d.nombre }))]} />}
         <Button variant="ghost" size="sm" icon="editar" onClick={onCategorias}>Categorías</Button>
         <Exportar clinica={clinica?.nombre} preparar={preparar} />
       </div>
@@ -360,7 +379,7 @@ function Productos({ inv, sedes, sedeFiltro, setSedeFiltro, abrir, onNuevo, onCa
               <button key={p.id} onClick={() => abrir(p)} className="prod-fila fila" style={{ opacity: p.activo ? 1 : 0.55 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nombre}</div>
-                  <div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria || 'Sin categoría', p.unidad].join(' · ')}</div>
+                  <div style={{ fontSize: 12, color: C.g400 }}>{[p.categoria || 'Sin categoría', p.unidad].join(' · ')}{depDe(p) && <span style={{ color: C.purple, fontWeight: 600 }}> · {depDe(p).nombre}</span>}</div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
                   {visibles.map(s => {

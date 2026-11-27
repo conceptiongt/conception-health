@@ -28,7 +28,8 @@ const chipStyle = (activo) => ({
 })
 
 // Type to search a product; category chips underneath narrow the list. Shows the stock of `sedeId` when given.
-export function BuscadorProducto({ productos, valor, onChange, inv, sedeId, soloConExistencia, placeholder = 'Escriba el nombre del producto…' }) {
+// `primero` (optional): products it returns true for are listed first and marked with `etiquetaPrimero` (hospital: the specialty's own supplies)
+export function BuscadorProducto({ productos, valor, onChange, inv, sedeId, soloConExistencia, placeholder = 'Escriba el nombre del producto…', primero, etiquetaPrimero }) {
   const elegido = productos.find(p => p.id === valor)
   const [texto, setTexto] = useState('')
   const [abierto, setAbierto] = useState(false)
@@ -48,7 +49,7 @@ export function BuscadorProducto({ productos, valor, onChange, inv, sedeId, solo
   const q = quitarTildes(texto.trim())
   const lista = productos
     .filter(p => (!categoria || p.categoria === categoria) && (!q || quitarTildes(p.nombre).includes(q) || quitarTildes(p.categoria).includes(q)))
-    .sort((a, b) => (soloConExistencia ? (hay(b) > 0) - (hay(a) > 0) : 0) || a.nombre.localeCompare(b.nombre, 'es'))
+    .sort((a, b) => (primero ? !!primero(b) - !!primero(a) : 0) || (soloConExistencia ? (hay(b) > 0) - (hay(a) > 0) : 0) || a.nombre.localeCompare(b.nombre, 'es'))
 
   const elegir = (p) => {
     if (soloConExistencia && !(hay(p) > 0)) return
@@ -104,7 +105,7 @@ export function BuscadorProducto({ productos, valor, onChange, inv, sedeId, solo
                   }}>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontWeight: 600, fontSize: 14, color: C.black }}>{p.nombre}</span>
-                      <span style={{ fontSize: 12, color: C.g400 }}>{p.categoria || 'Sin categoría'}</span>
+                      <span style={{ fontSize: 12, color: C.g400 }}>{p.categoria || 'Sin categoría'}{primero && etiquetaPrimero && primero(p) ? <span style={{ color: C.purple, fontWeight: 600 }}> · {etiquetaPrimero}</span> : ''}</span>
                     </span>
                     {n != null && <span style={{ fontSize: 12.5, fontWeight: 700, color: n > 0 ? C.g600 : C.red, whiteSpace: 'nowrap' }}>{n > 0 ? `hay ${fmtCant(n)} ${p.unidad}` : 'sin existencia'}</span>}
                     {p.id === valor && <Icon name="check" size={15} style={{ color: C.purple }} />}

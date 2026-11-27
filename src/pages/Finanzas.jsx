@@ -10,7 +10,8 @@ import { Modal } from '../components/ui/Modal'
 import { Campo, Input, Select, Textarea, Grid } from '../components/ui/Campos'
 import { toast } from '../components/ui/Toast'
 import { Exportar } from '../components/Documento'
-import { cargarFinanzas, calcularFinanzas, prepararFinanzas } from '../lib/exportar'
+import { cargarFinanzas, calcularFinanzas, prepararFinanzas, calcularPorEspecialidad } from '../lib/exportar'
+import { useAtenciones } from '../hooks/useAtenciones'
 import { SelectorPeriodo, RangoFechas, FiltroSede, textoPeriodo, nombreSede } from '../components/Filtros'
 import { BotonesSubir, tipoArchivo } from '../components/SubirArchivos'
 import { confirmar } from '../components/ui/Confirmar'
@@ -20,21 +21,31 @@ const hoy = new Date()
 
 // Administrator only: the clinic's money in one place — what came in, what went out, what is still owed
 export function Finanzas() {
-  const { cobros, citas, pacientes, clinica, sedes } = useDatos()
+  const { cobros, citas, pacientes, clinica, sedes, servicios, hospital } = useDatos()
+  const ins = useAtenciones() // hospital: supplies cost per specialty (inactive for clinics and before the SQL is applied)
   const [periodo, setPeriodo] = useState({ mes: hoy.getMonth(), anio: hoy.getFullYear(), desde: '', hasta: '' })
   const [sede, setSede] = useState('')
   const [d, setD] = useState(null) // { abonos, gastos, ordenes, lineas }
   const [gasto, setGasto] = useState(undefined) // undefined: closed, null: new, object: edit
 
+  const [costos, setCostos] = useState(null) // rows of insumos_por_especialidad; false = not available to this user / not applied
   const cargar = useCallback(async () => { setD(await cargarFinanzas()) }, [])
   useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    if (!ins.activo) return
+    let vivo = true
+    supabase.rpc('insumos_por_especialidad').then(({ data, error }) => { if (vivo) setCostos(error ? false : data || []) })
+    return () => { vivo = false }
+  }, [ins.activo, ins.version])
   if (!d) return <Cargando />
 
   const calculo = calcularFinanzas({ cobros, citas, pacientes, d, sede, periodo })
   const { cobroPorId, facturado, porCobrar, ingresos, egresos, utilidad, serie, tope, porConcepto, porCategoria, lista } = calculo
 
   const titulo = `${textoPeriodo(periodo)}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
-  const preparar = () => prepararFinanzas({ ...calculo, titulo, clinica, sedes })
+  const especialidades = ins.activo ? calcularPorEspecialidad({ abonosS: calculo.abonosS, cobroPorId, citas, servicios, departamentos: hospital.departamentos, costos: costos || null, periodo, sede }) : null
+  const conCostos = Array.isArray(costos)
+  const preparar = () => prepararFinanzas({ ...calculo, titulo, clinica, sedes, especialidades, conCostos })
 
   const barraLista = (items, total, color) => items.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Sin movimientos en este período</div> : items.slice(0, 8).map(([k, v]) => (
     <div key={k} style={{ marginBottom: 10 }}>
@@ -85,6 +96,22 @@ export function Finanzas() {
         <Card title="De dónde vienen los ingresos">{barraLista(porConcepto, ingresos, C.green)}</Card>
         <Card title="En qué se va el dinero">{barraLista(porCategoria, egresos, '#F08A8A')}</Card>
       </div>
+
+      {especialidades && (
+        <Card title={`Por especialidad · ${titulo}`} style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: C.g500, lineHeight: 1.5, marginBottom: 12 }}>
+            {conCostos ? 'Margen = ingresos cobrados menos el costo de los insumos que se descontaron al confirmar las atenciones. Los gastos generales no se reparten.' : 'Ingresos cobrados por especialidad. El costo de insumos aparece cuando haya atenciones confirmadas.'}
+          </div>
+          <Tabla columnas={['Especialidad', 'Ingresos cobrados', ...(conCostos ? ['Costo de insumos', 'Margen', 'Margen %'] : [])]} vacio="Sin ingresos ni insumos en este período"
+            filas={[...especialidades.map(f => ({ key: f.id || 'sin', celdas: [
+              <strong style={{ fontWeight: 600 }}>{f.nombre}</strong>,
+              <div style={{ minWidth: 150 }}>{fmtQ(f.ingresos)}<div style={{ height: 5, borderRadius: 3, background: C.g100, marginTop: 5 }}><div style={{ width: `${ingresos ? Math.min(100, (f.ingresos / ingresos) * 100) : 0}%`, height: '100%', borderRadius: 3, background: C.green }} /></div></div>,
+              ...(conCostos ? [fmtQ(f.costo), <strong style={{ fontWeight: 600, color: f.margen >= 0 ? C.green : C.red }}>{fmtQ(f.margen)}</strong>, f.pct == null ? '—' : `${f.pct}%`] : []),
+            ] })),
+            ...(especialidades.length > 1 ? [{ key: 'total', celdas: [<strong>Total</strong>, <strong>{fmtQ(especialidades.reduce((n, f) => n + f.ingresos, 0))}</strong>,
+              ...(conCostos ? [<strong>{fmtQ(especialidades.reduce((n, f) => n + f.costo, 0))}</strong>, <strong>{fmtQ(especialidades.reduce((n, f) => n + f.margen, 0))}</strong>, ''] : [])] }] : [])]} />
+        </Card>
+      )}
 
       <Card title={`Gastos · ${titulo}`} right={<Button size="sm" variant="ghost" icon="mas" onClick={() => setGasto(null)}>Registrar gasto</Button>}>
         <Tabla columnas={['Fecha', 'Categoría', 'Concepto', ...(sedes.length ? ['Sede'] : []), 'Monto']} vacio="Sin gastos en este período"

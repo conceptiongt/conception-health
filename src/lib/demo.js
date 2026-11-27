@@ -3,6 +3,9 @@
 // It mimics the parts of the Supabase client the app uses (tables, rpc, storage, auth).
 
 const q = new URLSearchParams(location.search)
+// ?insumos=1 = hospital account WITH sample specialties, doctors, kits and stock (Confirmar atención / Pendientes de bodega / Finanzas por especialidad);
+// &medico=1 = the user is the doctor «Dra. Laura Pérez»; &ins_tabla=falta = simulates the supplies SQL not applied yet
+const INSUMOS = q.get('insumos') === '1'
 const uid = 'demo-usuario', cid = 'demo-clinica'
 const id = () => crypto.randomUUID()
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -100,10 +103,10 @@ const DB = {
   // Emergencias (hospital): one row per emergency cita, written only through the emergencia_* functions below
   emergencias: [],
   perfiles: [
-    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
+    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true, ...(q.get('medico') === '1' ? { profesional_id: 'demo-prof1' } : {}) }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' || INSUMOS ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   // fictional support-code history (the real database never exposes the hash column)
@@ -111,6 +114,26 @@ const DB = {
   categorias_inventario: ['Medicamentos', 'Insumos', 'Equipo'].map(nombre => ({ id: id(), clinica_id: cid, nombre })),
   proveedores: [{ id: 'demo-pv1', clinica_id: cid, nombre: 'Distribuidora Médica Ejemplo', contacto: 'Luis', telefono: '55550000', activo: true }],
   ordenes_compra: [], ordenes_compra_lineas: [], paquetes: [], paquete_items: [],
+  // hospital supplies (read-only for clients; written only by the atencion_* / pendiente_* functions below)
+  atenciones: [], atencion_insumos: [], pendientes_bodega: [],
+}
+
+// ── ?insumos=1: a hospital with specialties, doctors, kits and stock to try «Confirmar atención» ──
+const costoLinea = new Map() // atencion_insumos.id → unit cost snapshot (not readable by clients, like the real column)
+if (INSUMOS) {
+  DB.departamentos = [['d1', 'Cirugía general', 'cirugia_general'], ['d2', 'Medicina interna', 'medicina_interna'], ['d3', 'Pediatría', 'pediatria']]
+    .map(([i, nombre, clave], k) => ({ id: 'demo-' + i, clinica_id: cid, clave, nombre, base: clave, es_emergencia: false, activo: true, orden: k, created_at: '2026-01-01' }))
+  DB.profesionales = [['prof1', 'Dra. Laura Pérez', 'demo-d1'], ['prof2', 'Dr. Marco Ruiz', 'demo-d2'], ['prof3', 'Dr. Iván Soto', 'demo-d3']]
+    .map(([i, nombre, dep]) => ({ id: 'demo-' + i, clinica_id: cid, nombre, tipo: 'planta', funcion: 'medico', departamento_id: dep, colegiado: null, telefono: null, color: null, activo: true, created_at: '2026-01-01' }))
+  // services of the vascular sample belong to a specialty; the cheap consultations stay general
+  DB.servicios.forEach(sv => { sv.departamento_id = ['demo-sv4', 'demo-sv5', 'demo-sv6'].includes(sv.id) ? 'demo-d1' : sv.id === 'demo-sv3' ? 'demo-d2' : null })
+  DB.citas.forEach((c, k) => { const d = ['demo-d1', 'demo-d2', 'demo-d3'][k % 3]; c.departamento_id = d; c.profesional_id = 'demo-prof' + (1 + (k % 3)) })
+  DB.productos.forEach(p => { p.departamento_id = { 'demo-pr1': 'demo-d1', 'demo-pr4': 'demo-d1', 'demo-pr5': 'demo-d2' }[p.id] || null })
+  // default kits (Inventario → Paquetes): «Escleroterapia» and «Ablación láser» linked to their service
+  DB.paquetes = [{ id: 'demo-pq1', clinica_id: cid, nombre: 'Escleroterapia', servicio_id: 'demo-sv4', activo: true, created_at: '2026-01-01' }, { id: 'demo-pq2', clinica_id: cid, nombre: 'Ablación láser', servicio_id: 'demo-sv6', activo: true, created_at: '2026-01-01' }]
+  DB.paquete_items = [['pq1', 'pr1', 2], ['pq1', 'pr3', 3], ['pq2', 'pr4', 1], ['pq2', 'pr5', 2], ['pq2', 'pr3', 4]].map(([pq, pr, n]) => ({ id: id(), clinica_id: cid, paquete_id: 'demo-' + pq, producto_id: 'demo-' + pr, cantidad: n }))
+  // upcoming citas (not yet attended) get a service that has a kit, so the flow can be tried right away
+  DB.citas.filter(c => ['Pendiente', 'Confirmada'].includes(c.estado)).forEach((c, k) => { const sv = DB.servicios.find(x => x.id === (k % 2 ? 'demo-sv6' : 'demo-sv4')); Object.assign(c, { servicio_id: sv.id, servicio: sv.nombre, tipo: sv.categoria, departamento_id: 'demo-d1', profesional_id: 'demo-prof1' }) })
 }
 const recalcular = () => DB.cobros.forEach(c => { c.pagado = DB.abonos.filter(a => a.cobro_id === c.id).reduce((n, a) => n + Number(a.monto), 0) })
 recalcular()
@@ -155,9 +178,19 @@ function from(t) {
     const f = window.__demoFalla
     if (op === 'select' && f && f.veces > 0 && (f.tabla === t || f.tabla === '*')) { f.veces--; return { data: null, error: { message: 'Failed to fetch' } } }
     if (t === 'pacientes' && op === 'update' && payload.sin_identificar === true && filas.some(r => coincide(r) && !r.sin_identificar)) return { data: null, error: { code: '23514', message: 'CAMPO_INMUTABLE' } }
+    // hospital supplies tables: clients only read; ?ins_tabla=falta simulates the SQL not applied (missing tables, no productos.departamento_id)
+    const sinSQL = q.get('ins_tabla') === 'falta'
+    if (['atenciones', 'atencion_insumos', 'pendientes_bodega'].includes(t)) {
+      if (sinSQL) return { data: null, error: { code: '42P01', message: `relation "public.${t}" does not exist` } }
+      if (op !== 'select') return { data: null, error: { code: '42501', message: `permission denied for table ${t}` } }
+    }
+    if (t === 'productos' && sinSQL && (op === 'insert' || op === 'update') && 'departamento_id' in ([].concat(payload)[0] || {})) {
+      return { data: null, error: { code: 'PGRST204', message: "Could not find the 'departamento_id' column of 'productos' in the schema cache" } }
+    }
     if (op === 'select') {
       if (sinPermiso || (t === 'gastos' && DB.perfiles[0].rol !== 'dueno')) return { data: one || maybe ? null : [], error: null }
       let d = filas.filter(coincide).map(r => ({ ...r }))
+      if (t === 'productos' && sinSQL) d.forEach(r => { delete r.departamento_id })
       if (ord) d.sort((a, x) => String(a[ord[0]] ?? '').localeCompare(String(x[ord[0]] ?? '')) * (ord[1] === false ? -1 : 1))
       return { data: one || maybe ? d[0] || null : d, count: d.length, error: null }
     }
@@ -314,6 +347,112 @@ function emergenciaRpc(fn, a) {
   return { data: null, error: null }
 }
 
+
+// ── Hospital supplies: the functions of supabase/migraciones-propuestas/2026-11-28_hospital_insumos.sql, in memory (same arguments, same result shapes, same error codes) ──
+const fechaGT = (ts) => new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' })
+function insumosRpc(fn, a) {
+  if (q.get('ins_tabla') === 'falta') return { data: null, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache` } }
+  const perfil = DB.perfiles[0], dueno = perfil.rol === 'dueno'
+  const permiso = (k) => dueno || perfil.permisos?.[k] === true
+  if (perfil.rol === 'soporte') return falla('SIN_PERMISO')
+  if (DB.clinicas[0].especialidad !== 'hospital') return falla('NO_HOSPITAL')
+  const ahora = new Date().toISOString()
+  if (fn === 'insumos_por_especialidad') {
+    if (!(permiso('finanzas') && permiso('costos'))) return falla('NO_AUTORIZADO')
+    const filas = new Map()
+    for (const at of DB.atenciones) {
+      const f = fechaGT(at.confirmada_at)
+      if ((a?.p_desde && f < a.p_desde) || (a?.p_hasta && f > a.p_hasta)) continue
+      const k = `${at.departamento_id}|${at.sede_id}|${f}`
+      const r = filas.get(k) || { departamento_id: at.departamento_id, sede_id: at.sede_id, fecha: f, costo: 0, lineas: 0 }
+      for (const l of DB.atencion_insumos.filter(x => x.atencion_id === at.id)) { r.costo += Number(l.descontada) * (costoLinea.get(l.id) || 0); r.lineas++ }
+      filas.set(k, r)
+    }
+    return { data: [...filas.values()], error: null }
+  }
+  const cita = DB.citas.find(x => x.id === a.p_cita)
+  if (fn === 'atencion_confirmar') {
+    if (!cita) return falla('CITA_AJENA')
+    const vinculo = perfil.permisos?.profesional_id || null
+    if (!(dueno || (vinculo && cita.profesional_id && vinculo === cita.profesional_id) || ((!cita.profesional_id || !vinculo) && permiso('expedientes')))) return falla('NO_AUTORIZADO')
+    if (!['Pendiente', 'Confirmada', 'Asistió'].includes(cita.estado)) return falla('CITA_NO_VALIDA')
+    const em = DB.emergencias.find(x => x.cita_id === cita.id)
+    if (em && !em.cerrado_at) return falla('EMERGENCIA_ABIERTA')
+    if (DB.atenciones.some(x => x.cita_id === cita.id)) return falla('YA_CONFIRMADA')
+    const lineas = a.p_lineas ?? []
+    if (!Array.isArray(lineas) || lineas.length > 100 || lineas.some(l => !l || !(Number(l.cantidad) > 0))) return falla('DATOS_INVALIDOS')
+    const suma = new Map()
+    for (const l of lineas) { if (!DB.productos.some(p => p.id === l.producto_id)) return falla('PRODUCTO_AJENO'); suma.set(l.producto_id, (suma.get(l.producto_id) || 0) + Number(l.cantidad)) }
+    if (suma.size && !['max', 'ultra'].includes(DB.clinicas[0].plan)) return falla('SIN_INVENTARIO')
+    const activas = DB.sedes.filter(s => s.activa)
+    const sedeId = a.p_sede || cita.sede_id || (activas.length === 1 ? activas[0].id : null)
+    if (!sedeId) return falla('SIN_SEDE')
+    if (!activas.some(s => s.id === sedeId)) return falla('SEDE_AJENA')
+    const at = { id: id(), clinica_id: cid, cita_id: cita.id, paciente_id: cita.paciente_id, departamento_id: cita.departamento_id || null, profesional_id: cita.profesional_id || null, sede_id: sedeId,
+      estado_previo: cita.estado, confirmada_por: uid, confirmada_nombre: perfil.nombre, confirmada_at: ahora }
+    DB.atenciones.push(at)
+    const salida = []
+    let faltantes = 0
+    for (const [pid, cant] of [...suma].sort((x, y) => String(x[0]).localeCompare(String(y[0])))) {
+      const e = DB.existencias.find(x => x.sede_id === sedeId && x.producto_id === pid)
+      const desc = Math.min(e ? Number(e.cantidad) : 0, cant), falt = cant - desc
+      let mov = null
+      if (desc > 0) {
+        mov = { id: id(), clinica_id: cid, sede_id: sedeId, producto_id: pid, tipo: 'uso', delta: -desc, paciente_id: cita.paciente_id, cita_id: cita.id, notas: 'Atención confirmada', fecha: hoy, creado_por: uid, created_at: ahora }
+        DB.inventario_movimientos.push(mov); aplicar(mov, mov.delta)
+      }
+      const linea = { id: id(), clinica_id: cid, atencion_id: at.id, producto_id: pid, cantidad: cant, descontada: desc, faltante: falt, movimiento_ids: mov ? [mov.id] : [], created_at: ahora }
+      DB.atencion_insumos.push(linea); costoLinea.set(linea.id, Number(DB.productos.find(p => p.id === pid).costo) || 0)
+      if (falt > 0) {
+        faltantes++
+        DB.pendientes_bodega.push({ id: id(), clinica_id: cid, atencion_insumo_id: linea.id, cita_id: cita.id, paciente_id: cita.paciente_id, producto_id: pid, departamento_id: cita.departamento_id || null, sede_id: sedeId,
+          cantidad: falt, cantidad_original: falt, estado: 'pendiente', creado_por: uid, creado_nombre: perfil.nombre, created_at: ahora, resuelto_por: null, resuelto_nombre: null, resuelto_at: null, descontado: 0 })
+      }
+      salida.push({ producto_id: pid, cantidad: cant, descontada: desc, faltante: falt })
+    }
+    cita.estado = 'Asistió'
+    return { data: { atencion_id: at.id, sede_id: sedeId, faltantes, lineas: salida }, error: null }
+  }
+  if (fn === 'atencion_corregir') {
+    if (!dueno) return falla('NO_AUTORIZADO')
+    if (!cita) return falla('CITA_AJENA')
+    const at = DB.atenciones.find(x => x.cita_id === cita.id)
+    if (!at) return falla('NO_CONFIRMADA')
+    let devueltos = 0
+    for (const l of DB.atencion_insumos.filter(x => x.atencion_id === at.id)) for (const mid of l.movimiento_ids) {
+      const m = DB.inventario_movimientos.find(x => x.id === mid)
+      if (m) { aplicar(m, -m.delta); DB.inventario_movimientos = DB.inventario_movimientos.filter(x => x.id !== mid); devueltos++ }
+    }
+    if (!DB.emergencias.some(x => x.cita_id === cita.id) && at.estado_previo) cita.estado = at.estado_previo
+    const lineas = new Set(DB.atencion_insumos.filter(x => x.atencion_id === at.id).map(x => x.id))
+    DB.pendientes_bodega = DB.pendientes_bodega.filter(x => !lineas.has(x.atencion_insumo_id))
+    DB.atencion_insumos = DB.atencion_insumos.filter(x => x.atencion_id !== at.id)
+    DB.atenciones = DB.atenciones.filter(x => x.id !== at.id)
+    return { data: { devueltos }, error: null }
+  }
+  if (fn === 'pendiente_resolver') {
+    if (!permiso('inventario')) return falla('NO_AUTORIZADO')
+    const p = DB.pendientes_bodega.find(x => x.id === a.p_id)
+    if (!p) return falla('PENDIENTE_AJENO')
+    if (p.estado === 'resuelto') return falla('YA_RESUELTO')
+    let desc = 0
+    if (a.p_descontar) {
+      const e = DB.existencias.find(x => x.sede_id === p.sede_id && x.producto_id === p.producto_id)
+      desc = Math.min(e ? Number(e.cantidad) : 0, p.cantidad)
+      if (desc <= 0) return falla('SIN_EXISTENCIA')
+      const m = { id: id(), clinica_id: cid, sede_id: p.sede_id, producto_id: p.producto_id, tipo: 'uso', delta: -desc, paciente_id: p.paciente_id, cita_id: p.cita_id, notas: 'Pendiente de bodega resuelto', fecha: hoy, creado_por: uid, created_at: ahora }
+      DB.inventario_movimientos.push(m); aplicar(m, m.delta)
+      const l = DB.atencion_insumos.find(x => x.id === p.atencion_insumo_id)
+      if (l) { l.descontada += desc; l.faltante -= desc; l.movimiento_ids = [...l.movimiento_ids, m.id] }
+    }
+    const restante = p.cantidad - desc
+    if (restante > 0 && a.p_descontar) { p.cantidad = restante; p.descontado += desc; return { data: { estado: 'pendiente', descontado: desc, restante }, error: null } }
+    Object.assign(p, { estado: 'resuelto', resuelto_por: uid, resuelto_nombre: perfil.nombre, resuelto_at: ahora, descontado: p.descontado + desc })
+    return { data: { estado: 'resuelto', descontado: desc, restante: 0 }, error: null }
+  }
+  return { data: null, error: null }
+}
+
 async function rpc(fn, a) {
   if (fn === 'google_estado') return { data: null, error: null } // Google Calendar is not available in the demo (card shows «Disponible pronto»)
   if (fn === 'cita_eliminar') {
@@ -321,12 +460,18 @@ async function rpc(fn, a) {
     const pac = DB.pacientes.find(x => x.id === c.paciente_id)
     DB.citas_eliminadas.unshift({ id: crypto.randomUUID(), cita_id: c.id, paciente_nombre: pac?.nombre, fecha: c.fecha, hora: c.hora, tipo: c.tipo, motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
     const n = DB.cobros.filter(x => x.cita_id === c.id).length
+    // like the real function: the movements of the cita go back to stock; the hospital supplies rows hang from the cita (cascade)
+    const movs = DB.inventario_movimientos.filter(x => x.cita_id === c.id)
+    movs.forEach(m => aplicar(m, -m.delta)); DB.inventario_movimientos = DB.inventario_movimientos.filter(x => x.cita_id !== c.id)
+    const ats = new Set(DB.atenciones.filter(x => x.cita_id === c.id).map(x => x.id)), lins = new Set(DB.atencion_insumos.filter(x => ats.has(x.atencion_id)).map(x => x.id))
+    DB.pendientes_bodega = DB.pendientes_bodega.filter(x => x.cita_id !== c.id && !lins.has(x.atencion_insumo_id)); DB.atencion_insumos = DB.atencion_insumos.filter(x => !ats.has(x.atencion_id)); DB.atenciones = DB.atenciones.filter(x => !ats.has(x.id))
     DB.cobros = DB.cobros.filter(x => x.cita_id !== c.id); DB.citas = DB.citas.filter(x => x.id !== c.id)
     DB.emergencias = DB.emergencias.filter(x => x.cita_id !== c.id) // cascade of emergencias.cita_id
     DB.abonos = DB.abonos.filter(x => DB.cobros.some(co => co.id === x.cobro_id))
-    return { data: { cobros: n, productos: 0 }, error: null }
+    return { data: { cobros: n, productos: movs.length }, error: null }
   }
   if (fn.startsWith('emergencia_')) return emergenciaRpc(fn, a)
+  if (['atencion_confirmar', 'atencion_corregir', 'pendiente_resolver', 'insumos_por_especialidad'].includes(fn)) return insumosRpc(fn, a)
   if (fn === 'inventario_eliminar') {
     const tabla = { producto: 'productos', sede: 'sedes', proveedor: 'proveedores', paquete: 'paquetes', categoria: 'categorias_inventario', orden: 'ordenes_compra', movimiento: 'inventario_movimientos' }[a.p_tipo]
     const fila = (DB[tabla] || []).find(x => x.id === a.p_id)

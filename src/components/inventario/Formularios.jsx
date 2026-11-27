@@ -14,6 +14,7 @@ import { useDatos } from '../../hooks/useDatos'
 import { puede } from '../../lib/permisos'
 import { BuscadorProducto, ElegirCategoria } from './Selectores'
 import { confirmar } from '../ui/Confirmar'
+import { Desplegable } from '../ui/Desplegable'
 
 // Every delete in Inventario goes through here: asks why, and the database keeps who deleted what and why
 // (Inventario → Eliminados). Returns true when it was deleted.
@@ -149,7 +150,10 @@ export function MovimientoModal({ inv, inicial, onClose, onGuardado }) {
 export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio, onClose, onGuardado }) {
   const proveedores = inv?.proveedores || []
   const costos = puede(useDatos().perfil, 'costos') // without it the price stays as it was, unseen
-  const [f, setF] = useState({ nombre: producto?.nombre || '', codigo: producto?.codigo || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', stock_maximo: producto?.stock_maximo ?? '', costo: producto?.costo ?? '', proveedor_id: producto?.proveedor_id || '', activo: producto?.activo ?? true })
+  const { hospital } = useDatos()
+  // hospital: optional specialty tag (productos.departamento_id), only when the column exists in the database
+  const conEsp = !!hospital?.disponible && hospital.departamentos.length > 0 && (inv?.productos || []).every(p => 'departamento_id' in p)
+  const [f, setF] = useState({ departamento_id: producto?.departamento_id || '', nombre: producto?.nombre || '', codigo: producto?.codigo || '', categoria: producto?.categoria || '', unidad: producto?.unidad || 'unidad', stock_minimo: producto ? String(producto.stock_minimo) : '', stock_maximo: producto?.stock_maximo ?? '', costo: producto?.costo ?? '', proveedor_id: producto?.proveedor_id || '', activo: producto?.activo ?? true })
   const [conPrecio, setConPrecio] = useState(producto?.costo != null) // the price is only saved if the user turns it on
   const [busy, setBusy] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
@@ -159,7 +163,10 @@ export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio,
     if (f.stock_maximo !== '' && Number(f.stock_maximo) < (Number(f.stock_minimo) || 0)) { toast.error('El máximo no puede ser menor que el mínimo'); return }
     const fila = { nombre: f.nombre.trim(), codigo: f.codigo.trim() || null, categoria: f.categoria.trim() || null, unidad: f.unidad.trim() || 'unidad', stock_minimo: Number(f.stock_minimo) || 0, stock_maximo: f.stock_maximo === '' ? null : Number(f.stock_maximo), costo: conPrecio && f.costo !== '' ? Number(f.costo) : null, proveedor_id: f.proveedor_id || null, activo: f.activo }
     setBusy(true)
-    const { error } = producto ? await supabase.from('productos').update(fila).eq('id', producto.id) : await supabase.from('productos').insert(fila)
+    const guardarFila = (x) => producto ? supabase.from('productos').update(x).eq('id', producto.id) : supabase.from('productos').insert(x)
+    let { error } = await guardarFila(conEsp ? { ...fila, departamento_id: f.departamento_id || null } : fila)
+    // the column is not in the database yet (SQL not applied): save the product without the tag, no error for the user
+    if (error && conEsp && /departamento_id/.test(`${error.message} ${error.details || ''}`)) ({ error } = await guardarFila(fila))
     setBusy(false)
     if (error) { toast.error(errorInventario(error)); return }
     toast.success('Producto guardado')
@@ -171,6 +178,10 @@ export function ProductoModal({ producto, inv, onCategorias, onCategoriasCambio,
         <Campo label="Nombre *"><Input value={f.nombre} onChange={set('nombre')} placeholder="Ej. Toxina botulínica 100U" /></Campo>
         <Campo label="Código o referencia (opcional)"><Input value={f.codigo} onChange={set('codigo')} placeholder="Ej. BTX-100" /></Campo>
         <Campo label="Categoría" full ayuda="Elija una o cree la suya; sirve para encontrar el producto más rápido"><ElegirCategoria valor={f.categoria} onChange={set('categoria')} inv={inv} onCreada={onCategoriasCambio} onAdministrar={onCategorias} /></Campo>
+        {conEsp && <Campo label="Especialidad (opcional)" full ayuda="Solo es una etiqueta para encontrarlo más fácil: la bodega sigue siendo una. Déjelo en «General» si lo usan varias especialidades.">
+          <Desplegable ariaLabel="Especialidad del producto" value={f.departamento_id} onChange={set('departamento_id')} style={{ width: '100%', justifyContent: 'space-between', padding: '11px 14px' }}
+            options={[{ value: '', label: 'General (sin especialidad)' }, ...hospital.departamentos.filter(d => d.activo || d.id === f.departamento_id).map(d => ({ value: d.id, label: d.nombre }))]} />
+        </Campo>}
         <Campo label="Se cuenta por"><Input value={f.unidad} onChange={set('unidad')} list="unidades" /><datalist id="unidades">{UNIDADES.map(u => <option key={u} value={u} />)}</datalist></Campo>
         <Campo label="Mínimo por sede" ayuda="Si una sede baja de aquí, le avisamos para reabastecer"><Input type="number" min="0" step="any" value={f.stock_minimo} onChange={set('stock_minimo')} placeholder="0" /></Campo>
         <Campo label="Máximo por sede (opcional)" ayuda="Al reabastecer, se sugiere pedir hasta llegar aquí"><Input type="number" min="0" step="any" value={f.stock_maximo} onChange={set('stock_maximo')} placeholder="Doble del mínimo" /></Campo>

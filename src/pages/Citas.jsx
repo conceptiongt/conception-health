@@ -20,6 +20,7 @@ import { MeetCita } from '../components/EnlaceMeet'
 import { colorProfesional } from '../hooks/useHospital'
 import { FaltanDatos } from '../components/EmergenciaBits'
 import { TIPO_EMERGENCIA } from '../lib/emergencias'
+import { PanelAtencion } from '../components/ConfirmarAtencion'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -235,6 +236,7 @@ function ListaCitas({ citas, porId, sedes, hospital, abierta, setAbierta, perfil
                       </div>
                       {c.notas && <div style={{ marginTop: 14 }}>{dato('Notas', c.notas)}</div>}
                       <MeetCita cita={c} telefono={p.telefono} perfil={perfil} arriba={14} />
+                      <PanelAtencion cita={c} paciente={p} arriba={16} />
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.g100}` }}>
                         <button style={accion} onClick={() => onExpediente(p)}><Icon name="expedientes" size={15} />Ver expediente</button>
                         <button style={accion} onClick={() => onEditar(c)}><Icon name="editar" size={15} />Editar cita</button>

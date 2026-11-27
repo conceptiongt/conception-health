@@ -15,6 +15,9 @@ import { toast } from './ui/Toast'
 import { confirmar } from './ui/Confirmar'
 import { BotonesSubir, subirArchivos } from './SubirArchivos'
 import { FaltanDatos } from './EmergenciaBits'
+import { ConfirmarAtencionModal } from './ConfirmarAtencion'
+import { useAtenciones } from '../hooks/useAtenciones'
+import { puedeConfirmar } from '../lib/insumos'
 
 const sinTildes = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 const caja = { width: '100%', justifyContent: 'space-between', padding: '12px 14px' }
@@ -249,8 +252,10 @@ export function RegistrarLlegada({ onClose }) {
 
 // ───────────────────────── Finalizar ─────────────────────────
 export function FinalizarModal({ item, onClose }) {
-  const { hospital, emergencias } = useDatos()
+  const { hospital, emergencias, perfil } = useDatos()
+  const { activo: conInsumos } = useAtenciones() // hospital supplies available (SQL applied)
   const { em, cita, paciente } = item
+  const [siguiente, setSiguiente] = useState(null) // the cita to confirm supplies for, right after finishing
   const hayMedicos = hospital.profesionales.some(atiendeCitas)
   const [resultado, setResultado] = useState('')
   const [nota, setNota] = useState('')
@@ -280,8 +285,13 @@ export function FinalizarModal({ item, onClose }) {
     if (error) { enviando.current = false; setBusy(false); toast.error(mensajeEmergencia(error)); return }
     await emergencias.recargar(true)
     toast.success('Emergencia finalizada')
+    // finished and attended: offer the supplies confirmation right away (it can also be done later from Citas)
+    const hecha = { ...cita, estado: 'Asistió', profesional_id: prof || null }
+    if (conInsumos && resultado !== 'retirado' && puedeConfirmar(perfil, hecha)) { enviando.current = false; setBusy(false); setSiguiente(hecha); return }
     onClose()
   }
+
+  if (siguiente) return <ConfirmarAtencionModal cita={siguiente} paciente={paciente} subtituloExtra="Emergencia finalizada" onClose={onClose} />
 
   return (
     <Modal title="Finalizar emergencia" subtitle={paciente?.nombre} onClose={onClose} maxWidth={560}>

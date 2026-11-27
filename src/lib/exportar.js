@@ -231,13 +231,43 @@ export function calcularFinanzas({ cobros, citas, pacientes, d, sede, periodo })
   return { cobroPorId, cobrosS, abonosS, gastosS, salidas, ingresos, egresos, facturado, porCobrar, utilidad, serie, tope, porConcepto, porCategoria, lista }
 }
 
-export function prepararFinanzas({ ingresos, egresos, utilidad, porCobrar, facturado, porConcepto, porCategoria, lista, serie, titulo, clinica, sedes }) {
+// Hospital: money by specialty for the chosen period. Income = payments (abonos) of the period, by the specialty of the cita (or, failing that,
+// of the service); supplies cost = what the attendances confirmed in the period consumed (RPC insumos_por_especialidad, already × cost).
+// Margin = income − supplies cost (general expenses are not split between specialties). `costos` null = not available (no permission / SQL not applied).
+export function calcularPorEspecialidad({ abonosS, cobroPorId, citas, servicios, departamentos, costos, periodo, sede }) {
+  const enP = (iso) => enPeriodo(iso, periodo)
+  const citaPorId = new Map(citas.map(c => [c.id, c])), servicioPorId = new Map(servicios.map(x => [x.id, x]))
+  const filas = new Map()
+  const fila = (id) => { const k = id || '__sin'; if (!filas.has(k)) filas.set(k, { id: id || null, ingresos: 0, costo: 0, lineas: 0 }); return filas.get(k) }
+  for (const a of abonosS) {
+    if (!enP(a.fecha)) continue
+    const c = cobroPorId[a.cobro_id]
+    if (c) fila(citaPorId.get(c.cita_id)?.departamento_id || servicioPorId.get(c.servicio_id)?.departamento_id || null).ingresos += Number(a.monto)
+  }
+  if (costos) for (const r of costos) {
+    if (!enP(r.fecha) || (sede && r.sede_id !== sede)) continue
+    const f = fila(r.departamento_id); f.costo += Number(r.costo); f.lineas += Number(r.lineas)
+  }
+  return [...filas.values()].map(f => ({
+    ...f, nombre: departamentos.find(d => d.id === f.id)?.nombre || 'Sin especialidad',
+    margen: costos ? f.ingresos - f.costo : null, pct: costos && f.ingresos > 0 ? Math.round(((f.ingresos - f.costo) / f.ingresos) * 100) : null,
+  })).sort((a, b) => b.ingresos - a.ingresos || a.nombre.localeCompare(b.nombre, 'es'))
+}
+
+// `especialidades` (hospital only, from calcularPorEspecialidad; null for clinics): adds the «Por especialidad» section and sheet
+export function prepararFinanzas({ ingresos, egresos, utilidad, porCobrar, facturado, porConcepto, porCategoria, lista, serie, titulo, clinica, sedes, especialidades, conCostos }) {
+  const hoja = especialidades?.length ? [{ nombre: 'Por especialidad', columnas: [
+    { header: 'Especialidad', key: 'e', width: 28 }, { header: 'Ingresos cobrados', key: 'i', width: 18, moneda: true },
+    ...(conCostos ? [{ header: 'Costo de insumos', key: 'c', width: 18, moneda: true }, { header: 'Margen', key: 'm', width: 16, moneda: true }, { header: 'Margen %', key: 'p', width: 10 }] : []),
+  ], filas: especialidades.map(f => ({ e: f.nombre, i: f.ingresos, ...(conCostos ? { c: f.costo, m: f.margen, p: f.pct == null ? '' : `${f.pct}%` } : {}) })) }] : []
   return ({
     titulo: `Finanzas ${titulo}`, subtitulo: clinica?.nombre,
     secciones: [
       { resumen: [['Ingresos cobrados', fmtQ(ingresos)], ['Gastos', fmtQ(egresos)], ['Utilidad', fmtQ(utilidad)], ['Por cobrar', fmtQ(porCobrar)]] },
       { titulo: 'Ingresos por servicio', tabla: { headers: ['Servicio', 'Cobrado'], filas: porConcepto.map(([k, v]) => [k, fmtQ(v)]) } },
       { titulo: 'Gastos por categoría', tabla: { headers: ['Categoría', 'Monto'], filas: porCategoria.map(([k, v]) => [k, fmtQ(v)]) } },
+      ...(especialidades?.length ? [{ titulo: 'Por especialidad', tabla: { headers: ['Especialidad', 'Ingresos cobrados', ...(conCostos ? ['Costo de insumos', 'Margen', 'Margen %'] : [])],
+        filas: especialidades.map(f => [f.nombre, fmtQ(f.ingresos), ...(conCostos ? [fmtQ(f.costo), fmtQ(f.margen), f.pct == null ? '—' : `${f.pct}%`] : [])]) } }] : []),
       { titulo: 'Detalle de gastos', tabla: { headers: ['Fecha', 'Categoría', 'Concepto', 'Sede', 'Monto'], filas: lista.map(g => [fmtFechaCorta(g.fecha), g.categoria, g.concepto, nombreSede(sedes, g.sede_id) || '—', fmtQ(g.monto)]) } },
       { titulo: 'Últimos 12 meses', tabla: { headers: ['Mes', 'Ingresos', 'Gastos', 'Utilidad'], filas: serie.map(s => [`${MESES[s.m]} ${s.y}`, fmtQ(s.ingresos), fmtQ(s.gastos), fmtQ(s.ingresos - s.gastos)]) } },
     ],
@@ -248,6 +278,7 @@ export function prepararFinanzas({ ingresos, egresos, utilidad, porCobrar, factu
         filas: lista.map(g => ({ f: g.fecha, c: g.categoria, co: g.concepto, p: g.proveedor, s: nombreSede(sedes, g.sede_id), m: g.metodo, v: Number(g.monto) })) },
       { nombre: '12 meses', columnas: [{ header: 'Mes', key: 'm', width: 16 }, { header: 'Ingresos', key: 'i', width: 14, moneda: true }, { header: 'Gastos', key: 'g', width: 14, moneda: true }, { header: 'Utilidad', key: 'u', width: 14, moneda: true }],
         filas: serie.map(s => ({ m: `${MESES[s.m]} ${s.y}`, i: s.ingresos, g: s.gastos, u: s.ingresos - s.gastos })) },
+      ...hoja,
     ] },
   })
 }

@@ -253,7 +253,7 @@ export function RegistrarLlegada({ onClose }) {
 // ───────────────────────── Finalizar ─────────────────────────
 export function FinalizarModal({ item, onClose }) {
   const { hospital, emergencias, perfil } = useDatos()
-  const { activo: conInsumos } = useAtenciones() // hospital supplies available (SQL applied)
+  const { activo: conInsumos, vinculados } = useAtenciones() // hospital supplies available (SQL applied)
   const { em, cita, paciente } = item
   const [siguiente, setSiguiente] = useState(null) // the cita to confirm supplies for, right after finishing
   const hayMedicos = hospital.profesionales.some(atiendeCitas)
@@ -287,7 +287,7 @@ export function FinalizarModal({ item, onClose }) {
     toast.success('Emergencia finalizada')
     // finished and attended: offer the supplies confirmation right away (it can also be done later from Citas)
     const hecha = { ...cita, estado: 'Asistió', profesional_id: prof || null }
-    if (conInsumos && resultado !== 'retirado' && puedeConfirmar(perfil, hecha)) { enviando.current = false; setBusy(false); setSiguiente(hecha); return }
+    if (conInsumos && resultado !== 'retirado' && puedeConfirmar(perfil, hecha, vinculados)) { enviando.current = false; setBusy(false); setSiguiente(hecha); return }
     onClose()
   }
 

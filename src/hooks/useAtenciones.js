@@ -3,12 +3,13 @@ import { supabase } from '../lib/supabase'
 import { esHospital } from '../lib/especialidades'
 import { useDatos } from './useDatos'
 import { faltaSQL } from '../lib/insumos'
+import { accesos } from '../lib/constantes'
 
 // Confirmed attendances, their supplies and the warehouse pending list of a hospital account. One shared copy for every screen
 // (a tiny external store, no context change in App.jsx). While the SQL is not applied (missing table / permission) it reports
 // `disponible: false` once, silently, and does not ask again during this page load. No polling: it reloads on mount and after an action.
 
-const VACIO = { disponible: false, cargado: false, atenciones: [], lineas: [], pendientes: [], productos: [], version: 0 }
+const VACIO = { disponible: false, cargado: false, atenciones: [], lineas: [], pendientes: [], productos: [], vinculados: new Set(), version: 0 }
 const store = { clinica: null, estado: VACIO, enCurso: null, faltante: false, escuchas: new Set() }
 const poner = (e) => { store.estado = e; store.escuchas.forEach(f => f()) }
 const suscribir = (f) => { store.escuchas.add(f); return () => store.escuchas.delete(f) }
@@ -33,9 +34,10 @@ function cargar(clinicaId) {
   if (store.faltante) return Promise.resolve(false)
   if (store.enCurso) return store.enCurso
   store.enCurso = (async () => {
-    const [a, l, p, pr] = await Promise.all([
+    const [a, l, p, pr, pf] = await Promise.all([
       todo('atenciones', '*', 'confirmada_at'), todo('atencion_insumos', COLUMNAS_LINEA, 'created_at'), todo('pendientes_bodega', '*', 'created_at'),
       supabase.from('productos').select('id, nombre, unidad, departamento_id'),
+      supabase.from('perfiles').select('permisos'),
     ])
     const error = a.error || l.error || p.error
     if (error) {
@@ -44,15 +46,18 @@ function cargar(clinicaId) {
       return false
     }
     // product names are only for labels: without inventory access they simply stay empty
-    poner({ disponible: true, cargado: true, atenciones: a.filas, lineas: l.filas, pendientes: p.filas, productos: pr.error ? [] : pr.data || [], version: store.estado.version + 1 })
+    poner({ disponible: true, cargado: true, atenciones: a.filas, lineas: l.filas, pendientes: p.filas, productos: pr.error ? [] : pr.data || [],
+      // doctors that already have a user linked: the «no doctor linked» fallback of puedeConfirmar needs them
+      vinculados: new Set(pf.error ? [] : (pf.data || []).map(x => x.permisos?.profesional_id).filter(Boolean)), version: store.estado.version + 1 })
     return true
   })().finally(() => { store.enCurso = null })
   return store.enCurso
 }
 
 export function useAtenciones() {
-  const { clinica, hospital } = useDatos()
-  const activo = !!clinica?.id && esHospital(clinica?.especialidad) && !!hospital?.disponible
+  const { clinica, hospital, planActivo } = useDatos()
+  // hospital account with its tables AND a plan that includes inventory (the SQL refuses the others with SIN_INVENTARIO)
+  const activo = !!clinica?.id && esHospital(clinica?.especialidad) && !!hospital?.disponible && accesos(clinica, planActivo).inventario
   const estado = useSyncExternalStore(suscribir, leer)
   useEffect(() => { if (activo) cargar(clinica.id) }, [activo, clinica?.id])
   const recargar = useCallback(() => (activo ? cargar(clinica.id) : Promise.resolve(false)), [activo, clinica?.id])

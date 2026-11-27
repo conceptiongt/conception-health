@@ -563,6 +563,9 @@ function Sedes({ inv, verSede, onEditar }) {
 // ─── Full history ───
 function Historial({ inv, movs, onCambio }) {
   const { pacientes } = useDatos()
+  const { lineas } = useAtenciones()
+  // supplies discounted by «Confirmar atención»: the owner undoes them with «Corregir» on the cita, not one by one here
+  const deAtencion = new Set(lineas.flatMap(l => l.movimiento_ids || []))
   const [sedeId, setSedeId] = useState('')
   const [tipo, setTipo] = useState('')
   const sede = (id) => inv.sedes.find(s => s.id === id)
@@ -595,7 +598,7 @@ function Historial({ inv, movs, onCambio }) {
             fmtFechaCorta(m.fecha), <Badge color={t.color} bg={t.bg}>{t.label}</Badge>, p?.nombre || '—', sede(m.sede_id)?.nombre || '—',
             <strong style={{ color: m.delta > 0 ? C.green : C.red }}>{m.delta > 0 ? '+' : '−'}{fmtCant(Math.abs(m.delta))} <span style={{ fontWeight: 500, color: C.g400 }}>{p?.unidad}</span></strong>,
             <span style={{ color: C.g600, whiteSpace: 'normal' }}>{[pac && `Paciente: ${pac.nombre}`, m.lote && `Lote ${m.lote}`, m.vence && `Vence ${fmtFechaCorta(m.vence)}`, m.notas].filter(Boolean).join(' · ') || '—'}</span>,
-            <Button variant="ghost" size="sm" onClick={() => deshacer(m)}>Deshacer</Button>,
+            deAtencion.has(m.id) ? <span title="Se descontó al confirmar una atención: la persona administradora lo corrige desde la cita" style={{ fontSize: 12, color: C.g400 }}>Atención</span> : <Button variant="ghost" size="sm" onClick={() => deshacer(m)}>Deshacer</Button>,
           ] }
         })}
       />

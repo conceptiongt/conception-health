@@ -29,6 +29,7 @@ import { MeetCita } from './EnlaceMeet'
 import { FaltanDatos } from './EmergenciaBits'
 import { TIPO_EMERGENCIA } from '../lib/emergencias'
 import { PanelAtencion } from './ConfirmarAtencion'
+import { useAtenciones } from '../hooks/useAtenciones'
 
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
@@ -36,6 +37,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir, hospital } = useDatos()
   const hosp = hospital.disponible // hospital account with its tables ready
   const { bloqueos } = useAgenda()
+  const ins = useAtenciones()
+  const atencionConfirmada = !!cita && ins.activo && ins.atenciones.some(a => a.cita_id === cita.id) // estado locked until the owner corrects it
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
   const ficha = clinico && !soloCita // from Citas only the appointment is edited; the clinical file lives in the patient file
@@ -116,7 +119,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
       fecha: f.fecha, hora: f.hora || null, agendo_nombre: f.agendo.trim() || null,
-      ...(esEmergencia ? {} : { tipo: f.tipo || null, estado: f.estado }),
+      ...(esEmergencia ? {} : { tipo: f.tipo || null, ...(atencionConfirmada ? {} : { estado: f.estado }) }),
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
@@ -227,7 +230,9 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
             <Grid min={190}>
               <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
               {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
-              {esEmergencia
+              {atencionConfirmada
+                ? <Campo label="Estado" ayuda="Atención confirmada: para cambiarlo, corríjala primero"><Input value={f.estado} onChange={() => {}} readOnly aria-readonly="true" /></Campo>
+                : esEmergencia
                 ? <Campo label="Estado" ayuda="Se cambia desde Emergencias"><Input value={f.estado} onChange={() => {}} readOnly aria-readonly="true" /></Campo>
                 : <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>}
               <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>

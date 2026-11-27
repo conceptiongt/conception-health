@@ -14,12 +14,16 @@ import { BuscadorProducto } from './inventario/Selectores'
 import { UsarPaqueteModal } from './inventario/Paquetes'
 import { confirmar } from './ui/Confirmar'
 import { eliminarDelInventario } from './inventario/Formularios'
+import { useAtenciones } from '../hooks/useAtenciones'
 
 // Products used on a patient: each one is taken out of a location's stock, only if there is enough
 export function ProductosPaciente({ paciente, citas }) {
   const { ir, perfil } = useDatos()
   const costos = puede(perfil, 'costos')
   const { inv, recargar } = useInventario()
+  // hospital: supplies are discounted only when the doctor confirms the attendance (Citas → Confirmar atención), not by hand per patient
+  const { activo: hosp, lineas: lineasAtencion } = useAtenciones()
+  const deAtencion = new Set(lineasAtencion.flatMap(l => l.movimiento_ids || []))
   const [usos, setUsos] = useState(null)
   const [nuevo, setNuevo] = useState(false)
   const [paquete, setPaquete] = useState(false)
@@ -49,21 +53,21 @@ export function ProductosPaciente({ paciente, citas }) {
   }
 
   return (
-    <Card title={`Productos usados (${usos.length})`} right={hayExistencia && <div style={{ display: 'flex', gap: 8 }}>{(inv.paquetes || []).some(p => p.activo) && <Button size="sm" variant="ghost" icon="caja" onClick={() => setPaquete(true)}>Usar paquete</Button>}<Button size="sm" icon="mas" onClick={() => setNuevo(true)}>Descargar producto</Button></div>}>
-      {!hayExistencia && (
+    <Card title={`Productos usados (${usos.length})`} right={hayExistencia && !hosp && <div style={{ display: 'flex', gap: 8 }}>{(inv.paquetes || []).some(p => p.activo) && <Button size="sm" variant="ghost" icon="caja" onClick={() => setPaquete(true)}>Usar paquete</Button>}<Button size="sm" icon="mas" onClick={() => setNuevo(true)}>Descargar producto</Button></div>}>
+      {!hayExistencia && !hosp && (
         <div style={{ padding: '12px 14px', borderRadius: 12, background: C.amberLight, color: C.amber, fontSize: 13.5, marginBottom: usos.length ? 14 : 0, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ flex: 1, minWidth: 200 }}>{!sedes.length || !productos.length ? 'Para descargar productos, primero cree sus sedes y productos en Inventario.' : 'No hay existencia en ninguna sede. Registre una entrada en Inventario para poder descargar productos.'}</span>
           <Button size="sm" variant="ghost" icon="caja" onClick={() => ir('inventario')}>Ir a Inventario</Button>
         </div>
       )}
-      {usos.length === 0 ? (hayExistencia && <div style={{ color: C.g400 }}>Aún no se han descargado productos para este paciente</div>) : (
+      {usos.length === 0 ? (hosp ? <div style={{ color: C.g400 }}>Los insumos se descuentan cuando el médico confirma la atención de cada cita.</div> : hayExistencia && <div style={{ color: C.g400 }}>Aún no se han descargado productos para este paciente</div>) : (
         <Tabla
           columnas={['Fecha', 'Producto', 'Cantidad', 'Sede', 'Consulta', 'Notas', '']}
           filas={[...usos.map(u => {
             const p = producto(u.producto_id), c = cita(u.cita_id)
             return { key: u.id, celdas: [fmtFechaCorta(u.fecha), <strong>{p?.nombre || '—'}</strong>, `${fmtCant(Math.abs(u.delta))} ${p?.unidad || ''}`, sede(u.sede_id)?.nombre || '—',
               c ? `${fmtFechaCorta(c.fecha)} · ${c.tipo || 'Consulta'}` : '—', <span style={{ whiteSpace: 'normal' }}>{u.notas || '—'}</span>,
-              <Button variant="ghost" size="sm" onClick={() => devolver(u)}>Quitar</Button>] }
+              deAtencion.has(u.id) ? <span title="Se descontó al confirmar la atención: la persona administradora lo corrige desde la cita" style={{ fontSize: 12, color: C.g400 }}>Atención</span> : <Button variant="ghost" size="sm" onClick={() => devolver(u)}>Quitar</Button>] }
           }), ...(costos && costo > 0 ? [{ key: 'costo', celdas: [<strong>Costo de insumos</strong>, '', <strong>{fmtQ(costo)}</strong>, '', '', '', ''] }] : [])]}
         />
       )}

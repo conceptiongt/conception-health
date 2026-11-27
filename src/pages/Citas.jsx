@@ -21,6 +21,7 @@ import { colorProfesional } from '../hooks/useHospital'
 import { FaltanDatos } from '../components/EmergenciaBits'
 import { TIPO_EMERGENCIA } from '../lib/emergencias'
 import { PanelAtencion } from '../components/ConfirmarAtencion'
+import { useAtenciones } from '../hooks/useAtenciones'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -169,6 +170,8 @@ function BotonesEstado({ citas, valor, onChange, eliminadas }) {
 // Appointments list: tapping a row opens it downwards with its details and actions (file, edit, WhatsApp, Calendar)
 function ListaCitas({ citas, porId, sedes, hospital, abierta, setAbierta, perfil, onEstado, onEditar, onExpediente, mensaje }) {
   const conSede = sedes.length > 0
+  const ins = useAtenciones()
+  const confirmada = (c) => ins.activo && ins.atenciones.some(a => a.cita_id === c.id) // its estado only changes through «Corregir»
   // the open panel always fits the visible width, even when the table scrolls sideways
   const caja = useRef(null)
   const [ancho, setAncho] = useState(0)
@@ -209,7 +212,7 @@ function ListaCitas({ citas, porId, sedes, hospital, abierta, setAbierta, perfil
                   {c.tipo === TIPO_EMERGENCIA ? (
                     // an emergency cita is controlled by the Emergencias module
                     <span title="Se cambia desde Emergencias" style={{ display: 'inline-block', padding: '4px 8px', borderRadius: 4, fontWeight: 500, fontSize: 12.5, color: e.color, background: e.bg }}>{c.estado}</span>
-                  ) : <select value={c.estado} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
+                  ) : <select value={c.estado} disabled={confirmada(c)} title={confirmada(c) ? 'Atención confirmada: para cambiar el estado, la persona administradora debe corregirla' : undefined} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
                     {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
                   </select>}
                 </td>

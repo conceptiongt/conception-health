@@ -5,8 +5,7 @@ import { fmtFechaCorta } from '../../lib/formato'
 import { useDatos } from '../../hooks/useDatos'
 import { useAtenciones } from '../../hooks/useAtenciones'
 import { existencia, fmtCant } from '../../hooks/useInventario'
-import { esSoporte } from '../../lib/permisos'
-import { errorAtencion } from '../../lib/insumos'
+import { errorAtencion, puedeResolver } from '../../lib/insumos'
 import { Tabla, Badge } from '../ui/Varios'
 import { Button } from '../ui/Button'
 import { Desplegable } from '../ui/Desplegable'
@@ -21,7 +20,7 @@ export function PendientesBodega({ inv, onCambio }) {
   const [ver, setVer] = useState('pendiente')
   const [esp, setEsp] = useState('')
   const [ocupado, setOcupado] = useState(null)
-  const lectura = esSoporte(perfil)
+  const puedeAccionar = puedeResolver(perfil)
 
   const producto = (id) => inv.productos.find(p => p.id === id)
   const sede = (id) => inv.sedes.find(s => s.id === id)
@@ -56,7 +55,7 @@ export function PendientesBodega({ inv, onCambio }) {
           Insumos que faltaban cuando el médico confirmó una atención. Cuando lleguen, use «Descontar y resolver».
         </div>
         {chip('pendiente', 'Pendientes')}{chip('resuelto', 'Resueltos')}
-        {hospital?.departamentos?.length > 0 && <Desplegable ariaLabel="Especialidad" value={esp} onChange={setEsp} options={[{ value: '', label: 'Toda especialidad' }, { value: '__general', label: 'Sin especialidad' }, ...hospital.departamentos.map(d => ({ value: d.id, label: d.nombre }))]} />}
+        {hospital?.departamentos?.length > 0 && <Desplegable ariaLabel="Especialidad" value={esp} onChange={setEsp} options={[{ value: '', label: 'Toda especialidad' }, { value: '__general', label: 'General' }, ...hospital.departamentos.map(d => ({ value: d.id, label: d.nombre }))]} />}
       </div>
       <Tabla
           columnas={['Insumo', 'Falta', 'Paciente y cita', ver === 'pendiente' ? 'Pidió' : 'Resuelto', '']}
@@ -71,7 +70,7 @@ export function PendientesBodega({ inv, onCambio }) {
               p.estado === 'pendiente'
                 ? <div style={{ whiteSpace: 'normal' }}>{p.creado_nombre || '—'}<div style={{ fontSize: 12, color: C.g400 }}>{fmtFechaCorta(p.created_at)}</div></div>
                 : <div style={{ whiteSpace: 'normal' }}>{fmtFechaCorta(p.resuelto_at)}<div style={{ fontSize: 12, color: C.g400 }}>{p.resuelto_nombre || ''}{Number(p.descontado) > 0 ? ` · descontó ${fmtCant(p.descontado)}` : ''}</div></div>,
-              p.estado === 'pendiente' && !lectura ? (
+              p.estado === 'pendiente' && puedeAccionar ? (
                 <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
                   {hay > 0 && <Button size="sm" icon="check" onClick={() => resolver(p, true)} disabled={ocupado === p.id} title={`Hay ${fmtCant(hay)} en ${sede(p.sede_id)?.nombre}`}>Descontar y resolver</Button>}
                   <Button size="sm" variant="ghost" onClick={() => resolver(p, false)} disabled={ocupado === p.id}>Resuelto</Button>

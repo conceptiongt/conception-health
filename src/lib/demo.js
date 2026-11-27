@@ -4,7 +4,7 @@
 
 const q = new URLSearchParams(location.search)
 // ?insumos=1 = hospital account WITH sample specialties, doctors, kits and stock (Confirmar atención / Pendientes de bodega / Finanzas por especialidad);
-// &medico=1 = the user is the doctor «Dra. Laura Pérez»; &ins_tabla=falta = simulates the supplies SQL not applied yet
+// &medico=1 = the user is the doctor «Dra. Laura Pérez»; &ins_tabla=falta = simulates the supplies SQL not applied yet; &plan=basico = a plan without inventory
 const INSUMOS = q.get('insumos') === '1'
 const uid = 'demo-usuario', cid = 'demo-clinica'
 const id = () => crypto.randomUUID()
@@ -106,7 +106,7 @@ const DB = {
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true, ...(q.get('medico') === '1' ? { profesional_id: 'demo-prof1' } : {}) }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' || INSUMOS ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: q.get('plan') === 'basico' ? 'basico' : 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' || INSUMOS ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   // fictional support-code history (the real database never exposes the hash column)
@@ -144,6 +144,11 @@ function aplicar(r, d) {
   if (actual + d < 0) return { message: 'SIN_EXISTENCIA', hint: 'disponible=' + actual }
   if (!e) DB.existencias.push(e = { clinica_id: cid, sede_id: r.sede_id, producto_id: r.producto_id, cantidad: 0 })
   e.cantidad = actual + d
+}
+
+// a supply movement of a confirmation deleted by hand: its line stops counting it (trigger atencion_mov_borrado)
+function movimientoBorrado(m) {
+  DB.atencion_insumos.filter(l => l.movimiento_ids.includes(m.id)).forEach(l => { l.descontada = Math.max(0, l.descontada + m.delta); l.movimiento_ids = l.movimiento_ids.filter(x => x !== m.id) })
 }
 
 function from(t) {
@@ -224,6 +229,7 @@ function from(t) {
       if ((t === 'departamentos' || t === 'recursos') && payload.nombre && filas.some(r => !cambiadas.includes(r) && (t === 'departamentos' || r.area_id === cambiadas[0]?.area_id) && r.nombre.trim().toLowerCase() === payload.nombre.trim().toLowerCase())) {
         return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
       }
+      if (t === 'citas' && 'estado' in payload && cambiadas.some(r => r.estado === 'Asistió' && payload.estado !== 'Asistió' && DB.atenciones.some(a => a.cita_id === r.id))) return { data: null, error: { code: '23514', message: 'ATENCION_CONFIRMADA' } }
       cambiadas.forEach(r => { Object.assign(r, payload); if (t === 'pacientes' && payload.registro_token) r.registro_codigo = `datos-${r.id}` })
       return { data: one ? (cambiadas[0] ? { ...cambiadas[0] } : null) : cambiadas.map(r => ({ ...r })), error: null }
     }
@@ -233,6 +239,7 @@ function from(t) {
         const copia = JSON.stringify(DB.existencias)
         for (const r of quitar) { const err = aplicar(r, -r.delta); if (err) { DB.existencias = JSON.parse(copia); return { error: err } } }
       }
+      if (t === 'inventario_movimientos') quitar.forEach(movimientoBorrado)
       if (t === 'pacientes') quitar.forEach(p => ['citas', 'cobros', 'archivos', 'emergencias'].forEach(k => { DB[k] = DB[k].filter(x => x.paciente_id !== p.id) }))
       // same effect as the foreign keys of the hospital tables: citas.departamento_id / profesional_id are NO ACTION (23503 when referenced),
       // servicios.departamento_id and profesionales.departamento_id are SET NULL
@@ -356,6 +363,7 @@ function insumosRpc(fn, a) {
   const permiso = (k) => dueno || perfil.permisos?.[k] === true
   if (perfil.rol === 'soporte') return falla('SIN_PERMISO')
   if (DB.clinicas[0].especialidad !== 'hospital') return falla('NO_HOSPITAL')
+  if (DB.clinicas[0].plan_activo && !['max', 'ultra'].includes(DB.clinicas[0].plan)) return falla('SIN_INVENTARIO') // plan without inventory
   const ahora = new Date().toISOString()
   if (fn === 'insumos_por_especialidad') {
     if (!(permiso('finanzas') && permiso('costos'))) return falla('NO_AUTORIZADO')
@@ -374,7 +382,8 @@ function insumosRpc(fn, a) {
   if (fn === 'atencion_confirmar') {
     if (!cita) return falla('CITA_AJENA')
     const vinculo = perfil.permisos?.profesional_id || null
-    if (!(dueno || (vinculo && cita.profesional_id && vinculo === cita.profesional_id) || ((!cita.profesional_id || !vinculo) && permiso('expedientes')))) return falla('NO_AUTORIZADO')
+    const hayVinculado = cita.profesional_id && DB.perfiles.some(x => x.permisos?.profesional_id === cita.profesional_id) // a user is linked to that doctor
+    if (!(dueno || (vinculo && cita.profesional_id && vinculo === cita.profesional_id) || ((!cita.profesional_id || !hayVinculado) && perfil.permisos?.expedientes === true))) return falla('NO_AUTORIZADO')
     if (!['Pendiente', 'Confirmada', 'Asistió'].includes(cita.estado)) return falla('CITA_NO_VALIDA')
     const em = DB.emergencias.find(x => x.cita_id === cita.id)
     if (em && !em.cerrado_at) return falla('EMERGENCIA_ABIERTA')
@@ -383,7 +392,7 @@ function insumosRpc(fn, a) {
     if (!Array.isArray(lineas) || lineas.length > 100 || lineas.some(l => !l || !(Number(l.cantidad) > 0))) return falla('DATOS_INVALIDOS')
     const suma = new Map()
     for (const l of lineas) { if (!DB.productos.some(p => p.id === l.producto_id)) return falla('PRODUCTO_AJENO'); suma.set(l.producto_id, (suma.get(l.producto_id) || 0) + Number(l.cantidad)) }
-    if (suma.size && !['max', 'ultra'].includes(DB.clinicas[0].plan)) return falla('SIN_INVENTARIO')
+    if ([...suma.keys()].some(k => DB.productos.find(p => p.id === k)?.activo === false)) return falla('PRODUCTO_INACTIVO')
     const activas = DB.sedes.filter(s => s.activa)
     const sedeId = a.p_sede || cita.sede_id || (activas.length === 1 ? activas[0].id : null)
     if (!sedeId) return falla('SIN_SEDE')
@@ -421,7 +430,8 @@ function insumosRpc(fn, a) {
     let devueltos = 0
     for (const l of DB.atencion_insumos.filter(x => x.atencion_id === at.id)) for (const mid of l.movimiento_ids) {
       const m = DB.inventario_movimientos.find(x => x.id === mid)
-      if (m) { aplicar(m, -m.delta); DB.inventario_movimientos = DB.inventario_movimientos.filter(x => x.id !== mid); devueltos++ }
+      if (m) { ;(DB.inventario_eliminados ||= []).unshift({ id: id(), tipo: 'movimiento', nombre: DB.productos.find(x => x.id === m.producto_id)?.nombre, detalle: `Uso en paciente · ${Math.abs(m.delta)}`, motivo: 'Corrección de atención', eliminado_por_nombre: perfil.nombre, eliminado_at: ahora })
+        aplicar(m, -m.delta); DB.inventario_movimientos = DB.inventario_movimientos.filter(x => x.id !== mid); devueltos++ }
     }
     if (!DB.emergencias.some(x => x.cita_id === cita.id) && at.estado_previo) cita.estado = at.estado_previo
     const lineas = new Set(DB.atencion_insumos.filter(x => x.atencion_id === at.id).map(x => x.id))
@@ -477,6 +487,7 @@ async function rpc(fn, a) {
     const fila = (DB[tabla] || []).find(x => x.id === a.p_id)
     if (!fila) return { data: null, error: { message: 'NO_ENCONTRADO' } }
     ;(DB.inventario_eliminados ||= []).unshift({ id: crypto.randomUUID(), tipo: a.p_tipo, nombre: fila.nombre || 'Movimiento', motivo: a.p_motivo, eliminado_por_nombre: DB.perfiles[0].nombre, eliminado_at: new Date().toISOString() })
+    if (tabla === 'inventario_movimientos') movimientoBorrado(fila)
     DB[tabla] = DB[tabla].filter(x => x.id !== a.p_id)
     return { data: { eliminados: 1 }, error: null }
   }

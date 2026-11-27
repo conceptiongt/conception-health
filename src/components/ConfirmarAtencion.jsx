@@ -6,7 +6,7 @@ import { useDatos } from '../hooks/useDatos'
 import { useInventario, existencia, fmtCant } from '../hooks/useInventario'
 import { useAtenciones } from '../hooks/useAtenciones'
 import { esAdmin, esSoporte } from '../lib/permisos'
-import { ESTADOS_CONFIRMABLES, puedeConfirmar, kitDeServicio, errorAtencion, faltaSQL } from '../lib/insumos'
+import { ESTADOS_CONFIRMABLES, puedeConfirmar, kitDeServicio, errorAtencion, faltaSQL, redondear } from '../lib/insumos'
 import { fraseMedico } from './HospitalCita'
 import { BuscadorProducto } from './inventario/Selectores'
 import { Modal } from './ui/Modal'
@@ -51,16 +51,16 @@ export function ConfirmarAtencionModal({ cita, paciente, onClose, onHecho, subti
   const producto = (id) => inv?.productos.find(p => p.id === id)
   const sedesActivas = inv && !inv.error ? inv.sedes.filter(s => s.activa) : []
   const opcionesSede = sedesActivas.map(s => ({ value: s.id, label: s.nombre }))
-  const cantidadOk = (l) => Number(l.cantidad) > 0 && Number(l.cantidad) <= 9999999
+  const cantidadOk = (l) => redondear(l.cantidad) > 0 && redondear(l.cantidad) <= 9999999
   const valido = lineas !== null && lineas.every(cantidadOk) && (!lineas.length || !!sede)
-  const faltan = lineas ? lineas.filter(l => cantidadOk(l) && Number(l.cantidad) > existencia(inv, sede, l.producto)).length : 0
+  const faltan = lineas ? lineas.filter(l => cantidadOk(l) && redondear(l.cantidad) > existencia(inv, sede, l.producto)).length : 0
   const nombrePrevio = (id) => producto(id)?.nombre || 'Producto'
 
   const confirmarAtencion = async () => {
     if (!valido || enviando.current) return
     enviando.current = true; setBusy(true)
     const { data, error } = await supabase.rpc('atencion_confirmar', {
-      p_cita: cita.id, p_lineas: lineas.map(l => ({ producto_id: l.producto, cantidad: Number(l.cantidad) })), p_sede: sede || null,
+      p_cita: cita.id, p_lineas: lineas.map(l => ({ producto_id: l.producto, cantidad: redondear(l.cantidad) })), p_sede: sede || null,
     })
     if (error) { enviando.current = false; setBusy(false); toast.error(errorAtencion(error, 'No se pudo confirmar la atención')); if (faltaSQL(error)) onClose(); return }
     await Promise.all([recargar(), recargarDatos?.()])
@@ -105,7 +105,7 @@ export function ConfirmarAtencionModal({ cita, paciente, onClose, onHecho, subti
               <div style={{ border: `1px solid ${C.line}`, borderRadius: 16 }}>
                 {lineas.length === 0 && <div style={{ padding: '12px 14px', color: C.g400, fontSize: 13.5 }}>Sin insumos en la lista</div>}
                 {lineas.map((l, i) => {
-                  const p = producto(l.producto), hay = existencia(inv, sede, l.producto), n = Number(l.cantidad), falta = cantidadOk(l) && n > hay
+                  const p = producto(l.producto), hay = existencia(inv, sede, l.producto), n = redondear(l.cantidad), falta = cantidadOk(l) && n > hay
                   const deEsp = !!dep && p?.departamento_id === dep.id
                   return (
                     <div key={l.producto} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderTop: i ? `1px solid ${C.g100}` : 'none', flexWrap: 'wrap' }}>
@@ -208,7 +208,7 @@ export function AtencionConfirmada({ cita, detalle, onCambio }) {
 // Hospital accounts only; renders nothing before the migration is applied, for support sessions without a confirmation, or when the cita cannot be confirmed.
 export function PanelAtencion({ cita, paciente, onCambio, compacto, arriba = 0 }) {
   const { perfil, hospital, emergencias } = useDatos()
-  const { activo, delCita } = useAtenciones()
+  const { activo, delCita, vinculados } = useAtenciones()
   const [abrir, setAbrir] = useState(false)
   if (!activo || !hospital?.disponible || !cita?.id) return null
   const d = delCita(cita.id)
@@ -217,7 +217,7 @@ export function PanelAtencion({ cita, paciente, onCambio, compacto, arriba = 0 }
   const enCurso = emergencias?.porCita?.get(cita.id)
   if (enCurso && !enCurso.cerrado_at) return null // an open emergency is confirmed when it is finished
   if (!ESTADOS_CONFIRMABLES.includes(cita.estado) || esSoporte(perfil)) return null
-  if (!puedeConfirmar(perfil, cita)) {
+  if (!puedeConfirmar(perfil, cita, vinculados)) {
     const m = hospital.profesional(cita.profesional_id)
     return envolver(<div style={{ fontSize: 13, color: C.g500 }}>{m ? `${fraseMedico(m.nombre)} confirma la atención y los insumos.` : 'El médico asignado confirma la atención y los insumos.'}</div>)
   }

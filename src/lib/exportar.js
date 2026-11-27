@@ -249,7 +249,7 @@ export function calcularPorEspecialidad({ abonosS, cobroPorId, citas, servicios,
     const f = fila(r.departamento_id); f.costo += Number(r.costo); f.lineas += Number(r.lineas)
   }
   return [...filas.values()].map(f => ({
-    ...f, nombre: departamentos.find(d => d.id === f.id)?.nombre || 'Sin especialidad',
+    ...f, nombre: departamentos.find(d => d.id === f.id)?.nombre || 'General',
     margen: costos ? f.ingresos - f.costo : null, pct: costos && f.ingresos > 0 ? Math.round(((f.ingresos - f.costo) / f.ingresos) * 100) : null,
   })).sort((a, b) => b.ingresos - a.ingresos || a.nombre.localeCompare(b.nombre, 'es'))
 }

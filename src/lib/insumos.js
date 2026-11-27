@@ -1,4 +1,4 @@
-import { esAdmin, esSoporte, puede } from './permisos'
+import { esAdmin, esSoporte } from './permisos'
 import { fmtCant } from '../hooks/useInventario'
 
 // Hospital supplies: «Confirmar atención» (supplies leave the stock when the assigned doctor confirms), pending items for the warehouse
@@ -14,13 +14,19 @@ export const ESTADOS_CONFIRMABLES = ['Pendiente', 'Confirmada', 'Asistió']
 
 // Mirror of the server rule (atencion_confirmar): owner, or the doctor linked to the cita (perfil.permisos.profesional_id),
 // or — when the cita has no doctor or the user has no linked doctor yet — anyone with the «expedientes» permission. The database decides.
-export function puedeConfirmar(perfil, cita) {
+// `vinculados` = Set of profesional ids that have a user linked (useAtenciones). Like the server, a missing permission key counts as false.
+export function puedeConfirmar(perfil, cita, vinculados = new Set()) {
   if (!perfil || !cita || esSoporte(perfil)) return false
   if (esAdmin(perfil)) return true
   const vinculo = perfil.permisos?.profesional_id || null
   if (vinculo && cita.profesional_id && vinculo === cita.profesional_id) return true
-  return (!cita.profesional_id || !vinculo) && puede(perfil, 'expedientes')
+  return (!cita.profesional_id || !vinculados.has(cita.profesional_id)) && perfil.permisos?.expedientes === true
 }
+// «Pendientes de bodega» buttons: owner, or «inventario» = true (a missing key is false on the server)
+export const puedeResolver = (perfil) => !!perfil && !esSoporte(perfil) && (esAdmin(perfil) || perfil.permisos?.inventario === true)
+
+// quantities travel with at most 3 decimals (the server rejects more)
+export const redondear = (n) => Math.round(Number(n) * 1000) / 1000
 
 // Default kit of a service: the active packages (Inventario → Paquetes) linked to it, quantities added up by product
 export function kitDeServicio(inv, servicioId) {
@@ -28,7 +34,7 @@ export function kitDeServicio(inv, servicioId) {
   const ids = new Set(inv.paquetes.filter(p => p.activo && p.servicio_id === servicioId).map(p => p.id))
   const suma = new Map()
   for (const it of inv.paqueteItems || []) if (ids.has(it.paquete_id)) suma.set(it.producto_id, (suma.get(it.producto_id) || 0) + Number(it.cantidad))
-  return [...suma].map(([producto, cantidad]) => ({ producto, cantidad: String(cantidad) }))
+  return [...suma].map(([producto, cantidad]) => ({ producto, cantidad: String(redondear(cantidad)) }))
 }
 
 // Spanish messages for the error codes the RPCs raise
@@ -43,6 +49,8 @@ const MENSAJES = {
   NO_CONFIRMADA: 'Esta cita no tiene atención confirmada',
   DATOS_INVALIDOS: 'Revise los insumos y las cantidades',
   PRODUCTO_AJENO: 'Uno de los insumos ya no existe',
+  PRODUCTO_INACTIVO: 'Uno de los insumos está desactivado: quítelo de la lista',
+  ATENCION_CONFIRMADA: 'La atención ya está confirmada: para cambiar el estado, la persona administradora debe corregirla primero',
   SEDE_AJENA: 'La sede elegida no existe',
   SIN_SEDE: 'Elija la sede de la que salen los insumos',
   SIN_INVENTARIO: 'Su plan no incluye inventario',

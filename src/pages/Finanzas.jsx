@@ -100,7 +100,8 @@ export function Finanzas() {
       {especialidades && (
         <Card title={`Por especialidad · ${titulo}`} style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 13, color: C.g500, lineHeight: 1.5, marginBottom: 12 }}>
-            {conCostos ? 'Margen = ingresos cobrados menos el costo de los insumos que se descontaron al confirmar las atenciones. Los gastos generales no se reparten.' : 'Ingresos cobrados por especialidad. El costo de insumos aparece cuando haya atenciones confirmadas.'}
+            {conCostos ? 'Margen = ingresos cobrados menos el costo de los insumos que se descontaron al confirmar las atenciones. Los gastos generales no se reparten.'
+              : costos === false ? 'No tiene permiso para ver los costos de los insumos: solo se muestran los ingresos cobrados por especialidad.' : 'Ingresos cobrados por especialidad.'}
           </div>
           <Tabla columnas={['Especialidad', 'Ingresos cobrados', ...(conCostos ? ['Costo de insumos', 'Margen', 'Margen %'] : [])]} vacio="Sin ingresos ni insumos en este período"
             filas={[...especialidades.map(f => ({ key: f.id || 'sin', celdas: [

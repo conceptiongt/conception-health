@@ -207,7 +207,7 @@ export async function guardarPreferencias(clinica, prefs) {
 // per-device view settings
 const LLAVE_VISTA = 'ch-calendario-vista'
 export function leerVista() {
-  try { const v = JSON.parse(localStorage.getItem(LLAVE_VISTA) || '{}'); return { vista: ['mes', 'semana', 'dia'].includes(v.vista) ? v.vista : 'mes', colorPor: ['tipo', 'estado'].includes(v.colorPor) ? v.colorPor : null } } catch { return { vista: 'mes', colorPor: null } }
+  try { const v = JSON.parse(localStorage.getItem(LLAVE_VISTA) || '{}'); return { vista: ['mes', 'semana', 'dia'].includes(v.vista) ? v.vista : 'mes', colorPor: ['tipo', 'estado', 'medico'].includes(v.colorPor) ? v.colorPor : null } } catch { return { vista: 'mes', colorPor: null } }
 }
 // «Google» toggle of the Calendario (on by default), remembered per device
 const LLAVE_GOOGLE = 'ch-calendario-google'

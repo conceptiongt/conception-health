@@ -4,7 +4,8 @@ import { C } from '../lib/theme'
 import { plantillaDe, camposPaciente, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { PERMISOS, permisosIniciales, esAdmin, puede } from '../lib/permisos'
 import { fmtFecha, linkWhatsAppSinNumero } from '../lib/formato'
-import { USUARIOS_INCLUIDOS, PRECIO_USUARIO_EXTRA, LINK_USUARIO_EXTRA } from '../lib/constantes'
+import { USUARIOS_INCLUIDOS, PRECIO_USUARIO_EXTRA, LINK_USUARIO_EXTRA, usuariosIncluidosUI, precioUsuarioExtraUI } from '../lib/constantes'
+import { esHospital } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Card, Badge } from './ui/Varios'
 import { Button } from './ui/Button'
@@ -186,6 +187,8 @@ export function Usuarios() {
   const asistentes = (usuarios || []).filter(u => u.rol !== 'dueno' && u.rol !== 'soporte')
   const soportes = (usuarios || []).filter(u => u.rol === 'soporte') // temporary Conception support sessions: shown, never editable
   const admin = (usuarios || []).find(u => u.rol === 'dueno')
+  const hosp = esHospital(clinica?.especialidad)
+  // the database limit (USUARIOS_INCLUIDOS + usuarios_extra) still decides when invites are blocked, also for hospitals
   const permitidos = USUARIOS_INCLUIDOS + (clinica?.usuarios_extra || 0)
   const ocupados = (usuarios || []).length - soportes.length + invitaciones.length // support sessions are not seats
   const lleno = usuarios !== null && ocupados >= permitidos
@@ -196,7 +199,14 @@ export function Usuarios() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: lleno ? C.amberLight : C.purpleMid, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 13.5 }}>
           <Icon name="usuarios" size={18} style={{ color: lleno ? C.amber : C.purple }} />
           <div style={{ flex: 1, minWidth: 220, color: C.g700 }}>
-            <strong>{ocupados} de {permitidos} usuarios.</strong> Su plan incluye {USUARIOS_INCLUIDOS} (usted y un asistente){clinica?.usuarios_extra ? ` + ${clinica.usuarios_extra} adicional${clinica.usuarios_extra > 1 ? 'es' : ''}` : ''}. Cada usuario adicional cuesta {PRECIO_USUARIO_EXTRA} al mes.
+            {hosp ? (
+              <>
+                <strong>{ocupados} {ocupados === 1 ? 'usuario' : 'usuarios'}.</strong> Cada usuario adicional cuesta {precioUsuarioExtraUI(clinica)} al mes.
+                <div style={{ fontSize: 12.5, color: C.g500, marginTop: 4 }}>Su plan incluye {usuariosIncluidosUI(clinica)} usuarios. Si necesita más antes de que se habilite, escríbanos.</div>
+              </>
+            ) : (
+              <><strong>{ocupados} de {permitidos} usuarios.</strong> Su plan incluye {USUARIOS_INCLUIDOS} (usted y un asistente){clinica?.usuarios_extra ? ` + ${clinica.usuarios_extra} adicional${clinica.usuarios_extra > 1 ? 'es' : ''}` : ''}. Cada usuario adicional cuesta {PRECIO_USUARIO_EXTRA} al mes.</>
+            )}
           </div>
           <Button size="sm" variant="ghost" icon="mas" onClick={() => setExtra(true)}>Agregar usuario adicional</Button>
         </div>
@@ -238,7 +248,7 @@ export function Usuarios() {
         </div>
       ))}
       {invitar && <InvitarModal clinica={clinica} onClose={() => { setInvitar(false); cargar() }} onListo={cargar} />}
-      {extra && <UsuarioExtraModal onClose={() => setExtra(false)} />}
+      {extra && <UsuarioExtraModal clinica={clinica} onClose={() => setExtra(false)} />}
     </Card>
   )
 }
@@ -318,11 +328,15 @@ function InvitarModal({ clinica, onClose, onListo }) {
 }
 
 // More users than the plan includes: monthly extra charge (Recurrente product "Usuario adicional")
-function UsuarioExtraModal({ onClose }) {
+function UsuarioExtraModal({ clinica, onClose }) {
+  const hosp = esHospital(clinica?.especialidad)
+  const precio = precioUsuarioExtraUI(clinica)
   return (
-    <Modal title="Usuario adicional" subtitle={`${PRECIO_USUARIO_EXTRA} al mes por usuario`} onClose={onClose} maxWidth={480}>
+    <Modal title="Usuario adicional" subtitle={`${precio} al mes por usuario`} onClose={onClose} maxWidth={480}>
       <div style={{ fontSize: 14.5, color: C.g700, lineHeight: 1.6 }}>
-        Su plan incluye {USUARIOS_INCLUIDOS} usuarios: usted (administrador) y un asistente. Para invitar a más personas, agregue usuarios adicionales por <strong>{PRECIO_USUARIO_EXTRA} al mes</strong> cada uno.
+        {hosp
+          ? <>Su plan incluye {usuariosIncluidosUI(clinica)} usuarios. Si necesita más antes de que se habilite, escríbanos. Cada usuario adicional cuesta <strong>{precio} al mes</strong>.</>
+          : <>Su plan incluye {USUARIOS_INCLUIDOS} usuarios: usted (administrador) y un asistente. Para invitar a más personas, agregue usuarios adicionales por <strong>{precio} al mes</strong> cada uno.</>}
         <ul style={{ margin: '12px 0 0', paddingLeft: 20, color: C.g600 }}>
           <li>Se cobra junto con su suscripción, en Recurrente.</li>
           <li>Apenas se confirme el pago podrá invitar a la nueva persona.</li>

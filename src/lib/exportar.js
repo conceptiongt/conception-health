@@ -9,7 +9,7 @@ import { estadoCobro, tipoCobro, sedeCobro, ESTADOS_COBRO } from '../components/
 import { totalOC } from '../components/inventario/Compras'
 import { estadoProducto, existencia, fmtCant } from '../hooks/useInventario'
 import { seccionesDe, textoPlano } from './ficha'
-import { resumenDatos } from './especialidades'
+import { resumenDatosCita } from './especialidades'
 
 // ─── Patients ───
 // last / next appointment, number of appointments and balance owed of one patient
@@ -43,34 +43,37 @@ export function prepararPacientes({ lista, citas, cobros, finanzas, filtroTexto,
 }
 
 // ─── Appointments ───
-export function prepararCitas({ visibles, porId, sedes, filtroTexto }) {
+// hospital (optional, hospital accounts only): { departamentos, profesionales } adds the Especialidad and Médico columns
+export function prepararCitas({ visibles, porId, sedes, filtroTexto, hospital }) {
+  const dep = (c) => hospital?.departamentos.find(d => d.id === c.departamento_id)?.nombre || '—'
+  const med = (c) => hospital?.profesionales.find(x => x.id === c.profesional_id)?.nombre || '—'
   return ({
     titulo: 'Citas',
     subtitulo: filtroTexto,
     secciones: [{ tabla: {
-      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Agendó'],
-      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')] }),
+      headers: ['Fecha', 'Hora', 'Paciente', 'Teléfono', 'Tipo', ...(hospital ? ['Especialidad', 'Médico'] : []), 'Estado', ...(sedes.length ? ['Sede'] : []), 'Origen', 'Agendó'],
+      filas: visibles.map(c => { const p = porId[c.paciente_id]; return [fmtFechaCorta(c.fecha), fmtHora(c.hora), p.nombre, p.telefono || '—', [c.tipo, c.servicio].filter(Boolean).join(' · ') || '—', ...(hospital ? [dep(c), med(c)] : []), c.estado, ...(sedes.length ? [nombreSede(sedes, c.sede_id) || '—'] : []), p.origen === 'redes' && p.red ? `Redes (${p.red})` : origenLabel(p.origen), c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : '—')] }),
     } }],
     excel: { archivo: `citas_${slug(filtroTexto)}`, hojas: [{ nombre: 'Citas', columnas: [
       { header: 'Fecha', key: 'fecha', width: 12 }, { header: 'Hora', key: 'hora', width: 8 }, { header: 'Paciente', key: 'paciente', width: 30 },
-      { header: 'Teléfono', key: 'tel', width: 14 }, { header: 'Tipo', key: 'tipo', width: 18 }, { header: 'Estado', key: 'estado', width: 13 },
+      { header: 'Teléfono', key: 'tel', width: 14 }, { header: 'Tipo', key: 'tipo', width: 18 }, ...(hospital ? [{ header: 'Especialidad', key: 'esp', width: 22 }, { header: 'Médico', key: 'medico', width: 24 }] : []), { header: 'Estado', key: 'estado', width: 13 },
       { header: 'Origen', key: 'origen', width: 16 }, { header: 'Red social', key: 'red', width: 12 }, { header: 'Referido por', key: 'ref', width: 20 },
       { header: 'Agendó', key: 'agendo', width: 20 }, { header: 'Procedimiento', key: 'proc', width: 26 }, { header: 'Sede', key: 'sede', width: 16 }, { header: 'Notas', key: 'notas', width: 40 },
     ], filas: visibles.map(c => { const p = porId[c.paciente_id]; return {
-      sede: nombreSede(sedes, c.sede_id), fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, estado: c.estado,
+      sede: nombreSede(sedes, c.sede_id), fecha: c.fecha, hora: fmtHora(c.hora), paciente: p.nombre, tel: p.telefono, tipo: c.tipo, ...(hospital ? { esp: dep(c) === '—' ? '' : dep(c), medico: med(c) === '—' ? '' : med(c) } : {}), estado: c.estado,
       origen: origenLabel(p.origen), red: p.red, ref: p.referido_por, agendo: c.agendo_nombre || (c.agendada_por === 'lia' ? 'Lía' : ''), proc: c.procedimiento, notas: c.notas,
     } }) }] },
   })
 }
 
 // ─── Clinical records: one row per appointment with its clinical fields (photos are not included) ───
-export function prepararExpedientes({ pacientes, citas, clinica }) {
+export function prepararExpedientes({ pacientes, citas, clinica, departamentos }) {
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
   const filas = citas.filter(c => porId[c.paciente_id]).sort((a, b) => porId[a.paciente_id].nombre.localeCompare(porId[b.paciente_id].nombre, 'es') || b.fecha.localeCompare(a.fecha))
     .map(c => {
       const p = porId[c.paciente_id]
       const ficha = seccionesDe(c, clinica).map(s => `${s.titulo}: ${textoPlano(s.html)}`).join('\n')
-      return { c, p, ficha, datos: resumenDatos(c.datos, clinica?.especialidad) || '' }
+      return { c, p, ficha, datos: resumenDatosCita(c, clinica?.especialidad, departamentos) || '' }
     })
   return {
     titulo: 'Expedientes clínicos', subtitulo: `${pacientes.length} ${pacientes.length === 1 ? 'paciente' : 'pacientes'} · ${filas.length} ${filas.length === 1 ? 'consulta' : 'consultas'}`,

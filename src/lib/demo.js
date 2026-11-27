@@ -95,6 +95,8 @@ for (let m = 0; m < 6; m++) {
 
 const DB = {
   citas_eliminadas: [],
+  // hospital structure (empty until the demo clinic is switched to «Hospital» in Configuración → Marca and the owner builds it)
+  departamentos: [], profesionales: [], areas: [], recursos: [],
   perfiles: [
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
@@ -151,6 +153,11 @@ function from(t) {
       if (t === 'ordenes_compra_lineas') lista.forEach(x => { x.recibido = 0 })
       if (t === 'cobros') lista.forEach(x => { x.pagado = 0; x.descuento = x.descuento || 0 })
       if (t === 'documentos_compartidos') lista.forEach(x => { x.codigo = 'documento-demo'; x.token = id() })
+      if (t === 'departamentos' || t === 'recursos') { // unique (clinica, name) / (area, name), case-insensitive, like the real indexes
+        const clave = (r) => `${t === 'departamentos' ? r.clinica_id : r.area_id}|${String(r.nombre).trim().toLowerCase()}`
+        const vistos = new Set(filas.map(clave))
+        for (const x of lista) { if (vistos.has(clave(x))) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }; vistos.add(clave(x)) }
+      }
       filas.push(...lista)
       if (t === 'abonos') recalcular()
       return { data: one ? lista[0] : lista, error: null }
@@ -161,6 +168,9 @@ function from(t) {
     }
     if (op === 'update') {
       const cambiadas = filas.filter(coincide)
+      if ((t === 'departamentos' || t === 'recursos') && payload.nombre && filas.some(r => !cambiadas.includes(r) && (t === 'departamentos' || r.area_id === cambiadas[0]?.area_id) && r.nombre.trim().toLowerCase() === payload.nombre.trim().toLowerCase())) {
+        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
+      }
       cambiadas.forEach(r => { Object.assign(r, payload); if (t === 'pacientes' && payload.registro_token) r.registro_codigo = `datos-${r.id}` })
       return { data: one ? (cambiadas[0] ? { ...cambiadas[0] } : null) : cambiadas.map(r => ({ ...r })), error: null }
     }
@@ -171,6 +181,13 @@ function from(t) {
         for (const r of quitar) { const err = aplicar(r, -r.delta); if (err) { DB.existencias = JSON.parse(copia); return { error: err } } }
       }
       if (t === 'pacientes') quitar.forEach(p => ['citas', 'cobros', 'archivos'].forEach(k => { DB[k] = DB[k].filter(x => x.paciente_id !== p.id) }))
+      // same effect as the foreign keys of the hospital tables: citas.departamento_id / profesional_id are NO ACTION (23503 when referenced),
+      // servicios.departamento_id and profesionales.departamento_id are SET NULL
+      const ids = new Set(quitar.map(r => r.id))
+      const enUso = (t === 'departamentos' && DB.citas.some(c => ids.has(c.departamento_id))) || (t === 'profesionales' && DB.citas.some(c => ids.has(c.profesional_id)))
+      if (enUso) return { data: null, error: { code: '23503', message: `update or delete on table "${t}" violates foreign key constraint on table "citas"` } }
+      if (t === 'departamentos') { DB.servicios.forEach(s => { if (ids.has(s.departamento_id)) s.departamento_id = null }); DB.profesionales.forEach(p => { if (ids.has(p.departamento_id)) p.departamento_id = null }) }
+      if (t === 'areas') DB.recursos = DB.recursos.filter(r => !ids.has(r.area_id))
       DB[t] = filas.filter(r => !coincide(r))
       if (t === 'abonos' || t === 'cobros') { DB.abonos = DB.abonos.filter(a => DB.cobros.some(c => c.id === a.cobro_id)); recalcular() }
       return { data: null, error: null }

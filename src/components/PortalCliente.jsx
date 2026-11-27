@@ -4,7 +4,7 @@ import { C } from '../lib/theme'
 import { ETAPAS_FOTO } from '../lib/constantes'
 import { fmtFecha, fmtFechaCorta, linkWhatsApp } from '../lib/formato'
 import { seccionesDe, urlPortal } from '../lib/ficha'
-import { resumenDatos } from '../lib/especialidades'
+import { resumenDatosCita } from '../lib/especialidades'
 import { puede } from '../lib/permisos'
 import { useDatos } from '../hooks/useDatos'
 import { Card, Badge } from './ui/Varios'
@@ -15,7 +15,7 @@ import { Interruptor } from './MensajePaciente'
 
 // One screen to decide, item by item, what the patient sees in their portal, and to publish it
 export function PortalCliente({ paciente, citas, archivos, onVolver, onCambio, onArchivos }) {
-  const { clinica, perfil } = useDatos()
+  const { clinica, perfil, hospital } = useDatos()
   const finanzas = puede(perfil, 'finanzas')
   useEffect(() => { window.scrollTo(0, 0) }, [])
   const link = urlPortal(paciente)
@@ -31,7 +31,7 @@ export function PortalCliente({ paciente, citas, archivos, onVolver, onCambio, o
   const paciente_ = (campos, aviso) => guardar('pacientes', campos, paciente.id, aviso)
   const partesDe = (c) => [
     ...seccionesDe(c, clinica).map(s => ({ id: s.id, titulo: s.titulo })),
-    ...(resumenDatos(c.datos, clinica?.especialidad) || c.peso || c.talla ? [{ id: '_datos', titulo: 'Datos clínicos y medidas' }] : []),
+    ...(resumenDatosCita(c, clinica?.especialidad, hospital?.departamentos) || c.peso || c.talla ? [{ id: '_datos', titulo: 'Datos clínicos y medidas' }] : []),
     ...(c.procedimiento ? [{ id: '_procedimiento', titulo: 'Procedimiento' }] : []),
   ]
   const alternarParte = (c, id) => {

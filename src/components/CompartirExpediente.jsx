@@ -22,7 +22,7 @@ const puedeCompartirArchivo = () => {
 // Window to choose exactly what goes in the PDF (data, history, some consultations, photos, account) and then
 // download it, print it or send it by WhatsApp
 export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [], citaInicial, onClose }) {
-  const { clinica, perfil } = useDatos()
+  const { clinica, perfil, hospital } = useDatos()
   const finanzas = puede(perfil, 'finanzas')
   const secciones = seccionesActivas(clinica)
   const unaSola = !!citaInicial
@@ -48,7 +48,7 @@ export function CompartirExpediente({ paciente, citas, cobros = [], archivos = [
   const alternar = (k, id) => set(k, e[k].includes(id) ? e[k].filter(x => x !== id) : [...e[k], id])
 
   const marca = { nombre: clinica?.nombre, color: clinica?.color, logo: urlLogo(clinica) }
-  const partes = armarPartes({ paciente, citas, cobros: finanzas ? cobros : [], archivos, clinica, eleccion: e, secciones })
+  const partes = armarPartes({ paciente, citas, cobros: finanzas ? cobros : [], archivos, clinica, eleccion: e, secciones, departamentos: hospital?.departamentos })
   const nada = !e.datos && !e.antecedentes && !partes.consultas.length && !partes.fotos.length && !partes.documentos.length && !partes.cobros.length
   const archivo = `${nombreArchivo(paciente.nombre, titulo || 'expediente')}.pdf`
 

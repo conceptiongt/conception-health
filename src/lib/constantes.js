@@ -1,5 +1,6 @@
 import { C } from './theme'
 import { MODO_DEMO } from './config'
+import { esHospital } from './especialidades'
 
 export const APP_NOMBRE = 'Conception Health'
 
@@ -80,6 +81,37 @@ export const PLANES = [
     incluye: ['Recepcionista virtual en su WhatsApp', 'Contesta y agenda las 24 horas', 'Recontacta, confirma y recuerda citas', 'Agenda de citas (sin expedientes ni cobros)'],
   },
 ]
+// Hospital accounts (clinicas.especialidad = 'hospital') see ONLY these two plans, never Ultra or Lía. The DB plan values stay 'basico' / 'max'
+// (the same `accesos` rules apply). No Recurrente product exists yet (`link: null`; online checkout stays off through COBRO_ACTIVO).
+// An `incluye` item can be { texto, pronto: true } for a feature that is not built yet: it shows «(próximamente)» next to it.
+export const USUARIOS_EXTRA_HOSPITAL = 'Q50' // per extra user per month (UI text only, see USUARIOS_HOSPITAL)
+export const PLANES_HOSPITAL = [
+  {
+    value: 'basico',
+    nombre: 'Hospital Básico',
+    sub: 'Conception Health para su hospital',
+    precio: 'Q500',
+    link: null,
+    usuarios: 8,
+    incluye: ['Especialidades y médicos a su medida', 'Citas y calendario por médico', 'Expedientes por especialidad', { texto: 'Emergencias 24/7', pronto: true }, 'Cobros y saldos'],
+  },
+  {
+    value: 'max',
+    nombre: 'Hospital Max',
+    sub: 'Hospital Básico + operación del hospital',
+    precio: 'Q750',
+    link: null,
+    usuarios: 15,
+    destacado: true,
+    incluye: ['Todo lo del Hospital Básico', { texto: 'Quirófanos', pronto: true }, { texto: 'Camas y hospitalización', pronto: true }, { texto: 'Inventario por especialidad', pronto: true }, { texto: 'Finanzas por especialidad', pronto: true }],
+  },
+]
+// The plans an account can see: hospitals their two, clinics the four of PLANES
+export const planesDe = (clinica) => (esHospital(clinica?.especialidad) ? PLANES_HOSPITAL : PLANES)
+// Users shown in the UI texts of a hospital plan (8 / 15). The database still enforces USUARIOS_INCLUIDOS + clinicas.usuarios_extra.
+export const usuariosIncluidosUI = (clinica) => (esHospital(clinica?.especialidad) ? (PLANES_HOSPITAL.find(p => p.value === clinica?.plan)?.usuarios ?? PLANES_HOSPITAL[0].usuarios) : USUARIOS_INCLUIDOS)
+export const precioUsuarioExtraUI = (clinica) => (esHospital(clinica?.especialidad) ? USUARIOS_EXTRA_HOSPITAL : PRECIO_USUARIO_EXTRA)
+
 // Users: every plan includes the administrator + 1 assistant; more users are an extra monthly charge.
 // The database enforces the limit (invitaciones_limite); clinicas.usuarios_extra counts the ones bought.
 export const USUARIOS_INCLUIDOS = 2
@@ -94,7 +126,7 @@ export const cuentaVencida = (clinica) => {
   return (clinica.plan || 'prueba') !== 'prueba' && !activo
 }
 
-export const nombrePlan = (v) => PLANES.find(p => p.value === v)?.nombre
+export const nombrePlan = (v, clinica) => planesDe(clinica).find(p => p.value === v)?.nombre
 
 // Lía is being finished on its own; until then the menu shows a "coming soon" page
 export const LIA_DISPONIBLE = false

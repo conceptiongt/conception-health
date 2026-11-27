@@ -22,7 +22,7 @@ const TODO = { mes: '', anio: '', desde: '', hasta: '' }
 // Screen of an expired account (read-only): the only things left are downloading the data, activating a plan or deleting the account.
 // It replaces the whole app, so nothing here writes to the clinic's data.
 export function CuentaVencida({ errorDatos, onReintentar } = {}) {
-  const { clinica, perfil, pacientes, citas, cobros, servicios, sedes } = useDatos()
+  const { clinica, perfil, pacientes, citas, cobros, servicios, sedes, hospital } = useDatos()
   const admin = esAdmin(perfil)
   const logo = urlLogo(clinica)
   const nombre = clinica?.nombre || perfil.nombre
@@ -40,9 +40,9 @@ export function CuentaVencida({ errorDatos, onReintentar } = {}) {
     { clave: 'pacientes', titulo: 'Pacientes', texto: `${pacientes.length} ${pacientes.length === 1 ? 'paciente' : 'pacientes'} con sus datos de contacto y antecedentes`,
       preparar: () => prepararPacientes({ lista: [...pacientes].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')), citas, cobros, finanzas: puede(perfil, 'finanzas'), filtroTexto: `${pacientes.length} pacientes`, atencion: '' }) },
     { clave: 'citas', titulo: 'Citas', texto: `${citas.length} ${citas.length === 1 ? 'cita' : 'citas'} de todas las fechas`,
-      preparar: () => prepararCitas({ visibles: citas.filter(c => porId[c.paciente_id]).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || ''))), porId, sedes, filtroTexto: 'Todas las citas' }) },
+      preparar: () => prepararCitas({ visibles: citas.filter(c => porId[c.paciente_id]).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || ''))), porId, sedes, hospital: hospital?.disponible ? hospital : undefined, filtroTexto: 'Todas las citas' }) },
     puede(perfil, 'expedientes') && { clave: 'expedientes', titulo: 'Expedientes clínicos', texto: 'Consultas y notas clínicas de cada paciente (las fotos y archivos no se incluyen)',
-      preparar: () => prepararExpedientes({ pacientes, citas, clinica }) },
+      preparar: () => prepararExpedientes({ pacientes, citas, clinica, departamentos: hospital?.departamentos }) },
     puede(perfil, 'finanzas') && { clave: 'pagos', titulo: 'Pagos y saldos', texto: 'Cobros, pagos recibidos y saldos de cada paciente',
       preparar: () => prepararPagos({ lista: cobrosOrdenados(cobros, porId), pacientes, citas, servicios, sedes, filtroTexto: 'Todas las fechas' }) },
     conInventario && { clave: 'inventario', titulo: 'Inventario', texto: 'Productos, existencias por sede y movimientos',

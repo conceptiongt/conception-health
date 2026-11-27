@@ -230,7 +230,7 @@ export function Usuarios() {
             <Badge>Asistente</Badge><Button size="sm" variant="texto" onClick={() => quitar(u)}>Quitar acceso</Button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
-            {PERMISOS.map(p => (
+            {PERMISOS.filter(p => !p.hospital || hosp).map(p => (
               <label key={p.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, cursor: 'pointer' }}>
                 <Interruptor activo={puede(u, p.k)} onChange={v => cambiarPermiso(u, p.k, v)} />
                 <span>{p.label}{p.ayuda && <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>{p.ayuda}</span>}</span>
@@ -256,7 +256,7 @@ export function Usuarios() {
 function InvitarModal({ clinica, onClose, onListo }) {
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
-  const [permisos, setPermisos] = useState(permisosIniciales)
+  const [permisos, setPermisos] = useState(() => ({ ...permisosIniciales(), ...(esHospital(clinica?.especialidad) ? { emergencias: true } : {}) }))
   const [busy, setBusy] = useState(false)
   const [lista, setLista] = useState(null) // the invitation once saved
   const enviar = async () => {
@@ -311,7 +311,7 @@ function InvitarModal({ clinica, onClose, onListo }) {
       </Grid>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.g600, margin: '18px 0 8px' }}>¿Qué puede hacer?</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {PERMISOS.map(p => (
+        {PERMISOS.filter(p => !p.hospital || esHospital(clinica?.especialidad)).map(p => (
           <label key={p.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, cursor: 'pointer' }}>
             <Interruptor activo={!!permisos[p.k]} onChange={v => setPermisos({ ...permisos, [p.k]: v })} />
             <span>{p.label}{p.ayuda && <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>{p.ayuda}</span>}</span>

@@ -51,6 +51,7 @@ const P = {
   pdf: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h1.5a1.5 1.5 0 0 1 0 3H8v-3zm0 3v2M13 13v5h1a2.5 2.5 0 0 0 0-5h-1zM18 13h-2v5M16 15.5h1.5"/></>,
   receta: <><path d="M9 3h6v4H9z"/><path d="M5 5h4M15 5h4v16H5V5"/><path d="M9 12h6M9 16h4"/></>,
   escudo: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>,
+  emergencia: <><circle cx="12" cy="12" r="10"/><path d="M12 7.5v9M7.5 12h9"/></>,
   arriba: <><polyline points="18 15 12 9 6 15"/></>,
   abajo: <><polyline points="6 9 12 15 18 9"/></>,
   lia: <><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.3-4.2A8 8 0 1 1 20 11.5z"/><path d="m8.6 11.6 2.2 2.2 4.6-4.5"/></>,

@@ -121,7 +121,8 @@ export const NIVELES = [
   { nivel: 2, label: 'Muy ocupado', color: '#E5484D' },
 ]
 // appointments of a day that take up the agenda, optionally for one location only
-export const citasActivas = (lista, sedeId) => (lista || []).filter(c => !NO_OCUPAN.includes(c.estado) && (!sedeId || c.sede_id === sedeId))
+// Emergencies (tipo «Emergencia») are walk-ins: they never take a slot, never count in the day's load and never trigger the «doctor already has a cita» warning.
+export const citasActivas = (lista, sedeId) => (lista || []).filter(c => !NO_OCUPAN.includes(c.estado) && c.tipo !== 'Emergencia' && (!sedeId || c.sede_id === sedeId))
 export const ocupacionDelDia = (porDia, iso, sedeId) => citasActivas(porDia[iso], sedeId).length
 
 // Appointments of the same day (and location, if given) that overlap [hora, hora + duracion)
@@ -144,7 +145,7 @@ export const colorBaseEstado = (estado) => {
   const c = ESTADOS_CITA.find(e => e.value === estado)?.color
   return valido(c) ? c : '#6B5BD6'
 }
-export const colorBaseTipo = (tipo) => PALETA[hash(tipo || 'Consulta') % PALETA.length]
+export const colorBaseTipo = (tipo) => (tipo === 'Emergencia' ? '#D1273F' : PALETA[hash(tipo || 'Consulta') % PALETA.length])
 
 // { base, fondo, texto, borde } from one hex: a pale card with dark text that always passes AA (4.5:1)
 export function estiloColor(hex) {

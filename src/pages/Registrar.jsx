@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SERIF } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES, estadoCita } from '../lib/constantes'
-import { tiposDe } from '../lib/especialidades'
+import { tiposDe, claveEspCita } from '../lib/especialidades'
+import { CamposHospital } from '../components/HospitalCita'
+import { colorProfesional } from '../hooks/useHospital'
 import { puede, verPrecio } from '../lib/permisos'
 import { urlRegistro, codigoRegistro } from '../lib/ficha'
 import { MensajePaciente } from '../components/MensajePaciente'
@@ -20,28 +22,44 @@ import { SelectorFechaHora } from '../components/SelectorFechaHora'
 import { useAgenda } from '../hooks/useAgenda'
 import { sincronizarCita } from '../lib/google'
 
-const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '' }
+const vacio = { nombre: '', telefono: '', email: '', fecha: hoyISO(), hora: '', tipo: 'Primera consulta', estado: 'Confirmada', notas: '', origen: '', red: '', referido_por: '', sede: '', departamento_id: '', profesional_id: '' }
 
 export function Registrar() {
-  const { citas, pacientes, servicios, perfil, clinica, recargar, ir, sedes, acc } = useDatos()
+  const { citas, pacientes, servicios, perfil, clinica, recargar, ir, sedes, acc, hospital } = useDatos()
+  const hosp = hospital.disponible // hospital account with its tables ready: specialty + doctor on every appointment
   const finanzas = puede(perfil, 'finanzas')
   const conSedes = acc?.inventario && sedes.length > 0
   // arriving from a clicked day / hour of the Calendario: date (and hour) already chosen
   const [f, setF] = useState(() => ({ ...vacio, fecha: hoyISO(), sede: sedes.length === 1 ? sedes[0].id : '', ...(leerPrefillCita() || {}) }))
   useEffect(() => { limpiarPrefillCita() }, [])
   const [serv, setServ] = useState(() => servicioInicial(vacio.tipo, servicios))
+  // the appointment's specialty drives the consultation types (and the services offered)
+  const claveEsp = hosp ? claveEspCita(clinica?.especialidad, { departamento_id: f.departamento_id }, hospital.departamentos) : clinica?.especialidad
+  const depId = hosp ? f.departamento_id || undefined : undefined
   const [busy, setBusy] = useState(false)
   const { bloqueos } = useAgenda()
   const [listo, setListo] = useState(null) // { paciente, cita, cobro } after saving
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
-  const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios)) }
+  const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios, undefined, depId)) }
+  // specialty / doctor changed: keep the type when the new specialty offers it, otherwise start from its first type
+  const cambiarHospital = (patch) => {
+    setF(p => ({ ...p, ...patch }))
+    if (!('departamento_id' in patch) && !patch.profesional_id) return
+    const nuevoDep = patch.departamento_id ?? f.departamento_id
+    const tipos = tiposDe(claveEspCita(clinica?.especialidad, { departamento_id: nuevoDep }, hospital.departamentos))
+    const tipo = tipos.includes(f.tipo) ? f.tipo : tipos[0]
+    if (tipo !== f.tipo) setF(p => ({ ...p, tipo }))
+    if (nuevoDep !== f.departamento_id) setServ(servicioInicial(tipo, servicios, undefined, nuevoDep || undefined))
+  }
 
   const guardar = async (e) => {
     e.preventDefault()
     if (!f.nombre.trim() || !f.fecha || !f.origen) { toast.error('Complete nombre, fecha y cómo nos encontró'); return }
     if (conSedes && !f.sede) { toast.error('Elija la sede de la cita'); return }
+    if (hosp && !f.departamento_id) { toast.error('Elija la especialidad de la cita'); return }
     if (f.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { toast.error('Revise el correo electrónico'); return }
     const sede = conSedes ? { sede_id: f.sede } : {}
+    const hospitalCita = hosp ? { departamento_id: f.departamento_id, profesional_id: f.profesional_id || null } : {}
     const s = servicioParaGuardar(serv)
     setBusy(true)
     const { data: paciente, error } = await supabase.from('pacientes').insert({
@@ -52,7 +70,7 @@ export function Registrar() {
     if (error) { setBusy(false); toast.error(mensajeError(error)); return }
     const { data: cita, error: e2 } = await supabase.from('citas').insert({
       clinica_id: perfil.clinica_id, paciente_id: paciente.id, fecha: f.fecha, hora: f.hora || null,
-      tipo: f.tipo || null, estado: f.estado, notas: f.notas.trim() || null, servicio_id: s.servicio_id, servicio: s.servicio, ...sede,
+      tipo: f.tipo || null, estado: f.estado, notas: f.notas.trim() || null, servicio_id: s.servicio_id, servicio: s.servicio, ...sede, ...hospitalCita,
       agendo_nombre: (f.agendo ?? nombreUsuario(perfil)).trim() || null,
     }).select().single()
     if (e2) {
@@ -115,10 +133,11 @@ export function Registrar() {
           <Grid>
             {conSedes && <Campo label="Sede *"><Select value={f.sede} onChange={set('sede')}><option value="">Seleccione…</option>{sedes.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}</Select></Campo>}
             <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} />
-            <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
+            {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} />}
+            <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(claveEsp, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
             <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
             <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo ?? nombreUsuario(perfil)} onChange={set('agendo')} /></Campo>
-            <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} />
+            <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} departamentoId={depId} />
             <Campo label="Notas" full><Textarea value={f.notas} onChange={set('notas')} rows={2} placeholder="Opcional" /></Campo>
           </Grid>
         </Card>
@@ -135,16 +154,18 @@ export function Registrar() {
         </Card>
         <div className="registrar-boton"><Button type="submit" size="lg" variant="brand" icon="check" disabled={busy}>{busy ? 'Guardando…' : 'Registrar paciente'}</Button></div>
       </div>
-      <ResumenCita f={f} serv={serv} servicios={servicios} sedes={conSedes ? sedes : []} perfil={perfil} busy={busy} />
+      <ResumenCita f={f} serv={serv} servicios={servicios} sedes={conSedes ? sedes : []} perfil={perfil} busy={busy} hospital={hosp ? hospital : null} />
       </div>
     </form>
   )
 }
 
 // Live summary of the appointment being booked (sticky on wide screens, below the form on narrow ones)
-function ResumenCita({ f, serv, servicios, sedes, perfil, busy }) {
+function ResumenCita({ f, serv, servicios, sedes, perfil, busy, hospital }) {
   const e = estadoCita(f.estado)
   const sede = sedes.find(x => x.id === f.sede)?.nombre
+  const especialidadNombre = hospital?.departamento(f.departamento_id)?.nombre
+  const medico = hospital?.profesional(f.profesional_id)
   const servicio = serv.servicio || ''
   // same rule as ServicioCampos: assistants only see the prices the administrator allowed
   const opcion = servicios.find(x => x.id === serv.servicioId)
@@ -169,6 +190,8 @@ function ResumenCita({ f, serv, servicios, sedes, perfil, busy }) {
         {fila('citas', 'Fecha', fechaLarga(f.fecha) || '—')}
         {fila('reloj', 'Hora', f.hora ? `${f.hora} · ${textoDuracion(DURACION_DEFECTO)}` : 'Sin hora definida')}
         {fila('estetoscopio', 'Consulta', [f.tipo, servicio].filter(Boolean).join(' · ') || '—')}
+        {hospital && fila('estetoscopio', 'Especialidad', especialidadNombre || 'Sin elegir')}
+        {hospital && fila('usuarios', 'Médico', medico ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 10, background: colorProfesional(medico, hospital.profesionales.indexOf(medico)), boxShadow: '0 0 0 2px #fff', flexShrink: 0 }} />{medico.nombre}</span> : 'Sin asignar')}
         {precioVisible && fila('cartera', 'Precio', fmtQ(Number(serv.precio)))}
         {sedes.length > 0 && fila('sede', 'Sede', sede || 'Sin elegir')}
         {fila('usuarios', 'Agendó', (f.agendo ?? nombreUsuario(perfil)).trim() || '—')}

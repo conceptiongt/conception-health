@@ -4,7 +4,7 @@ import { COLOR_BASE, mezclar, valido } from '../lib/theme'
 import { iniciales } from '../lib/marca'
 import { fmtFecha, fmtFechaCorta, fmtHora, fmtQ, totalCobro, saldo } from '../lib/formato'
 import { ETAPAS_FOTO } from '../lib/constantes'
-import { resumenDatos } from '../lib/especialidades'
+import { resumenDatosCita } from '../lib/especialidades'
 import { limpiarHtml, edad } from '../lib/ficha'
 
 const INK = '#1C1C1E', MUTED = '#5F6172', LINE = '#E3E1DB', SOFT = '#F7F6F3'
@@ -124,7 +124,7 @@ export function DocumentoPaciente({ marca, titulo, subtitulo, paciente, partes, 
 }
 
 // Builds the parts of the document from the clinic's data and the choices of the selection window
-export function armarPartes({ paciente, citas, cobros, archivos, clinica, eleccion, secciones }) {
+export function armarPartes({ paciente, citas, cobros, archivos, clinica, eleccion, secciones, departamentos }) {
   const ficha = (cita) => {
     const lista = secciones.filter(s => eleccion.secciones[s.id] !== false && cita.ficha?.[s.id] && limpiarHtml(cita.ficha[s.id]).replace(/<[^>]+>/g, '').trim())
       .map(s => ({ titulo: s.titulo, html: cita.ficha[s.id] }))
@@ -137,7 +137,7 @@ export function armarPartes({ paciente, citas, cobros, archivos, clinica, elecci
     datos: eleccion.datos, antecedentes: eleccion.antecedentes,
     extra: eleccion.datos ? (clinica?.campos_paciente || []).map(c => [c.label, paciente.extra?.[c.id]]) : [],
     consultas: eleccion.consultas ? citas.filter(c => eleccion.citaIds.includes(c.id)).sort((a, b) => b.fecha.localeCompare(a.fecha))
-      .map(c => ({ cita: c, secciones: ficha(c), datosClinicos: eleccion.secciones._datos !== false ? resumenDatos(c.datos, clinica?.especialidad) : '' })) : [],
+      .map(c => ({ cita: c, secciones: ficha(c), datosClinicos: eleccion.secciones._datos !== false ? resumenDatosCita(c, clinica?.especialidad, departamentos) : '' })) : [],
     fotos: eleccion.fotos ? archivos.filter(a => eleccion.archivoIds.includes(a.id) && (a.mime || '').startsWith('image/') && a.url).map(a => ({ src: a.url, pie: [etapa(a.etapa), fmtFechaCorta(a.fecha), a.notas].filter(Boolean).join(' · ') })) : [],
     documentos: eleccion.fotos ? archivos.filter(a => eleccion.archivoIds.includes(a.id) && !(a.mime || '').startsWith('image/')).map(a => ({ nombre: a.nombre || a.notas || 'Documento', fecha: a.fecha })) : [],
     cobros: eleccion.cobros ? cobros : [],

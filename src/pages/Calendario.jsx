@@ -6,7 +6,7 @@ import { puede, esSoporte } from '../lib/permisos'
 import { hoyISO, fmtHora, linkWhatsApp, mensajeConfirmacion } from '../lib/formato'
 import {
   DIAS_CORTOS, DIAS_INICIAL, PALETA, aMinutos, agruparPorDia, colorDeCita, colorDeClave, duracionCita, esISO,
-  fechaLarga, guardarPrefillCita, guardarPreferencias, agruparGoogle, leerVerGoogle, guardarVerGoogle, guardarVista, inicioSemana, leerPreferencias, leerVista, matrizMes, mayuscula, partesISO,
+  estiloColor, fechaLarga, guardarPrefillCita, guardarPreferencias, agruparGoogle, leerVerGoogle, guardarVerGoogle, guardarVista, inicioSemana, leerPreferencias, leerVista, matrizMes, mayuscula, partesISO,
   sumarDias, sumarMeses, diaSemana, textoDuracion,
 } from '../lib/calendario'
 import { useDatos } from '../hooks/useDatos'
@@ -24,6 +24,8 @@ import { entradasDelDia, RAYADO } from '../lib/agenda'
 import { useAgenda } from '../hooks/useAgenda'
 import { EventoModal } from '../components/EventoModal'
 import { MeetCita } from '../components/EnlaceMeet'
+import { Desplegable } from '../components/ui/Desplegable'
+import { colorProfesional, nombreCorto as cortoMedico } from '../hooks/useHospital'
 import { BandaEvento, ChipEvento, ElegirNuevo, ListaEventosDia, TarjetaEventos } from '../components/EventosCalendario'
 
 const PX_HORA = 56 // height of one hour in the time grids
@@ -51,10 +53,13 @@ function tituloSemana(inicio) {
 }
 
 export function Calendario({ fechaInicial }) {
-  const { citas, pacientes, clinica, perfil, recargar, recargarSesion, ir, sedes } = useDatos()
+  const { citas, pacientes, clinica, perfil, recargar, recargarSesion, ir, sedes, hospital } = useDatos()
+  const hosp = hospital.disponible // hospital: filters and colours by specialty / doctor
   const [vista, setVista] = useState(() => leerVista().vista)
   const [fecha, setFecha] = useState(() => esISO(fechaInicial) ? fechaInicial : hoyISO())
   const [sede, setSede] = useState('')
+  const [dep, setDep] = useState('')
+  const [med, setMed] = useState('')
   const [prefs, setPrefs] = useState(() => leerPreferencias(clinica))
   const [colorPor, setColorPor] = useState(() => leerVista().colorPor || leerPreferencias(clinica).colorPor)
   const [abierta, setAbierta] = useState(null) // appointment shown in the detail window
@@ -90,10 +95,14 @@ export function Calendario({ fechaInicial }) {
   useEffect(() => { setPrefs(leerPreferencias(clinica)) }, [clinica])
 
   const porId = useMemo(() => Object.fromEntries(pacientes.map(p => [p.id, p])), [pacientes])
-  const visibles = useMemo(() => citas.filter(c => porId[c.paciente_id] && (!sede || c.sede_id === sede)), [citas, porId, sede])
+  const visibles = useMemo(() => citas.filter(c => porId[c.paciente_id] && (!sede || c.sede_id === sede) && (!hosp || ((!dep || c.departamento_id === dep) && (!med || c.profesional_id === med)))), [citas, porId, sede, hosp, dep, med])
   const porDia = useMemo(() => agruparPorDia(visibles), [visibles])
-  const prefsEf = useMemo(() => ({ ...prefs, colorPor }), [prefs, colorPor])
-  const colorDe = (c) => colorDeCita(c, prefsEf)
+  // «Médico» colouring only exists in hospitals; a clinic that remembered it falls back to the type
+  const modo = colorPor === 'medico' && !hosp ? 'tipo' : colorPor
+  const prefsEf = useMemo(() => ({ ...prefs, colorPor: modo === 'medico' ? 'tipo' : modo }), [prefs, modo])
+  const colorMedico = (id) => { const m = hospital.profesional(id); return m ? colorProfesional(m, hospital.profesionales.indexOf(m)) : '#8A93A8' }
+  const colorDe = (c) => (modo === 'medico' ? estiloColor(colorMedico(c.profesional_id)) : colorDeCita(c, prefsEf))
+  const medicoCorto = (c) => { const m = hosp ? hospital.profesional(c.profesional_id) : null; return m ? cortoMedico(m) : '' }
 
   // the visible day lives in the address too (replace, so Back does not step through every arrow click)
   const fijarFecha = (iso) => {
@@ -131,13 +140,13 @@ export function Calendario({ fechaInicial }) {
   const enRango = vista === 'mes' ? visibles.filter(c => c.fecha.slice(0, 7) === fecha.slice(0, 7)).length
     : vista === 'semana' ? Array.from({ length: 7 }, (_, i) => (porDia[sumarDias(inicioSemana(fecha), i)] || []).length).reduce((a, b) => a + b, 0)
     : (porDia[fecha] || []).length
-  const nombreCorto = (c) => (porId[c.paciente_id]?.nombre || '').split(' ')[0]
+  const nombreCorto = (c) => [(porId[c.paciente_id]?.nombre || '').split(' ')[0], medicoCorto(c)].filter(Boolean).join(' · ')
 
   if (editando) return <CitaModal soloCita cita={editando} paciente={porId[editando.paciente_id]} clinicaId={perfil.clinica_id} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); recargar() }} />
 
   const onEvento = puedeCrear ? (entrada) => setEvento({ entrada }) : undefined
   const onNuevo = puedeCrear ? (f) => setEligiendo(f) : undefined // click on an empty day / hour
-  const propsVista = { porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle: setGoogleAbierto, porId, colorDe, hoy, nombreCorto, onCita: setAbierta, onDia: abrirDia }
+  const propsVista = { porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle: setGoogleAbierto, porId, colorDe, hoy, nombreCorto, medicoCorto, onCita: setAbierta, onDia: abrirDia }
 
   return (
     <>
@@ -157,7 +166,9 @@ export function Calendario({ fechaInicial }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <FiltroSede valor={sede} onChange={setSede} contar={(id) => citas.filter(c => !id || c.sede_id === id).length} />
         <span style={{ fontSize: 13, color: C.g500 }}>Colorear por:</span>
-        <Segmentos valor={colorPor} onChange={cambiarColorPor} opciones={[{ value: 'tipo', label: 'Tipo de consulta' }, { value: 'estado', label: 'Estado' }]} />
+        <Segmentos valor={modo} onChange={cambiarColorPor} opciones={[{ value: 'tipo', label: 'Tipo de consulta' }, { value: 'estado', label: 'Estado' }, ...(hosp ? [{ value: 'medico', label: 'Médico' }] : [])]} />
+        {hosp && <Desplegable ariaLabel="Especialidad" value={dep} onChange={setDep} options={[{ value: '', label: 'Toda especialidad' }, ...hospital.departamentos.map(d => ({ value: d.id, label: d.nombre }))]} />}
+        {hosp && <Desplegable ariaLabel="Médico" value={med} onChange={setMed} options={[{ value: '', label: 'Todo médico' }, ...hospital.profesionales.filter(p => p.activo || p.id === med).map(p => ({ value: p.id, label: p.nombre, punto: colorProfesional(p, hospital.profesionales.indexOf(p)) }))]} />}
         {googleConectado && (
           <button type="button" onClick={cambiarVerGoogle} aria-pressed={verGoogle} title="Mostrar u ocultar los eventos de Google Calendar" style={{
             display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 13px 6px 10px', borderRadius: 160, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
@@ -167,7 +178,7 @@ export function Calendario({ fechaInicial }) {
         {puede(perfil, 'configuracion') && <Button variant="ghost" size="sm" icon="ajustes" onClick={() => setPersonalizando(true)}>Personalizar colores</Button>}
       </div>
 
-      <Leyenda prefs={prefsEf} clinica={clinica} citas={visibles} conGoogle={googleConectado && verGoogle} conBloqueos={agenda.some(e => e.bloquea)} conEventos={agenda.some(e => !e.bloquea)} />
+      <Leyenda prefs={prefsEf} clinica={clinica} citas={visibles} medicos={modo === 'medico' ? [...hospital.profesionales.filter(p => visibles.some(c => c.profesional_id === p.id)).map(p => ({ clave: p.id, label: p.nombre, color: colorMedico(p.id) })), ...(visibles.some(c => !c.profesional_id) ? [{ clave: 'sin', label: 'Sin médico', color: colorMedico(null) }] : [])] : null} conGoogle={googleConectado && verGoogle} conBloqueos={agenda.some(e => e.bloquea)} conEventos={agenda.some(e => !e.bloquea)} />
 
       {vista === 'mes' && (compacto
         ? <MesCompacto fecha={fecha} {...propsVista} onElegir={fijarFecha} onAbrirDia={abrirDia} />
@@ -191,7 +202,7 @@ export function Calendario({ fechaInicial }) {
       {evento && <EventoModal entrada={evento.entrada} fechaInicial={evento.fecha} horaInicial={evento.hora} citas={citas} clinica={clinica} googleListo={googleConectado} onClose={() => setEvento(null)} onGuardado={setAgenda} />}
       {googleAbierto && <DetalleGoogle g={googleAbierto} onClose={() => setGoogleAbierto(null)} />}
       {abierta && (
-        <DetalleCita cita={abierta} paciente={porId[abierta.paciente_id]} sedes={sedes} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}
+        <DetalleCita cita={abierta} paciente={porId[abierta.paciente_id]} sedes={sedes} hospital={hosp ? hospital : null} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}
           onEditar={() => { setEditando(abierta); setAbierta(null) }} onExpediente={() => ir('expedientes', abierta.paciente_id)} />
       )}
       {personalizando && (
@@ -207,15 +218,15 @@ function tiposUsados(clinica, citas) {
   return [...new Set([...tiposDe(clinica?.especialidad), ...citas.map(c => c.tipo).filter(Boolean)])]
 }
 
-function Leyenda({ prefs, clinica, citas, conGoogle, conBloqueos, conEventos }) {
-  const claves = prefs.colorPor === 'estado'
+function Leyenda({ prefs, clinica, citas, medicos, conGoogle, conBloqueos, conEventos }) {
+  const claves = medicos ? medicos : prefs.colorPor === 'estado'
     ? ESTADOS_CITA.map(e => ({ clave: `estado:${e.value}`, label: e.value }))
     : tiposUsados(clinica, citas).map(t => ({ clave: `tipo:${t}`, label: t }))
   return (
     <div role="list" aria-label="Colores" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       {claves.map(k => (
         <span key={k.clave} role="listitem" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 12px 4px 9px', borderRadius: 160, fontSize: 12.5, fontWeight: 500, color: C.g700, background: 'rgba(255,255,255,0.75)', border: `1px solid ${C.g200}` }}>
-          <span style={{ width: 10, height: 10, borderRadius: 10, background: colorDeClave(k.clave, prefs) }} />{k.label}
+          <span style={{ width: 10, height: 10, borderRadius: 10, background: k.color || colorDeClave(k.clave, prefs) }} />{k.label}
         </span>
       ))}
       {conBloqueos && (
@@ -308,7 +319,7 @@ function VistaMes({ fecha, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle
 }
 
 // Phones: coloured dots per day, and the list of the chosen day below
-function MesCompacto({ fecha, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onElegir, onAbrirDia }) {
+function MesCompacto({ fecha, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle, porId, colorDe, hoy, nombreCorto, medicoCorto, onCita, onElegir, onAbrirDia }) {
   const { y, m } = partesISO(fecha)
   const semanas = matrizMes(y, m)
   return (
@@ -346,14 +357,14 @@ function MesCompacto({ fecha, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoo
           <Button size="sm" variant="ghost" onClick={() => onAbrirDia(fecha)}>Ver día</Button>
         </div>
         <ListaEventosDia lista={ePorDia[fecha] || []} onEvento={onEvento} />
-        <ListaCitas lista={porDia[fecha] || []} porId={porId} colorDe={colorDe} onCita={onCita} />
+        <ListaCitas lista={porDia[fecha] || []} porId={porId} colorDe={colorDe} onCita={onCita} medicoCorto={medicoCorto} />
         <ListaGoogle lista={gPorDia[fecha] || []} onGoogle={onGoogle} />
       </div>
     </>
   )
 }
 
-function ListaCitas({ lista, porId, colorDe, onCita, sedes }) {
+function ListaCitas({ lista, porId, colorDe, onCita, sedes, medicoCorto }) {
   if (!lista.length) return <div style={{ ...GLASS, borderRadius: 20, padding: '22px 16px', textAlign: 'center', fontSize: 13.5, color: C.g500 }}>No hay citas este día</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -368,7 +379,7 @@ function ListaCitas({ lista, porId, colorDe, onCita, sedes }) {
             <span style={{ width: 48, fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{c.hora ? fmtHora(c.hora) : 'Sin hora'}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{porId[c.paciente_id]?.nombre}</span>
-              <span style={{ display: 'block', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[c.tipo, c.servicio, sedes && nombreSede(sedes, c.sede_id)].filter(Boolean).join(' · ') || 'Consulta'}</span>
+              <span style={{ display: 'block', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[c.tipo, c.servicio, medicoCorto?.(c), sedes && nombreSede(sedes, c.sede_id)].filter(Boolean).join(' · ') || 'Consulta'}</span>
             </span>
             <Badge color={e.color === C.purple ? 'var(--acento-fuerte)' : e.color} bg="#fff">{c.estado}</Badge>
           </button>
@@ -402,12 +413,12 @@ function ListaGoogle({ lista, onGoogle }) {
   )
 }
 
-function ListaDia({ iso, porDia, gPorDia, ePorDia, onEvento, onGoogle, porId, colorDe, onCita, sedes }) {
+function ListaDia({ iso, porDia, gPorDia, ePorDia, onEvento, onGoogle, porId, colorDe, onCita, sedes, medicoCorto }) {
   return (
     <div style={{ minWidth: 0 }}>
       <ListaEventosDia lista={ePorDia[iso] || []} onEvento={onEvento} />
       <div style={{ fontSize: 15, fontWeight: 500, color: C.black, marginBottom: 10 }}>Citas del día</div>
-      <ListaCitas lista={porDia[iso] || []} porId={porId} colorDe={colorDe} onCita={onCita} sedes={sedes} />
+      <ListaCitas lista={porDia[iso] || []} porId={porId} colorDe={colorDe} onCita={onCita} sedes={sedes} medicoCorto={medicoCorto} />
       <ListaGoogle lista={gPorDia[iso] || []} onGoogle={onGoogle} />
     </div>
   )
@@ -430,7 +441,7 @@ function distribuir(lista) {
 }
 
 // Time grid for one day or a whole week: appointments are placed by their hour and length
-function Grilla({ dias, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle, porId, colorDe, hoy, nombreCorto, onCita, onDia, conCabecera = true, minAncho = 0 }) {
+function Grilla({ dias, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle, porId, colorDe, hoy, nombreCorto, medicoCorto, onCita, onDia, conCabecera = true, minAncho = 0 }) {
   const eventos = dias.map(iso => distribuir([...(porDia[iso] || []), ...(gPorDia[iso] || [])]))
   const sinHora = dias.map(iso => [...(porDia[iso] || []), ...(gPorDia[iso] || [])].filter(c => !c.hora))
   const todos = eventos.flat()
@@ -516,7 +527,7 @@ function Grilla({ dias, porDia, gPorDia, ePorDia, onEvento, onNuevo, onGoogle, p
                     opacity: ['Cancelada', 'Reagendada'].includes(e.c.estado) ? 0.6 : 1,
                   }}>
                     <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h < 40 ? `${fmtHora(e.c.hora)} ${nombre}` : nombre}</span>
-                    {h >= 40 && <span style={{ display: 'block', fontSize: 11.5, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtHora(e.c.hora)} · {[e.c.tipo, e.c.servicio].filter(Boolean).join(' · ') || 'Consulta'}</span>}
+                    {h >= 40 && <span style={{ display: 'block', fontSize: 11.5, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtHora(e.c.hora)} · {[e.c.tipo, e.c.servicio, medicoCorto?.(e.c)].filter(Boolean).join(' · ') || 'Consulta'}</span>}
                   </button>
                 )
               })}
@@ -553,7 +564,7 @@ function DetalleGoogle({ g, onClose }) {
 }
 
 // In-platform window with one appointment: same actions and permissions as Citas
-function DetalleCita({ cita: c, paciente: p, sedes, clinica, perfil, onClose, onEditar, onExpediente }) {
+function DetalleCita({ cita: c, paciente: p, sedes, hospital, clinica, perfil, onClose, onEditar, onExpediente }) {
   if (!p) return null
   const e = estadoCita(c.estado)
   const wa = linkWhatsApp(p.telefono, mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre))
@@ -565,6 +576,8 @@ function DetalleCita({ cita: c, paciente: p, sedes, clinica, perfil, onClose, on
         {dato('Fecha y hora', `${c.fecha.split('-').reverse().join('/')}${c.hora ? ` · ${fmtHora(c.hora)} · ${textoDuracion(duracionCita(c))}` : ' · Sin hora'}`)}
         {dato('Tipo', c.tipo)}
         {dato('Servicio', c.servicio)}
+        {hospital && dato('Especialidad', hospital.departamento(c.departamento_id)?.nombre)}
+        {hospital && dato('Médico', hospital.profesional(c.profesional_id)?.nombre)}
         {dato('Estado', <Badge color={e.color === C.purple ? 'var(--acento-fuerte)' : e.color} bg={e.bg}>{c.estado}</Badge>)}
         {sedes.length > 0 && dato('Sede', nombreSede(sedes, c.sede_id))}
         {dato('Agendó', agendo)}

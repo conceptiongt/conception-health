@@ -4,6 +4,7 @@ import { C, SERIF, SHADOW, GLASS } from './lib/theme'
 import { LIMITE_PRUEBA, liaVisible, accesos, nombrePlan } from './lib/constantes'
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
+import { useCargarHospital } from './hooks/useHospital'
 import { Acceso, CrearPassword } from './pages/Acceso'
 import { Inicio } from './pages/Inicio'
 import { Registrar } from './pages/Registrar'
@@ -18,7 +19,7 @@ import { Inventario } from './pages/Inventario'
 import { Pagos } from './pages/Pagos'
 import { Finanzas } from './pages/Finanzas'
 import { urlLogo, iniciales } from './lib/marca'
-import { especialidad } from './lib/especialidades'
+import { especialidad, esHospital } from './lib/especialidades'
 import { cargarSugeridos } from './lib/sugeridos'
 import { ElegirEspecialidad } from './components/ElegirEspecialidad'
 import { aplicarMarca } from './lib/theme'
@@ -89,10 +90,12 @@ function AppPrivada() {
 function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, vencida, recargar: recargarSesion } = sesion
   const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
+  const hospital = useCargarHospital(clinica)
+  const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
   const acc = accesos(clinica, planActivo)
   // the section lives in the address (#/citas), so reloading the page stays where you were
   const [vista, setVista] = useState(() => leerRuta().vista || (acc.health || !liaVisible(clinica) ? 'inicio' : 'lia'))
-  const pendientesLia = usePendientesLia(acc.lia)
+  const pendientesLia = usePendientesLia(acc.lia && !esHosp)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(() => leerRuta().id)
   const [fechaCal, setFechaCal] = useState(() => leerRuta().fecha) // day the calendar opens on (#/calendario/AAAA-MM-DD)
@@ -153,7 +156,7 @@ function Aplicacion({ sesion }) {
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion }
+  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital }
   const enPrueba = !planActivo
   // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
   const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
@@ -219,7 +222,7 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-            {[['MENÚ', NAV], ['RECEPCIONISTA', NAV_LIA], ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n))).map(([titulo, items]) => (
+            {[['MENÚ', NAV], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -299,6 +302,7 @@ function Aplicacion({ sesion }) {
             : !datos ? <Cargando />
             : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
+            : vista === 'lia' && esHosp ? <Inicio />
             : vista === 'lia' ? (liaVisible(clinica) ? <Lia /> : <LiaProximamente />)
             : vista === 'inventario' ? (acc.inventario ? <Inventario /> : <SoloMax ir={ir} />)
             : vista === 'inicio' ? <Inicio />

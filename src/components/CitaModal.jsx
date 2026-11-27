@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita, MOTIVOS_ELIMINAR_CITA } from '../lib/constantes'
-import { especialidad, tiposDe } from '../lib/especialidades'
+import { especialidad, tiposDe, claveEspCita } from '../lib/especialidades'
+import { CamposHospital } from './HospitalCita'
 import { seccionesActivas, limpiarHtml, tieneTexto } from '../lib/ficha'
 import { puede } from '../lib/permisos'
 import { hoyISO, fmtFecha, fmtFechaCorta, fmtQ, saldo } from '../lib/formato'
@@ -29,9 +30,9 @@ import { MeetCita } from './EnlaceMeet'
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
-  const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir } = useDatos()
+  const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir, hospital } = useDatos()
+  const hosp = hospital.disponible // hospital account with its tables ready
   const { bloqueos } = useAgenda()
-  const esp = especialidad(clinica?.especialidad)
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
   const ficha = clinico && !soloCita // from Citas only the appointment is edited; the clinical file lives in the patient file
@@ -41,14 +42,28 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     estado: cita?.estado || 'Pendiente', peso: cita?.peso ?? '', talla: cita?.talla ?? '',
     procedimiento: cita?.procedimiento || '', notas: cita?.notas || '', datos: cita?.datos || {}, ficha: cita?.ficha || {},
     agendo: cita ? cita.agendo_nombre || '' : nombreUsuario(perfil),
+    departamento_id: cita?.departamento_id || '', profesional_id: cita?.profesional_id || '',
     portal: !!cita?.portal, sede: cita?.sede_id || paciente?.sede_id || (sedes.length === 1 ? sedes[0].id : ''),
   })
   const [serv, setServ] = useState(() => servicioInicial(cita?.tipo || 'Seguimiento', servicios, cita))
+  // the appointment's specialty (hospital) drives its types, clinical fields and services; clinics keep the clinic's specialty
+  const claveEsp = hosp ? claveEspCita(clinica?.especialidad, { departamento_id: f.departamento_id }, hospital.departamentos) : clinica?.especialidad
+  const esp = especialidad(claveEsp)
+  const depId = hosp ? f.departamento_id || undefined : undefined
   const [busy, setBusy] = useState(false)
   const [compartir, setCompartir] = useState(false)
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const setFicha = (id) => (html) => setF(p => ({ ...p, ficha: { ...p.ficha, [id]: html } }))
-  const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios)) }
+  const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios, undefined, depId)) }
+  // specialty / doctor changed: the types and clinical fields follow the new specialty
+  const cambiarHospital = (patch) => {
+    setF(p => ({ ...p, ...patch }))
+    if (!patch.departamento_id || patch.departamento_id === f.departamento_id) return
+    const tipos = tiposDe(claveEspCita(clinica?.especialidad, { departamento_id: patch.departamento_id }, hospital.departamentos))
+    const tipo = tipos.includes(f.tipo) ? f.tipo : tipos[0]
+    if (tipo !== f.tipo) setF(p => ({ ...p, tipo }))
+    setServ(servicioInicial(tipo, servicios, undefined, patch.departamento_id))
+  }
   const conSedes = acc?.inventario && sedes.length > 0
   useEffect(() => { window.scrollTo(0, 0) }, [])
 
@@ -87,6 +102,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
 
   const guardar = async () => {
     if (!f.fecha) { toast.error('La fecha es requerida'); return }
+    // a hospital appointment carries its specialty (older ones without it can still be edited)
+    if (hosp && !f.departamento_id && (!cita || cita.departamento_id)) { toast.error('Elija la especialidad de la cita'); return }
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
@@ -94,6 +111,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
+      ...(hosp ? { departamento_id: f.departamento_id || null, profesional_id: f.profesional_id || null } : {}),
     }
     setBusy(true)
     const { data: guardada, error } = cita
@@ -195,19 +213,20 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
             <h3>Datos de la cita</h3>
             <Grid min={190}>
               <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
+              {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
               <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
               <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
-              <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(clinica?.especialidad, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
-              <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita && finanzas} conPrecios={finanzas} />
+              <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(claveEsp, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
+              <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita && finanzas} conPrecios={finanzas} departamentoId={depId} />
             </Grid>
           </section>
 
           {!ficha && <div className="cita-dos">{medidasPaciente}</div>}
           {ficha && <>
             <section className="bloque">
-              <h3>{esp.label}</h3>
-              <CamposEspecialidad esp={clinica?.especialidad} valor={f.datos} onChange={set('datos')} />
+              <h3>{(hosp && hospital.departamento(f.departamento_id)?.nombre) || esp.label}</h3>
+              <CamposEspecialidad esp={claveEsp} valor={f.datos} onChange={set('datos')} />
             </section>
 
             <section className="bloque">

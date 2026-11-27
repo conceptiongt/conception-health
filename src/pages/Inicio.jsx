@@ -15,6 +15,7 @@ import { SelectorPeriodo, AgregarAnio, FiltroSede, enPeriodo, nombreSede } from 
 import { sedeCobro } from '../components/Pagos'
 import { abrirCitasCon } from './Citas'
 import { CalendarioInicio } from '../components/CalendarioInicio'
+import { colorProfesional } from '../hooks/useHospital'
 
 const hoy = new Date()
 const NO_CUENTAN = ['Cancelada', 'No asistió']
@@ -34,7 +35,7 @@ const Linea = ({ label, valor, sub, pct, onClick, children }) => (
 )
 
 export function Inicio() {
-  const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes } = useDatos()
+  const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes, hospital } = useDatos()
   const [periodo, setPeriodo] = useState({ mes: hoy.getMonth(), anio: hoy.getFullYear() })
   const [sede, setSede] = useState('')
   const nombre = clinica?.nombre || perfil.nombre
@@ -101,6 +102,11 @@ export function Inicio() {
   const hoyStr = hoyISO()
   const citasHoy = citas.filter(c => c.fecha === hoyStr && ['Pendiente', 'Confirmada', 'Reagendada', 'Asistió'].includes(c.estado))
   const sigCita = proximas[0]
+  // hospital: today's appointments by specialty and by doctor (a click opens Citas filtered, today only)
+  const hosp = hospital.disponible
+  const hoyPorDep = hosp ? hospital.departamentos.map(d => ({ d, n: citasHoy.filter(c => c.departamento_id === d.id).length })).filter(x => x.n > 0).sort((a, b) => b.n - a.n) : []
+  const hoyPorMed = hosp ? hospital.profesionales.map(p => ({ p, n: citasHoy.filter(c => c.profesional_id === p.id).length })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 6) : []
+  const verHoy = (f) => { abrirCitasCon({ ...f, sede, periodo: { mes: '', anio: '', desde: hoyStr, hasta: hoyStr } }); ir('citas') }
 
   const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
   const titulo = `${MESES[periodo.mes]} ${periodo.anio}${sede ? ` · ${nombreSede(sedes, sede)}` : ''}`
@@ -200,6 +206,39 @@ export function Inicio() {
           </div>
         )}
       </div>
+
+      {hosp && (
+        <div className="in-fila4">
+          <Panel eyebrow="Hospital" titulo="Hoy por especialidad">
+            {hoyPorDep.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay citas hoy con especialidad</div> : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
+                {hoyPorDep.map(({ d, n }) => (
+                  <button type="button" key={d.id} onClick={() => verHoy({ departamento: d.id })} className="in-fila-lista">
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{d.nombre}</span>
+                    <span className="in-pildora">{n} {n === 1 ? 'cita' : 'citas'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+          <Panel eyebrow="Hospital" titulo="Hoy por médico">
+            {hoyPorMed.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay citas hoy con médico asignado</div> : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
+                {hoyPorMed.map(({ p, n }) => (
+                  <button type="button" key={p.id} onClick={() => verHoy({ profesional: p.id })} className="in-fila-lista">
+                    <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 10, flexShrink: 0, background: colorProfesional(p, hospital.profesionales.indexOf(p)) }} />
+                    <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                      <span style={{ display: 'block', fontWeight: 600, fontSize: 14, color: C.black, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nombre}</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: C.g500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hospital.departamento(p.departamento_id)?.nombre || 'Sin especialidad'}</span>
+                    </span>
+                    <span className="in-pildora">{n} {n === 1 ? 'cita' : 'citas'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+      )}
 
       <div style={{ margin: '34px 0 14px' }}>
         <div className="eyebrow">Estado de citas</div>

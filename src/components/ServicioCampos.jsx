@@ -9,9 +9,9 @@ const OTRO = '__otro__'
 // Service picker for a consultation type: choose from the clinic's price list or type a new one; fills the price
 // valor = { servicioId, servicio, precio }
 // Assistants without "finanzas" only see the prices the administrator allowed in Tarifas (the price is still saved)
-export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = true, conPrecios = true }) {
+export function ServicioCampos({ tipo, servicios, valor, onChange, conPrecio = true, conPrecios = true, departamentoId }) {
   const { perfil } = useDatos()
-  const opciones = servicios.filter(s => s.activo && s.categoria === tipo)
+  const opciones = serviciosDe(servicios, tipo, departamentoId)
   const detalle = tipo === 'Cirugía' ? 'Tipo de cirugía' : tipo === 'Procedimiento' ? 'Tipo de procedimiento' : 'Servicio'
   const escribiendo = valor.servicioId === OTRO || (!valor.servicioId && !!valor.servicio)
   const seleccion = escribiendo ? OTRO : (valor.servicioId || '')
@@ -55,9 +55,12 @@ export function servicioParaGuardar(valor) {
   return { servicio_id: catalogo, servicio: valor.servicio?.trim() || null, precio: Number(valor.precio) || 0 }
 }
 
-export const servicioInicial = (tipo, servicios, cita) => {
+// Hospital: services of the appointment's specialty plus the general ones (departamento_id null). Without a specialty (clinics): all of the type.
+const serviciosDe = (servicios, tipo, departamentoId) => servicios.filter(s => s.activo && s.categoria === tipo && (!departamentoId || !s.departamento_id || s.departamento_id === departamentoId))
+
+export const servicioInicial = (tipo, servicios, cita, departamentoId) => {
   if (cita) return { servicioId: cita.servicio_id || (cita.servicio ? OTRO : ''), servicio: cita.servicio || '', precio: '' }
-  const ops = servicios.filter(s => s.activo && s.categoria === tipo)
+  const ops = serviciosDe(servicios, tipo, departamentoId)
   // a single fixed rate for the type (e.g. "Primera consulta Q300") is picked automatically
   return ops.length === 1 ? { servicioId: ops[0].id, servicio: ops[0].nombre, precio: String(ops[0].precio) } : { servicioId: '', servicio: '', precio: '' }
 }

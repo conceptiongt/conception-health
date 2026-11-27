@@ -17,6 +17,7 @@ import { filtroStyle } from '../components/ui/Campos'
 import { Desplegable } from '../components/ui/Desplegable'
 import { sincronizarCita } from '../lib/google'
 import { MeetCita } from '../components/EnlaceMeet'
+import { colorProfesional } from '../hooks/useHospital'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -27,13 +28,16 @@ const PLURAL_ESTADO = { Pendiente: 'Pendientes', Confirmada: 'Confirmadas', 'Asi
 
 export function Citas() {
   const [inicial] = useState(() => { const f = filtroPendiente; filtroPendiente = null; return f || {} })
-  const { citas, pacientes, clinica, perfil, recargar, ir, sedes } = useDatos()
+  const { citas, pacientes, clinica, perfil, recargar, ir, sedes, hospital } = useDatos()
+  const hosp = hospital.disponible // hospital: Especialidad and Médico columns and filters
   const [buscar, setBuscar] = useState('')
   const [periodo, setPeriodo] = useState(inicial.periodo || { mes: '', anio: '', desde: '', hasta: '' })
   const [sede, setSede] = useState(inicial.sede || '')
   const [estado, setEstado] = useState(inicial.eliminadas ? ELIMINADAS : inicial.estado || '')
   const [tipo, setTipo] = useState('')
   const [origen, setOrigen] = useState('')
+  const [dep, setDep] = useState(inicial.departamento || '')
+  const [med, setMed] = useState(inicial.profesional || '')
   const [editando, setEditando] = useState(null)
   const [abierta, setAbierta] = useState(null) // appointment whose row is open
   const porId = Object.fromEntries(pacientes.map(p => [p.id, p]))
@@ -48,6 +52,8 @@ export function Citas() {
     if (sede && c.sede_id !== sede) return false
     if (tipo && c.tipo !== tipo) return false
     if (origen && p.origen !== origen) return false
+    if (hosp && dep && c.departamento_id !== dep) return false
+    if (hosp && med && c.profesional_id !== med) return false
     return true
   })
   // deleted appointments (who deleted each one and why), with the same month / location / type / search filters
@@ -72,7 +78,7 @@ export function Citas() {
   }
 
   const conPeriodo = periodo.mes !== '' || periodo.anio !== '' || periodo.desde || periodo.hasta
-  const filtroTexto = [conPeriodo && textoPeriodo(periodo), sede && nombreSede(sedes, sede), verEliminadas ? 'Eliminadas' : estado, tipo, origen && origenLabel(origen), q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
+  const filtroTexto = [conPeriodo && textoPeriodo(periodo), sede && nombreSede(sedes, sede), verEliminadas ? 'Eliminadas' : estado, tipo, origen && origenLabel(origen), hosp && dep && hospital.departamento(dep)?.nombre, hosp && med && hospital.profesional(med)?.nombre, q && `"${buscar}"`].filter(Boolean).join(' · ') || 'Todas las citas'
   const deSede = (id) => citas.filter(c => (!id || c.sede_id === id) && enPeriodo(c.fecha, periodo)).length
 
   const cuandoEliminada = (t) => new Date(t).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -86,7 +92,7 @@ export function Citas() {
     ], filas: eliminadasVisibles.map(r => ({ f: r.fecha, p: r.paciente_nombre, t: r.tipo, m: r.motivo, u: r.eliminado_por_nombre, e: cuandoEliminada(r.eliminado_at) })) }] },
   })
 
-  const preparar = () => verEliminadas ? prepararEliminadas() : prepararCitas({ visibles, porId, sedes, filtroTexto })
+  const preparar = () => verEliminadas ? prepararEliminadas() : prepararCitas({ visibles, porId, sedes, filtroTexto, hospital: hosp ? hospital : undefined })
 
   const sel = filtroStyle
 
@@ -108,6 +114,8 @@ export function Citas() {
         <SelectorPeriodo valor={periodo} onChange={setPeriodo} todosAnios desplegable />
         <Desplegable ariaLabel="Tipo" value={tipo} onChange={setTipo} options={[{ value: '', label: 'Todo tipo' }, ...TIPOS_CITA.map(t => ({ value: t, label: t }))]} />
         <Desplegable ariaLabel="Origen" value={origen} onChange={setOrigen} options={[{ value: '', label: 'Todo origen' }, ...ORIGENES]} />
+        {hosp && <Desplegable ariaLabel="Especialidad" value={dep} onChange={setDep} options={[{ value: '', label: 'Toda especialidad' }, ...hospital.departamentos.map(d => ({ value: d.id, label: d.nombre }))]} />}
+        {hosp && <Desplegable ariaLabel="Médico" value={med} onChange={setMed} options={[{ value: '', label: 'Todo médico' }, ...hospital.profesionales.filter(p => p.activo || p.id === med).map(p => ({ value: p.id, label: p.nombre, punto: colorProfesional(p, hospital.profesionales.indexOf(p)) }))]} />}
         <RangoFechas valor={periodo} onChange={setPeriodo} />
       </div>
 
@@ -126,7 +134,7 @@ export function Citas() {
             cuandoEliminada(r.eliminado_at),
           ] }))}
         />
-      ) : <ListaCitas citas={visibles} porId={porId} sedes={sedes} abierta={abierta} setAbierta={setAbierta} perfil={perfil}
+      ) : <ListaCitas citas={visibles} porId={porId} sedes={sedes} hospital={hosp ? hospital : null} abierta={abierta} setAbierta={setAbierta} perfil={perfil}
         onEstado={cambiarEstado} onEditar={setEditando} onExpediente={(p) => ir('expedientes', p.id)}
         mensaje={(p, c) => mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre)} />}
     </>
@@ -156,7 +164,7 @@ function BotonesEstado({ citas, valor, onChange, eliminadas }) {
 }
 
 // Appointments list: tapping a row opens it downwards with its details and actions (file, edit, WhatsApp, Calendar)
-function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado, onEditar, onExpediente, mensaje }) {
+function ListaCitas({ citas, porId, sedes, hospital, abierta, setAbierta, perfil, onEstado, onEditar, onExpediente, mensaje }) {
   const conSede = sedes.length > 0
   // the open panel always fits the visible width, even when the table scrolls sideways
   const caja = useRef(null)
@@ -166,7 +174,9 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
     medir(); window.addEventListener('resize', medir)
     return () => window.removeEventListener('resize', medir)
   }, [])
-  const columnas = ['Fecha', 'Hora', 'Paciente', 'Tipo', 'Estado', ...(conSede ? ['Sede'] : []), 'Origen', 'Agendó', '']
+  // hospital: Especialidad and Médico come in, and «Agendó» steps aside on narrow widths (it stays in the open row)
+  const verAgendo = !hospital || !ancho || ancho >= 1100
+  const columnas = ['Fecha', 'Hora', 'Paciente', 'Tipo', ...(hospital ? ['Especialidad', 'Médico'] : []), 'Estado', ...(conSede ? ['Sede'] : []), 'Origen', ...(verAgendo ? ['Agendó'] : []), '']
   const th = { padding: '14px 18px', textAlign: 'left', fontSize: 12, fontWeight: 500, color: C.g500, whiteSpace: 'nowrap', background: C.g50, borderBottom: `1px solid ${C.line}` }
   const td = { padding: '14px 18px', color: C.black, whiteSpace: 'nowrap', verticalAlign: 'middle' }
   const accion = { display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 160, border: `1px solid ${C.g200}`, background: '#fff', cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: C.g700, fontFamily: 'inherit' }
@@ -190,6 +200,8 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
                 <td style={td}>{fmtHora(c.hora)}</td>
                 <td style={{ ...td, fontWeight: 500 }}>{p.nombre}</td>
                 <td style={td}>{[c.tipo, c.servicio].filter(Boolean).join(' · ') || '—'}</td>
+                {hospital && <td style={td}>{hospital.departamento(c.departamento_id)?.nombre || <span style={{ color: C.g300 }}>—</span>}</td>}
+                {hospital && <td style={td}>{(() => { const m = hospital.profesional(c.profesional_id); return m ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 9, background: colorProfesional(m, hospital.profesionales.indexOf(m)), flexShrink: 0 }} />{m.nombre}</span> : <span style={{ color: C.g300 }}>—</span> })()}</td>}
                 <td style={td} onClick={ev => ev.stopPropagation()}>
                   <select value={c.estado} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
                     {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
@@ -197,7 +209,7 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
                 </td>
                 {conSede && <td style={td}>{nombreSede(sedes, c.sede_id) || <span style={{ color: C.g300 }}>—</span>}</td>}
                 <td style={td}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>
-                <td style={{ ...td, color: C.g600 }}>{agendo}</td>
+                {verAgendo && <td style={{ ...td, color: C.g600 }}>{agendo}</td>}
                 <td style={{ ...td, color: C.g400, width: 30 }}><span style={{ display: 'inline-flex', transform: abiertaEsta ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}><Icon name="abajo" size={16} /></span></td>
               </tr>,
               abiertaEsta && (
@@ -209,6 +221,8 @@ function ListaCitas({ citas, porId, sedes, abierta, setAbierta, perfil, onEstado
                         {dato('Teléfono', p.telefono)}
                         {dato('Fecha y hora', `${fmtFechaCorta(c.fecha)}${c.hora ? ` · ${fmtHora(c.hora)}` : ''}`)}
                         {dato('Tipo y servicio', [c.tipo, c.servicio].filter(Boolean).join(' · '))}
+                        {hospital && dato('Especialidad', hospital.departamento(c.departamento_id)?.nombre)}
+                        {hospital && dato('Médico', hospital.profesional(c.profesional_id)?.nombre)}
                         {conSede && dato('Sede', nombreSede(sedes, c.sede_id))}
                         {dato('Agendó', agendo)}
                         {dato('Registrada el', c.created_at && new Date(c.created_at).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }))}

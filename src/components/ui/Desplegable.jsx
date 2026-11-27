@@ -8,6 +8,9 @@ const MARGEN = 8   // minimum distance to the viewport edges
 const ALTO = 320   // tallest the list grows before it scrolls
 const sinTildes = (t) => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
+// Optional per-option extras: `punto` (a colour dot before the label) and `grupo` (a small heading shown above the row, set on the first row of a group)
+const Punto = ({ color }) => <span aria-hidden="true" style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 9, background: color, marginRight: 8, verticalAlign: 0 }} />
+
 // In-platform replacement for a filter <select>: pill button + list drawn by the app (not the operating system).
 // The list lives in <body> with fixed position, so tables never clip it and it opens above windows.
 export function Desplegable({ value, onChange, options, ariaLabel, disabled = false, style, placeholder }) {
@@ -120,7 +123,7 @@ export function Desplegable({ value, onChange, options, ariaLabel, disabled = fa
         {/* every label shares one cell, so the pill keeps the width of the longest one */}
         <span style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', flex: 1, minWidth: 0 }}>
           {options.map((o, i) => (
-            <span key={o.value} aria-hidden={i !== elegido || sinElegir} style={{ gridArea: '1 / 1', visibility: i === elegido && !sinElegir ? 'visible' : 'hidden', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
+            <span key={o.value} aria-hidden={i !== elegido || sinElegir} style={{ gridArea: '1 / 1', visibility: i === elegido && !sinElegir ? 'visible' : 'hidden', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.punto && <Punto color={o.punto} />}{o.label}</span>
           ))}
           {sinElegir && <span style={{ gridArea: '1 / 1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.g400 }}>{placeholder}</span>}
         </span>
@@ -143,7 +146,10 @@ export function Desplegable({ value, onChange, options, ariaLabel, disabled = fa
               onPointerMove={() => i !== activo && setActivo(i)} onMouseDown={e => e.preventDefault()} onClick={() => elegir(i)}
               style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: i === elegido && !sinElegir ? 600 : 400, color: i === elegido && !sinElegir ? 'var(--acento-fuerte)' : C.black, background: i === activo ? C.purpleMid : 'transparent' }}
             >
-              <span style={{ flex: 1, minWidth: 0 }}>{o.label}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {o.grupo && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.g400, marginBottom: 3 }}>{o.grupo}</span>}
+                {o.punto && <Punto color={o.punto} />}{o.label}
+              </span>
               <span style={{ display: 'inline-flex', width: 15, visibility: i === elegido && !sinElegir ? 'visible' : 'hidden' }}><Icon name="check" size={15} /></span>
             </li>
           ))}

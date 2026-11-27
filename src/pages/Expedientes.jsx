@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
-import { resumenDatos } from '../lib/especialidades'
+import { resumenDatosCita } from '../lib/especialidades'
+import { colorProfesional } from '../hooks/useHospital'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -360,7 +361,7 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
 
 // ─── Consultations: each one readable on its own, with its clinical file sections ───
 function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
-  const { sedes, clinica } = useDatos()
+  const { sedes, clinica, hospital } = useDatos()
   const [abiertas, setAbiertas] = useState(() => new Set(citas.slice(0, 1).map(c => c.id)))
   const alternar = (id) => setAbiertas(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   return (
@@ -370,7 +371,9 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
           {citas.map(c => {
             const e = estadoCita(c.estado)
             const secciones = clinico ? seccionesDe(c, clinica) : []
-            const dc = clinico ? resumenDatos(c.datos, clinica?.especialidad) : ''
+            const dc = clinico ? resumenDatosCita(c, clinica?.especialidad, hospital.departamentos) : ''
+            const depC = hospital.disponible ? hospital.departamento(c.departamento_id) : null // hospital: specialty and doctor of each consultation
+            const medC = hospital.disponible ? hospital.profesional(c.profesional_id) : null
             const abierta = abiertas.has(c.id)
             const contenido = secciones.length || dc || c.procedimiento || (clinico && c.notas)
             return (
@@ -383,6 +386,8 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
                   <div style={{ flex: 1, minWidth: 180, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 500, fontSize: 15 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span>
                     <Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                    {depC && <span style={{ fontSize: 12.5, color: C.g600 }}>{depC.nombre}</span>}
+                    {medC && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g600 }}><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 9, background: colorProfesional(medC, hospital.profesionales.indexOf(medC)) }} />{medC.nombre}</span>}
                     {secciones.length > 0 && <span style={{ fontSize: 12, color: C.g400 }}>{secciones.map(s => s.titulo).slice(0, 3).join(' · ')}{secciones.length > 3 ? '…' : ''}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={ev => ev.stopPropagation()}>

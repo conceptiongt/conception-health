@@ -19,6 +19,7 @@ import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
 import { DatosSeguridad } from '../components/DatosSeguridad'
+import { MiHospital } from '../components/MiHospital'
 import { SoporteAcceso } from '../components/SoporteAcceso'
 import { esSoporte } from '../lib/permisos'
 import { Interruptor } from '../components/MensajePaciente'
@@ -32,6 +33,7 @@ export function Configuracion() {
       <Encabezado titulo="Configuración" subtitulo="Marca, usuarios, ficha clínica, pagos, sedes y tarifas" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Marca />
+        <MiHospital />
         <DatosSeguridad />
         <SoporteAcceso />
         <Usuarios />

@@ -16,6 +16,7 @@ import { sedeCobro } from '../components/Pagos'
 import { abrirCitasCon } from './Citas'
 import { CalendarioInicio } from '../components/CalendarioInicio'
 import { colorProfesional } from '../hooks/useHospital'
+import { EN_CURSO, triageDe } from '../lib/emergencias'
 
 const hoy = new Date()
 const NO_CUENTAN = ['Cancelada', 'No asistió']
@@ -35,7 +36,7 @@ const Linea = ({ label, valor, sub, pct, onClick, children }) => (
 )
 
 export function Inicio() {
-  const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes, hospital } = useDatos()
+  const { pacientes: todosP, citas: todasC, cobros: todosCo, clinica, perfil, ir, sedes, hospital, emergencias } = useDatos()
   const [periodo, setPeriodo] = useState({ mes: hoy.getMonth(), anio: hoy.getFullYear() })
   const [sede, setSede] = useState('')
   const nombre = clinica?.nombre || perfil.nombre
@@ -106,6 +107,9 @@ export function Inicio() {
   const hosp = hospital.disponible
   const hoyPorDep = hosp ? hospital.departamentos.map(d => ({ d, n: citasHoy.filter(c => c.departamento_id === d.id).length })).filter(x => x.n > 0).sort((a, b) => b.n - a.n) : []
   const hoyPorMed = hosp ? hospital.profesionales.map(p => ({ p, n: citasHoy.filter(c => c.profesional_id === p.id).length })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 6) : []
+  // hospital: «Emergencias ahora» (open emergencies by status, with a link to the board)
+  const emOk = !!emergencias?.disponible && puede(perfil, 'emergencias')
+  const emAbiertas = emOk ? emergencias.abiertas : []
   const verHoy = (f) => { abrirCitasCon({ ...f, sede, periodo: { mes: '', anio: '', desde: hoyStr, hasta: hoyStr } }); ir('citas') }
 
   const esActual = periodo.mes === hoy.getMonth() && periodo.anio === hoy.getFullYear()
@@ -207,9 +211,30 @@ export function Inicio() {
         )}
       </div>
 
-      {hosp && (
+      {(hosp || emOk) && (
         <div className="in-fila4">
-          <Panel eyebrow="Hospital" titulo="Hoy por especialidad">
+          {emOk && (
+            <Panel eyebrow="Hospital" titulo="Emergencias ahora" derecha={<button type="button" className="in-fila-lista" onClick={() => ir('emergencias')} style={{ width: 'auto', fontWeight: 600, fontSize: 13.5, color: 'var(--acento-fuerte)' }}>Ver tablero <Icon name="flecha" size={14} /></button>}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+                <span style={{ fontFamily: SERIF, fontSize: 40, fontWeight: 400, lineHeight: 1, color: emAbiertas.length ? C.red : C.black }}>{emAbiertas.length}</span>
+                <span style={{ fontSize: 14, color: C.g500 }}>{emAbiertas.length === 1 ? 'paciente en curso' : 'pacientes en curso'}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
+                {EN_CURSO.map(e => {
+                  const lista = emAbiertas.filter(x => x.estado === e.value)
+                  const critico = lista.filter(x => x.triage <= 2).length
+                  return (
+                    <button type="button" key={e.value} onClick={() => ir('emergencias')} className="in-fila-lista">
+                      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 10, flexShrink: 0, background: e.color }} />
+                      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14, color: C.black, textAlign: 'left' }}>{e.label}{critico > 0 && <span style={{ fontWeight: 500, color: triageDe(1).texto, fontSize: 12.5 }}> · {critico} {critico === 1 ? 'crítico' : 'críticos'}</span>}</span>
+                      <span className="in-pildora">{lista.length}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </Panel>
+          )}
+          {hosp && <Panel eyebrow="Hospital" titulo="Hoy por especialidad">
             {hoyPorDep.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay citas hoy con especialidad</div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
                 {hoyPorDep.map(({ d, n }) => (
@@ -220,8 +245,8 @@ export function Inicio() {
                 ))}
               </div>
             )}
-          </Panel>
-          <Panel eyebrow="Hospital" titulo="Hoy por médico">
+          </Panel>}
+          {hosp && <Panel eyebrow="Hospital" titulo="Hoy por médico">
             {hoyPorMed.length === 0 ? <div style={{ fontSize: 13.5, color: C.g500 }}>No hay citas hoy con médico asignado</div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '-6px' }}>
                 {hoyPorMed.map(({ p, n }) => (
@@ -236,7 +261,7 @@ export function Inicio() {
                 ))}
               </div>
             )}
-          </Panel>
+          </Panel>}
         </div>
       )}
 

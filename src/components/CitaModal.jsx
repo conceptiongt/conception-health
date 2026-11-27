@@ -26,6 +26,8 @@ import { ServicioCampos, servicioInicial, servicioParaGuardar } from './Servicio
 import { SelectorFechaHora } from './SelectorFechaHora'
 import { useAgenda } from '../hooks/useAgenda'
 import { MeetCita } from './EnlaceMeet'
+import { FaltanDatos } from './EmergenciaBits'
+import { TIPO_EMERGENCIA } from '../lib/emergencias'
 
 // Create or edit a consultation on its own full screen: appointment data, the clinical file (one section per
 // part: diagnosis, prescription, plan, care…), what the patient sees in their portal and the WhatsApp message
@@ -47,7 +49,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   })
   const [serv, setServ] = useState(() => servicioInicial(cita?.tipo || 'Seguimiento', servicios, cita))
   // the appointment's specialty (hospital) drives its types, clinical fields and services; clinics keep the clinic's specialty
-  const claveEsp = hosp ? claveEspCita(clinica?.especialidad, { departamento_id: f.departamento_id }, hospital.departamentos) : clinica?.especialidad
+  // an emergency always uses the clinical content of the «emergencias» catalogue entry (its specialty may be missing or renamed)
+  const claveEsp = hosp ? (cita?.tipo === TIPO_EMERGENCIA ? 'emergencias' : claveEspCita(clinica?.especialidad, { departamento_id: f.departamento_id }, hospital.departamentos)) : clinica?.especialidad
   const esp = especialidad(claveEsp)
   const depId = hosp ? f.departamento_id || undefined : undefined
   const [busy, setBusy] = useState(false)
@@ -196,7 +199,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{ fontSize: 13, color: C.g500 }}>{cita ? 'Consulta' : 'Nueva cita'}</div>
-          <h1 style={{ fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.02em' }}>{paciente?.nombre}</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 500, margin: '2px 0 0', letterSpacing: '-0.02em' }}>{paciente?.nombre}{paciente?.sin_identificar && <FaltanDatos paciente={paciente} style={{ marginLeft: 12, fontSize: 13 }} />}</h1>
           <div style={{ fontSize: 13.5, color: C.g500, marginTop: 4 }}>{fmtFecha(f.fecha)}{f.hora ? ` · ${f.hora}` : ''}{f.tipo ? ` · ${f.tipo}` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

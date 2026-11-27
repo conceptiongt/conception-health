@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { MODO_DEMO } from './config'
+import { citasEmergencia } from './emergencias'
 
 // Google Calendar mirror (see supabase/functions/google-calendar). The refresh token never reaches the browser:
 // everything goes through the edge function; the status comes from the google_estado() RPC.
@@ -78,6 +79,7 @@ export async function eventosGoogle(desde, hasta) {
 // Fire-and-forget after every successful write of an appointment (or its deletion)
 export function sincronizarCita(citaId) {
   if (MODO_DEMO || !citaId) return
+  if (citasEmergencia.has(citaId)) return // emergencies (patient health data) are never mirrored to Google Calendar
   googleEstado().then(e => {
     if (!e?.conectada || !e.confirmada || e.estado === 'error') return
     return llamar('sync', { cita_id: citaId }).then(r => { if (r?.reconectar) cache = null })

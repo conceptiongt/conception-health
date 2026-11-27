@@ -14,7 +14,8 @@ import { VinculoStudio } from '../components/VinculoStudio'
 import { SelectorColor } from '../components/SelectorColor'
 import { SedeModal } from '../components/inventario/Formularios'
 import { TipoCuenta } from '../components/ui/TipoCuenta'
-import { especialidad } from '../lib/especialidades'
+import { especialidad, esHospital } from '../lib/especialidades'
+import { Desplegable } from '../components/ui/Desplegable'
 import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
@@ -172,7 +173,9 @@ function Sedes() {
 
 // ─── Price list: one compact searchable table ───
 function Tarifas({ servicios, clinicaId, onCambio }) {
-  const { clinica } = useDatos()
+  const { clinica, hospital } = useDatos()
+  const hosp = esHospital(clinica?.especialidad) && hospital.disponible // hospital accounts tie each service to a specialty (or leave it general)
+  const columnas = hosp ? 7 : 6
   const esp = especialidad(clinica?.especialidad)
   const faltan = esp.servicios.filter(([c, n]) => !servicios.some(s => s.categoria === c && s.nombre.toLowerCase() === n.toLowerCase())).length
   const sugeridos = async () => {
@@ -219,6 +222,12 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
     setEditando(null)
     onCambio()
   }
+  // hospital: link a service to one specialty, or «General» (null) to offer it under every specialty
+  const cambiarEspecialidad = async (s, departamentoId) => {
+    const { error } = await supabase.from('servicios').update({ departamento_id: departamentoId || null }).eq('id', s.id)
+    if (error) { toast.error('No se pudo guardar'); return }
+    onCambio()
+  }
   const eliminar = async (s) => {
     if (!await confirmar(`¿Eliminar "${s.nombre}" de sus tarifas? Las citas y cobros ya registrados no cambian.`)) return
     const { error } = await supabase.from('servicios').delete().eq('id', s.id)
@@ -239,7 +248,7 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
   let previa = null
 
   return (
-    <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos} style={{ whiteSpace: 'normal', textAlign: 'center' }}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
+    <Card title={`Tarifas (${servicios.length})`} right={clinica?.especialidad && !hosp && faltan > 0 && <Button size="sm" variant="ghost" icon="mas" onClick={sugeridos} style={{ whiteSpace: 'normal', textAlign: 'center' }}>Servicios sugeridos de {esp.label} ({faltan})</Button>}>
       <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 14, lineHeight: 1.5 }}>Al registrar una cita se llena el precio y se crea el cobro del paciente. En la columna <strong>Asistente</strong> elija qué precios pueden ver sus asistentes para cobrar; los demás solo los ve usted.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0,1fr) 140px auto', gap: 8, alignItems: 'end', marginBottom: 16 }} className="tarifa-nueva">
@@ -271,21 +280,22 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead><tr>
             <th style={{ ...th, width: 34, paddingRight: 0 }}><input type="checkbox" aria-label="Seleccionar todas" checked={todos} onChange={e => setMarcados(e.target.checked ? new Set(lista.map(x => x.id)) : new Set())} style={casilla} /></th>
-            <th style={th}>Servicio</th><th style={th}>Tipo</th><th style={{ ...th, textAlign: 'right' }}>Precio</th>
+            <th style={th}>Servicio</th><th style={th}>Tipo</th>{hosp && <th style={th}>Especialidad</th>}<th style={{ ...th, textAlign: 'right' }}>Precio</th>
             <th style={{ ...th, textAlign: 'center' }} title="El asistente ve este precio">Asistente</th><th style={{ ...th, width: 80 }} />
           </tr></thead>
           <tbody>
-            {lista.length === 0 && <tr><td colSpan={6} style={{ padding: 26, textAlign: 'center', color: C.g400 }}>{servicios.length ? 'Ninguna tarifa coincide' : 'Aún no hay tarifas'}</td></tr>}
+            {lista.length === 0 && <tr><td colSpan={columnas} style={{ padding: 26, textAlign: 'center', color: C.g400 }}>{servicios.length ? 'Ninguna tarifa coincide' : 'Aún no hay tarifas'}</td></tr>}
             {lista.map(s => {
               const grupo = !cat && !q && s.categoria !== previa
               previa = s.categoria
               return [
-                grupo && <tr key={'g' + s.categoria}><td colSpan={6} style={{ padding: '8px 14px 6px', fontSize: 12, color: C.purple, fontWeight: 500, background: '#fff', borderTop: `1px solid ${C.g100}` }}>{s.categoria}</td></tr>,
+                grupo && <tr key={'g' + s.categoria}><td colSpan={columnas} style={{ padding: '8px 14px 6px', fontSize: 12, color: C.purple, fontWeight: 500, background: '#fff', borderTop: `1px solid ${C.g100}` }}>{s.categoria}</td></tr>,
                 editando?.id === s.id ? (
                   <tr key={s.id}>
                     <td style={td} />
                     <td style={td}><Input value={editando.nombre} onChange={v => setEditando(p => ({ ...p, nombre: v }))} /></td>
                     <td style={td}><Select value={editando.categoria} onChange={v => setEditando(p => ({ ...p, categoria: v }))}>{TIPOS_CITA.map(t => <option key={t}>{t}</option>)}</Select></td>
+                    {hosp && <td style={td} />}
                     <td style={td}><Input type="number" min="0" step="0.01" value={editando.precio} onChange={v => setEditando(p => ({ ...p, precio: v }))} /></td>
                     <td style={td} />
                     <td style={{ ...td, whiteSpace: 'nowrap' }}><Button size="sm" onClick={guardar}>Guardar</Button> <Button size="sm" variant="texto" onClick={() => setEditando(null)}>Cancelar</Button></td>
@@ -295,6 +305,12 @@ function Tarifas({ servicios, clinicaId, onCambio }) {
                     <td style={{ ...td, paddingRight: 0 }}><input type="checkbox" aria-label={`Seleccionar ${s.nombre}`} checked={marcados.has(s.id)} onChange={e => marcar(s.id, e.target.checked)} style={casilla} /></td>
                     <td style={td}>{s.nombre}</td>
                     <td style={{ ...td, color: C.g500 }}>{s.categoria}</td>
+                    {hosp && (
+                      <td style={{ ...td, minWidth: 170 }}>
+                        <Desplegable ariaLabel={`Especialidad de ${s.nombre}`} value={s.departamento_id || ''} onChange={v => cambiarEspecialidad(s, v)} style={{ width: '100%', justifyContent: 'space-between', padding: '6px 12px', fontSize: 13 }}
+                          options={[{ value: '', label: 'General' }, ...hospital.departamentos.filter(d => d.activo || d.id === s.departamento_id).map(d => ({ value: d.id, label: d.nombre + (d.activo ? '' : ' (inactiva)') }))]} />
+                      </td>
+                    )}
                     <td style={{ ...td, textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap' }}>{fmtQ(s.precio)}</td>
                     <td style={{ ...td, textAlign: 'center' }} title={s.visible_asistente ? 'El asistente ve este precio' : 'Solo usted ve este precio'}>
                       <span style={{ display: 'inline-flex' }}><Interruptor activo={!!s.visible_asistente} onChange={v => cambiarVisible([s.id], v)} /></span>

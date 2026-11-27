@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C, SERIF } from '../lib/theme'
 import { ESTADOS_CITA, ORIGENES, REDES, estadoCita } from '../lib/constantes'
 import { tiposDe, claveEspCita } from '../lib/especialidades'
-import { CamposHospital } from '../components/HospitalCita'
+import { CamposHospital, hayEspecialidades } from '../components/HospitalCita'
 import { colorProfesional } from '../hooks/useHospital'
 import { puede, verPrecio } from '../lib/permisos'
 import { urlRegistro, codigoRegistro } from '../lib/ficha'
@@ -56,10 +56,10 @@ export function Registrar() {
     e.preventDefault()
     if (!f.nombre.trim() || !f.fecha || !f.origen) { toast.error('Complete nombre, fecha y cómo nos encontró'); return }
     if (conSedes && !f.sede) { toast.error('Elija la sede de la cita'); return }
-    if (hosp && !f.departamento_id) { toast.error('Elija la especialidad de la cita'); return }
+    if (hosp && hayEspecialidades(hospital) && !f.departamento_id) { toast.error('Elija la especialidad de la cita'); return }
     if (f.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { toast.error('Revise el correo electrónico'); return }
     const sede = conSedes ? { sede_id: f.sede } : {}
-    const hospitalCita = hosp ? { departamento_id: f.departamento_id, profesional_id: f.profesional_id || null } : {}
+    const hospitalCita = hosp ? { departamento_id: f.departamento_id || null, profesional_id: f.profesional_id || null } : {}
     const s = servicioParaGuardar(serv)
     setBusy(true)
     const { data: paciente, error } = await supabase.from('pacientes').insert({

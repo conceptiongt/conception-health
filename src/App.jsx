@@ -169,7 +169,7 @@ function Aplicacion({ sesion }) {
   const sinConfirmar = esAdmin(perfil) && planActivo && !promoActiva && !clinica?.cancelada_at && !!clinica?.plan_hasta && diasRestantes(clinica.plan_hasta) <= 3
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan) || 'activo'}` : 'Versión de prueba')
+  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan, clinica) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre

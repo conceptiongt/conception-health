@@ -3,6 +3,7 @@ import { C } from '../lib/theme'
 import { useDatos } from '../hooks/useDatos'
 import { atiendeCitas, colorProfesional } from '../hooks/useHospital'
 import { citasQueChocan } from '../lib/calendario'
+import { puede } from '../lib/permisos'
 import { Campo } from './ui/Campos'
 import { Desplegable } from './ui/Desplegable'
 import { Icon } from './ui/Icon'
@@ -25,12 +26,16 @@ export function opcionesMedico({ profesionales, departamentos, departamentoId, a
   ]
 }
 
+// A hospital asks for a specialty on a new appointment only when it has at least one active specialty
+export const hayEspecialidades = (hospital) => !!hospital?.departamentos?.some(d => d.activo)
+
 // Specialty + doctor of an appointment in a hospital, right after the date / time (Registrar and CitaModal).
 // valor = { departamento_id, profesional_id } · onChange(patch) merges into the form.
 // Shows a live (non-blocking) warning when the chosen doctor already has an appointment at that date / time.
 export function CamposHospital({ valor, onChange, fecha, hora, citas = [], citaId, duracion }) {
-  const { hospital } = useDatos()
+  const { hospital, perfil } = useDatos()
   const { departamentos, profesionales } = hospital
+  const conEspecialidades = hayEspecialidades(hospital)
   const depId = valor.departamento_id || ''
   const profId = valor.profesional_id || ''
   const opcionesDep = useMemo(
@@ -49,15 +54,20 @@ export function CamposHospital({ valor, onChange, fecha, hora, citas = [], citaI
   if (!hospital.disponible) return null
   const elegirMedico = (id) => {
     const p = profesionales.find(x => x.id === id)
-    // a doctor with a specialty preselects it
-    onChange({ profesional_id: id, ...(p?.departamento_id ? { departamento_id: p.departamento_id } : {}) })
+    const dep = departamentos.find(d => d.id === p?.departamento_id)
+    // a doctor's specialty is preselected only when none is chosen yet (a chosen one is never overwritten) and only if it is active
+    onChange({ profesional_id: id, ...(!depId && dep?.activo ? { departamento_id: dep.id } : {}) })
   }
   const caja = { width: '100%', justifyContent: 'space-between', padding: '11px 14px' }
   return (
     <>
-      <Campo label="Especialidad *" ayuda={departamentos.length === 0 ? 'Aún no hay especialidades: créelas en Configuración → Mi hospital' : undefined}>
-        <Desplegable ariaLabel="Especialidad" value={depId} onChange={(v) => onChange({ departamento_id: v })} options={opcionesDep} placeholder="Elija la especialidad" style={caja} />
-      </Campo>
+      {conEspecialidades || depId ? (
+        <Campo label={conEspecialidades ? 'Especialidad *' : 'Especialidad'}>
+          <Desplegable ariaLabel="Especialidad" value={depId} onChange={(v) => onChange({ departamento_id: v })} options={opcionesDep} placeholder="Elija la especialidad" style={caja} />
+        </Campo>
+      ) : puede(perfil, 'configuracion') && (
+        <div style={{ gridColumn: '1 / -1', fontSize: 13, color: C.g500, lineHeight: 1.5 }}>Cargue las especialidades en Configuración → Mi hospital.</div>
+      )}
       <Campo label="Médico">
         <Desplegable ariaLabel="Médico" value={profId} onChange={elegirMedico} options={opcionesProf} style={caja} />
       </Campo>

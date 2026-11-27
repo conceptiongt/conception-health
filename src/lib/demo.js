@@ -181,10 +181,12 @@ function from(t) {
         for (const r of quitar) { const err = aplicar(r, -r.delta); if (err) { DB.existencias = JSON.parse(copia); return { error: err } } }
       }
       if (t === 'pacientes') quitar.forEach(p => ['citas', 'cobros', 'archivos'].forEach(k => { DB[k] = DB[k].filter(x => x.paciente_id !== p.id) }))
-      // same effect as the foreign keys of the hospital tables (on delete set null / cascade)
+      // same effect as the foreign keys of the hospital tables: citas.departamento_id / profesional_id are NO ACTION (23503 when referenced),
+      // servicios.departamento_id and profesionales.departamento_id are SET NULL
       const ids = new Set(quitar.map(r => r.id))
-      if (t === 'departamentos') { DB.citas.forEach(c => { if (ids.has(c.departamento_id)) c.departamento_id = null }); DB.servicios.forEach(s => { if (ids.has(s.departamento_id)) s.departamento_id = null }); DB.profesionales.forEach(p => { if (ids.has(p.departamento_id)) p.departamento_id = null }) }
-      if (t === 'profesionales') DB.citas.forEach(c => { if (ids.has(c.profesional_id)) c.profesional_id = null })
+      const enUso = (t === 'departamentos' && DB.citas.some(c => ids.has(c.departamento_id))) || (t === 'profesionales' && DB.citas.some(c => ids.has(c.profesional_id)))
+      if (enUso) return { data: null, error: { code: '23503', message: `update or delete on table "${t}" violates foreign key constraint on table "citas"` } }
+      if (t === 'departamentos') { DB.servicios.forEach(s => { if (ids.has(s.departamento_id)) s.departamento_id = null }); DB.profesionales.forEach(p => { if (ids.has(p.departamento_id)) p.departamento_id = null }) }
       if (t === 'areas') DB.recursos = DB.recursos.filter(r => !ids.has(r.area_id))
       DB[t] = filas.filter(r => !coincide(r))
       if (t === 'abonos' || t === 'cobros') { DB.abonos = DB.abonos.filter(a => DB.cobros.some(c => c.id === a.cobro_id)); recalcular() }

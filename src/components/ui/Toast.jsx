@@ -5,7 +5,8 @@ import { Icon } from './Icon'
 let push = () => {}
 export const toast = {
   success: (m) => push({ m, tipo: 'ok' }),
-  error: (m) => push({ m, tipo: 'error' }),
+  // `accion` = { texto, onClick }: a button inside the toast (e.g. «Reintentar»); the toast then stays longer
+  error: (m, accion) => push({ m, tipo: 'error', accion }),
 }
 
 export function ToastContainer() {
@@ -14,7 +15,7 @@ export function ToastContainer() {
     push = (t) => {
       const id = Math.random()
       setItems(p => [...p, { ...t, id }])
-      setTimeout(() => setItems(p => p.filter(x => x.id !== id)), 3500)
+      setTimeout(() => setItems(p => p.filter(x => x.id !== id)), t.accion ? 9000 : 3500)
     }
   }, [])
   return (
@@ -30,7 +31,11 @@ export function ToastContainer() {
             <span style={{ width: 26, height: 26, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: error ? C.redLight : C.greenLight, color: col }}>
               <Icon name={error ? 'alerta' : 'check'} size={14} />
             </span>
-            <span style={{ minWidth: 0, lineHeight: 1.4 }}>{t.m}</span>
+            <span style={{ minWidth: 0, lineHeight: 1.4, flex: 1 }}>{t.m}</span>
+            {t.accion && (
+              <button type="button" onClick={() => { setItems(p => p.filter(x => x.id !== t.id)); t.accion.onClick() }}
+                style={{ flexShrink: 0, border: 'none', background: 'none', color: C.purple, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' }}>{t.accion.texto}</button>
+            )}
           </div>
         )
       })}

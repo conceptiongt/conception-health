@@ -2,9 +2,9 @@ import { useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { CATALOGO_HOSPITAL, CLAVES_BASE_HOSPITAL, especialidadDe, esHospital } from '../lib/especialidades'
-import { cargarSugeridosDepartamentos } from '../lib/sugeridos'
+import { cargarSugeridosDepartamentos, sugeridosFaltantes } from '../lib/sugeridos'
 import { PALETA } from '../lib/calendario'
-import { puede } from '../lib/permisos'
+import { puede, esSoporte } from '../lib/permisos'
 import { useDatos } from '../hooks/useDatos'
 import { FUNCIONES, TIPOS_PROFESIONAL, TIPOS_AREA, TIPOS_RECURSO, colorProfesional, COLOR_MEDICO_DEFECTO } from '../hooks/useHospital'
 import { Card, Badge } from './ui/Varios'
@@ -63,8 +63,9 @@ const falla = (error, repetido, porDefecto = 'No se pudo guardar') => (error?.co
 
 // ─── 1. Especialidades ───
 function Especialidades() {
-  const { clinica, citas, servicios, hospital, recargar } = useDatos()
+  const { clinica, perfil, citas, servicios, hospital, recargar } = useDatos()
   const { departamentos, profesionales } = hospital
+  const lectura = esSoporte(perfil) // support sessions only read this card (the database enforces it too)
   const [modal, setModal] = useState(null) // 'catalogo' | 'nueva' | { editar: departamento }
   const [busy, setBusy] = useState(false)
 
@@ -76,10 +77,21 @@ function Especialidades() {
     const { data, error } = await supabase.from('departamentos').insert(filas.map(f => ({ clinica_id: clinica.id, es_emergencia: false, activo: true, ...f }))).select()
     if (error) { toast.error(falla(error, 'Ya existe una especialidad con ese nombre')); return false }
     const r = await cargarSugeridosDepartamentos(clinica, data || [], servicios)
-    if (r.error) toast.error('Se agregaron las especialidades, pero no sus servicios sugeridos')
+    if (r.error) toast.error('Se agregaron las especialidades, pero no sus servicios sugeridos', { texto: 'Reintentar', onClick: () => cargarServicios(data || []) })
     await Promise.all([hospital.recargar(), recargar()])
     return true
   }
+  // (re)loads the suggested services of the given specialties; reads the current services first so a retry never duplicates
+  const cargarServicios = async (deps = departamentos) => {
+    setBusy(true)
+    const { data: actuales } = await supabase.from('servicios').select('id, categoria, nombre, departamento_id').eq('clinica_id', clinica.id)
+    const r = await cargarSugeridosDepartamentos(clinica, deps.filter(d => d.activo), actuales || [])
+    setBusy(false)
+    if (r.error) { toast.error('No se pudieron cargar los servicios sugeridos', { texto: 'Reintentar', onClick: () => cargarServicios(deps) }); return }
+    toast.success(r.n ? `Se ${r.n === 1 ? 'agregó 1 servicio sugerido' : `agregaron ${r.n} servicios sugeridos`}. Escriba sus precios en Tarifas.` : 'Los servicios sugeridos ya estaban cargados')
+    await recargar()
+  }
+  const faltantes = sugeridosFaltantes(departamentos, servicios)
   const cargarBase = async () => {
     setBusy(true)
     const orden = departamentos.length
@@ -111,20 +123,21 @@ function Especialidades() {
     const nt = servicios.filter(s => s.departamento_id === d.id).length
     if (!await confirmar({ mensaje: `¿Eliminar la especialidad «${d.nombre}»?${nt ? `\n\nSus ${plural(nt, 'tarifa', 'tarifas')} pasarán a ser generales.` : ''}`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('departamentos').delete().eq('id', d.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene citas. Puede desactivarla.' : 'No se pudo eliminar'); return }
     toast.success('Especialidad eliminada')
     await Promise.all([hospital.recargar(), recargar()])
   }
 
   return (
-    <Card title={`Especialidades${departamentos.length ? ` (${departamentos.length})` : ''}`} right={departamentos.length > 0 && (
+    <Card title={`Especialidades${departamentos.length ? ` (${departamentos.length})` : ''}`} right={!lectura && departamentos.length > 0 && (
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {faltantes > 0 && <Button size="sm" variant="ghost" icon="mas" disabled={busy} onClick={() => cargarServicios()}>Cargar servicios sugeridos ({faltantes})</Button>}
         <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal('catalogo')}>Agregar del catálogo</Button>
         <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal('nueva')}>Crear especialidad nueva</Button>
       </div>
     )}>
       <Ayuda>Las especialidades de su hospital. Cada una trae sus propios tipos de atención y datos clínicos; al agendar se elige la especialidad y el médico.</Ayuda>
-      {departamentos.length === 0 ? (
+      {departamentos.length === 0 && lectura ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay especialidades.</div> : departamentos.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '22px 8px 8px' }}>
           <Button size="lg" icon="estetoscopio" onClick={cargarBase} disabled={busy}>{busy ? 'Cargando…' : 'Cargar las especialidades base'}</Button>
           <div style={{ fontSize: 13, color: C.g500, margin: '12px auto 18px', maxWidth: 520, lineHeight: 1.55 }}>
@@ -144,11 +157,13 @@ function Especialidades() {
                 {!d.clave && d.base && <div style={{ fontSize: 12.5, color: C.g400 }}>Usa la ficha de {especialidadDe(d.base).label}</div>}
               </div>
               <span style={{ fontSize: 13, color: C.g500, whiteSpace: 'nowrap' }}>{plural(medicosDe(d.id), 'médico', 'médicos')}</span>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.g600 }}>
-                <Interruptor activo={d.activo} onChange={(v) => alternar(d, v)} titulo={d.activo ? 'Activa: se ofrece al agendar' : 'Desactivada'} />Activa
-              </label>
-              <button type="button" style={botonIcono} className="btn-ghost" title="Cambiar nombre" aria-label={`Cambiar el nombre de ${d.nombre}`} onClick={() => setModal({ editar: d })}><Icon name="editar" size={15} /></button>
-              <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar" aria-label={`Eliminar ${d.nombre}`} onClick={() => eliminar(d)}><Icon name="eliminar" size={15} /></button>
+              {lectura ? <Badge color={d.activo ? C.green : C.g500} bg={d.activo ? C.greenLight : C.g100}>{d.activo ? 'Activa' : 'Desactivada'}</Badge> : <>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.g600 }}>
+                  <Interruptor activo={d.activo} onChange={(v) => alternar(d, v)} titulo={d.activo ? 'Activa: se ofrece al agendar' : 'Desactivada'} />Activa
+                </label>
+                <button type="button" style={botonIcono} className="btn-ghost" title="Cambiar nombre" aria-label={`Cambiar el nombre de ${d.nombre}`} onClick={() => setModal({ editar: d })}><Icon name="editar" size={15} /></button>
+                <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar" aria-label={`Eliminar ${d.nombre}`} onClick={() => eliminar(d)}><Icon name="eliminar" size={15} /></button>
+              </>}
             </div>
           ))}
         </div>
@@ -251,8 +266,9 @@ function EditarEspecialidadModal({ d, onClose, onGuardado }) {
 
 // ─── 2. Médicos y personal ───
 function Personal() {
-  const { citas, hospital } = useDatos()
+  const { citas, hospital, perfil } = useDatos()
   const { profesionales, departamentos } = hospital
+  const lectura = esSoporte(perfil)
   const [modal, setModal] = useState(undefined) // undefined closed · null new · profesional edit
   const nombreFuncion = (v) => FUNCIONES.find(f => f.value === v)?.label || v
 
@@ -275,15 +291,15 @@ function Personal() {
     }
     if (!await confirmar({ mensaje: `¿Eliminar a ${p.nombre} de su lista de médicos y personal?`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('profesionales').delete().eq('id', p.id)
-    if (error) { toast.error('No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene citas. Puede desactivarlo.' : 'No se pudo eliminar'); return }
     toast.success('Eliminado')
     hospital.recargar()
   }
 
   return (
-    <Card title={`Médicos y personal${profesionales.length ? ` (${profesionales.length})` : ''}`} right={<Button size="sm" variant="ghost" icon="mas" onClick={() => setModal(null)}>Agregar</Button>}>
+    <Card title={`Médicos y personal${profesionales.length ? ` (${profesionales.length})` : ''}`} right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal(null)}>Agregar</Button>}>
       <Ayuda>Médicos y personal «de planta» o «externo», cada uno con su especialidad. El color identifica al médico en el calendario.</Ayuda>
-      {profesionales.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay médicos ni personal. Agregue el primero con «Agregar».</div> : (
+      {profesionales.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay médicos ni personal.{!lectura && ' Agregue el primero con «Agregar».'}</div> : (
         <div>
           {profesionales.map((p, i) => (
             <div key={p.id} style={{ ...filaEstilo, borderTop: i ? filaEstilo.borderTop : 'none', opacity: p.activo ? 1 : 0.65 }}>
@@ -296,11 +312,13 @@ function Personal() {
                   {[nombreFuncion(p.funcion), hospital.departamento(p.departamento_id)?.nombre || 'Sin especialidad', p.colegiado && `Col. ${p.colegiado}`, p.telefono].filter(Boolean).join(' · ')}
                 </div>
               </div>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.g600 }}>
-                <Interruptor activo={p.activo} onChange={(v) => alternar(p, v)} titulo={p.activo ? 'Activo' : 'Inactivo'} />Activo
-              </label>
-              <button type="button" style={botonIcono} className="btn-ghost" title="Editar" aria-label={`Editar a ${p.nombre}`} onClick={() => setModal(p)}><Icon name="editar" size={15} /></button>
-              <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar" aria-label={`Eliminar a ${p.nombre}`} onClick={() => eliminar(p)}><Icon name="eliminar" size={15} /></button>
+              {lectura ? <Badge color={p.activo ? C.green : C.g500} bg={p.activo ? C.greenLight : C.g100}>{p.activo ? 'Activo' : 'Inactivo'}</Badge> : <>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.g600 }}>
+                  <Interruptor activo={p.activo} onChange={(v) => alternar(p, v)} titulo={p.activo ? 'Activo' : 'Inactivo'} />Activo
+                </label>
+                <button type="button" style={botonIcono} className="btn-ghost" title="Editar" aria-label={`Editar a ${p.nombre}`} onClick={() => setModal(p)}><Icon name="editar" size={15} /></button>
+                <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar" aria-label={`Eliminar a ${p.nombre}`} onClick={() => eliminar(p)}><Icon name="eliminar" size={15} /></button>
+              </>}
             </div>
           ))}
         </div>
@@ -378,8 +396,9 @@ function nombresNuevos(tipo, cuantos, existentes) {
 }
 
 function Areas() {
-  const { hospital, sedes } = useDatos()
+  const { hospital, sedes, perfil } = useDatos()
   const { areas, recursos } = hospital
+  const lectura = esSoporte(perfil)
   const [modal, setModal] = useState(null) // { area: null | área } · { recursos: área } · { recurso }
   const recursosDe = (id) => recursos.filter(r => r.area_id === id)
 
@@ -398,9 +417,9 @@ function Areas() {
   }
 
   return (
-    <Card title="Áreas, quirófanos y camas" right={<Button size="sm" variant="ghost" icon="mas" onClick={() => setModal({ area: null })}>Agregar área</Button>}>
+    <Card title="Áreas, quirófanos y camas" right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal({ area: null })}>Agregar área</Button>}>
       <Ayuda>Arme su hospital por áreas y agregue sus quirófanos, camas y consultorios, tantos como tenga.</Ayuda>
-      {areas.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay áreas. Ej. «Quirófanos», «Encamamiento» o «Emergencia».</div> : (
+      {areas.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay áreas.{!lectura && ' Ej. «Quirófanos», «Encamamiento» o «Emergencia».'}</div> : (
         <>
           <div style={{ fontSize: 13.5, fontWeight: 600, color: C.g700, marginBottom: 14 }}>
             {totales.length ? totales.join(' · ') : 'Sin quirófanos ni camas todavía'}{fuera > 0 && <span style={{ color: C.amber, fontWeight: 500 }}> · {plural(fuera, 'fuera de servicio', 'fuera de servicio')}</span>}
@@ -419,15 +438,17 @@ function Areas() {
                           <span style={{ marginLeft: 8, fontSize: 12.5, color: C.g400 }}>{lista.length ? lista.map(r => r.tipo).filter((x, i, l) => l.indexOf(x) === i).map(k => plural(lista.filter(r => r.tipo === k).length, TIPOS_RECURSO[k].uno, TIPOS_RECURSO[k].otros)).join(' · ') : 'vacía'}</span>
                           {a.sede_id && sedes.find(s => s.id === a.sede_id) && <span style={{ marginLeft: 8, fontSize: 12.5, color: C.g400 }}>· {sedes.find(s => s.id === a.sede_id).nombre}</span>}
                         </div>
-                        <Button size="sm" variant="soft" icon="mas" onClick={() => setModal({ recursos: a })}>Agregar {TIPOS_RECURSO[t.recurso].uno}</Button>
-                        <button type="button" style={botonIcono} className="btn-ghost" title="Editar el área" aria-label={`Editar el área ${a.nombre}`} onClick={() => setModal({ area: a })}><Icon name="editar" size={15} /></button>
-                        <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar el área" aria-label={`Eliminar el área ${a.nombre}`} onClick={() => eliminarArea(a)}><Icon name="eliminar" size={15} /></button>
+                        {!lectura && <>
+                          <Button size="sm" variant="soft" icon="mas" onClick={() => setModal({ recursos: a })}>Agregar {TIPOS_RECURSO[t.recurso].uno}</Button>
+                          <button type="button" style={botonIcono} className="btn-ghost" title="Editar el área" aria-label={`Editar el área ${a.nombre}`} onClick={() => setModal({ area: a })}><Icon name="editar" size={15} /></button>
+                          <button type="button" style={{ ...botonIcono, color: C.red }} className="btn-ghost" title="Eliminar el área" aria-label={`Eliminar el área ${a.nombre}`} onClick={() => eliminarArea(a)}><Icon name="eliminar" size={15} /></button>
+                        </>}
                       </div>
                       {lista.length > 0 && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {lista.map(r => (
-                            <button key={r.id} type="button" onClick={() => setModal({ recurso: r })} title={r.fuera_de_servicio ? 'Fuera de servicio' : 'Clic para editar'} style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 160, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+                            <button key={r.id} type="button" disabled={lectura} onClick={() => setModal({ recurso: r })} title={r.fuera_de_servicio ? 'Fuera de servicio' : lectura ? undefined : 'Clic para editar'} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 160, cursor: lectura ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
                               border: `1px solid ${r.fuera_de_servicio ? '#EBC98E' : C.g200}`, background: r.fuera_de_servicio ? C.amberLight : '#fff', color: r.fuera_de_servicio ? C.amber : C.g700,
                               textDecoration: r.fuera_de_servicio ? 'line-through' : 'none',
                             }}>{r.fuera_de_servicio && <Icon name="alerta" size={12} />}{r.nombre}</button>

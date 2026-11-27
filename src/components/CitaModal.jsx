@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita, MOTIVOS_ELIMINAR_CITA } from '../lib/constantes'
 import { especialidad, tiposDe, claveEspCita } from '../lib/especialidades'
-import { CamposHospital } from './HospitalCita'
+import { CamposHospital, hayEspecialidades } from './HospitalCita'
 import { seccionesActivas, limpiarHtml, tieneTexto } from '../lib/ficha'
 import { puede } from '../lib/permisos'
 import { hoyISO, fmtFecha, fmtFechaCorta, fmtQ, saldo } from '../lib/formato'
@@ -55,9 +55,11 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   const set = (k) => (v) => setF(p => ({ ...p, [k]: v }))
   const setFicha = (id) => (html) => setF(p => ({ ...p, ficha: { ...p.ficha, [id]: html } }))
   const cambiarTipo = (tipo) => { setF(p => ({ ...p, tipo })); setServ(servicioInicial(tipo, servicios, undefined, depId)) }
-  // specialty / doctor changed: the types and clinical fields follow the new specialty
+  // specialty / doctor changed: the types and clinical fields follow the new specialty.
+  // An EXISTING cita keeps its type and service (only a new cita's type defaults follow the specialty).
   const cambiarHospital = (patch) => {
     setF(p => ({ ...p, ...patch }))
+    if (cita) return
     if (!patch.departamento_id || patch.departamento_id === f.departamento_id) return
     const tipos = tiposDe(claveEspCita(clinica?.especialidad, { departamento_id: patch.departamento_id }, hospital.departamentos))
     const tipo = tipos.includes(f.tipo) ? f.tipo : tipos[0]
@@ -103,7 +105,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   const guardar = async () => {
     if (!f.fecha) { toast.error('La fecha es requerida'); return }
     // a hospital appointment carries its specialty (older ones without it can still be edited)
-    if (hosp && !f.departamento_id && (!cita || cita.departamento_id)) { toast.error('Elija la especialidad de la cita'); return }
+    if (hosp && hayEspecialidades(hospital) && !f.departamento_id && (!cita || cita.departamento_id)) { toast.error('Elija la especialidad de la cita'); return }
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,

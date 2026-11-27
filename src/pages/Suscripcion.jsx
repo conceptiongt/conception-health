@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { C, SERIF, SHADOW, GLASS } from '../lib/theme'
 import { esAdmin } from '../lib/permisos'
-import { PLANES, LIMITE_PRUEBA, COBRO_ACTIVO } from '../lib/constantes'
+import { planesDe, LIMITE_PRUEBA, COBRO_ACTIVO, USUARIOS_EXTRA_HOSPITAL } from '../lib/constantes'
 import { fmtFecha, fmtFechaLocal, diasRestantes } from '../lib/formato'
+import { esHospital } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Badge } from '../components/ui/Varios'
 import { Button } from '../components/ui/Button'
@@ -26,7 +27,7 @@ function estadoPlan(clinica, planActivo) {
 
 export function Suscripcion() {
   const { clinica, planActivo, pacientes, recargarSesion } = useDatos()
-  const planActual = PLANES.find(p => p.value === clinica?.plan)
+  const planActual = planesDe(clinica).find(p => p.value === clinica?.plan)
   const [confirmar, setConfirmar] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const { cancelada, suscrita, promoFuturo, promoActiva } = estadoPlan(clinica, planActivo)
@@ -48,7 +49,7 @@ export function Suscripcion() {
 
   return (
     <>
-      <Encabezado titulo="Suscripción" subtitulo="Elija el plan para su consultorio" />
+      <Encabezado titulo="Suscripción" subtitulo={esHospital(clinica?.especialidad) ? 'Elija el plan para su hospital' : 'Elija el plan para su consultorio'} />
 
       <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 24, padding: '20px 22px', boxShadow: SHADOW, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
@@ -152,9 +153,9 @@ export function Planes() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 16, marginTop: 16 }}>
-        {PLANES.map(p => {
+        {planesDe(clinica).map(p => {
           const actual = planActivo && !cancelada && !promoActiva && clinica?.plan === p.value
-          const destacado = p.value === 'ultra'
+          const destacado = p.destacado ?? p.value === 'ultra'
           return (
             <div key={p.value} style={{ borderRadius: 22, padding: 1.5, boxShadow: SHADOW, background: actual || destacado ? C.grad : C.line }}>
               <div style={{ background: '#fff', borderRadius: 21, padding: 26, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -162,7 +163,7 @@ export function Planes() {
                   <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.purple, letterSpacing: '0.16em' }}>PLAN {p.nombre.toUpperCase()}</div>
                   {actual ? <Badge color={C.purple} bg={C.purpleLight}>Su plan</Badge> : destacado && <Badge color={C.purple} bg={C.purpleLight}>Más completo</Badge>}
                 </div>
-                <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{{ basico: 'Conception Health', max: 'Conception Health + Inventario por sede', ultra: 'Max + Lía, su recepcionista virtual', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
+                <div style={{ fontSize: 13, color: C.g500, marginTop: 4 }}>{p.sub ?? { basico: 'Conception Health', max: 'Conception Health + Inventario por sede', ultra: 'Max + Lía, su recepcionista virtual', lia: 'Solo la recepcionista virtual' }[p.value]}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '10px 0 18px' }}>
                   {p.proximamente
                     ? <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.g400, lineHeight: '46px' }}>Próximamente</span>
@@ -170,14 +171,19 @@ export function Planes() {
                     ? <><span style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 600, color: C.black, letterSpacing: '-0.02em' }}>{p.precio.split(' / ')[0]}</span><span style={{ fontSize: 14, color: C.g500 }}>/ mes</span></>
                     : <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.g400, lineHeight: '46px' }}>Precio por anunciar</span>}
                 </div>
+                {p.usuarios && <div style={{ fontSize: 13, color: C.g600, margin: '-8px 0 16px', lineHeight: 1.45 }}><strong>{p.usuarios} usuarios incluidos.</strong> Usuario adicional: {USUARIOS_EXTRA_HOSPITAL} al mes.</div>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                  {p.incluye.map(i => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.g700 }}>
-                      <span style={{ width: 22, height: 22, borderRadius: 11, background: C.purpleMid, color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Icon name="check" size={13} stroke={2.4} />
-                      </span>{i}
-                    </div>
-                  ))}
+                  {p.incluye.map(i => {
+                    const texto = typeof i === 'string' ? i : i.texto
+                    return (
+                      <div key={texto} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.g700 }}>
+                        <span style={{ width: 22, height: 22, borderRadius: 11, background: C.purpleMid, color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Icon name="check" size={13} stroke={2.4} />
+                        </span>
+                        <span>{texto}{i.pronto && <span style={{ color: C.g400, fontSize: 12.5, marginLeft: 6 }}>(próximamente)</span>}</span>
+                      </div>
+                    )
+                  })}
                 </div>
                 <div style={{ marginTop: 24, minHeight: 40 }}>
                   {p.proximamente ? null : actual

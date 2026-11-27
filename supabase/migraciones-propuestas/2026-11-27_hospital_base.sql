@@ -23,12 +23,19 @@
 --     si los privilegios son de tabla completa. Revisar antes con la consulta de la sección «PRE-CHECKS».
 --   * El trigger solo se dispara cuando cambia profesional_id / departamento_id (UPDATE OF …), así que no frena ediciones normales de citas.
 --     Como es SECURITY DEFINER, ve las filas de otras clínicas; por eso compara contra clinica_id de la fila que se guarda.
---   * ON DELETE SET NULL: borrar un departamento o profesional deja las citas/servicios con la columna en null (no se borran citas). El front
---     bloquea el borrado cuando hay citas o médicos que lo usan y ofrece «Desactivar».
+--   * citas.profesional_id / citas.departamento_id NO llevan ON DELETE (NO ACTION): borrar un departamento o médico con citas históricas falla con
+--     23503 (así una llamada directa a la API tampoco puede dejar citas sin su especialidad). servicios.departamento_id y profesionales.departamento_id
+--     sí son SET NULL. Borrar una clínica entera con service_role sigue en cascada (clinicas -> departamentos/profesionales/citas). El front muestra
+--     «No se puede eliminar porque tiene citas. Puede desactivarla.»
+--   * Sesiones de soporte: SOLO LECTURA en las cuatro tablas nuevas (las políticas de escritura exigen not es_soporte()).
+--   * profesionales.user_id (vínculo con un login) NO está en esta etapa: llegará con la etapa que lo use.
 --   * Los índices únicos (clinica_id, lower(btrim(nombre))) rechazan nombres repetidos dentro de una clínica (el front ya filtra el catálogo).
 --   * Nada para anon: no se concede ningún privilegio a anon ni a public.
 --   * Orden de despliegue: aplicar este SQL ANTES del front. Si el front sale primero, «Mi hospital» muestra «Disponible pronto» y las citas se
 --     guardan como hoy (el front detecta que las tablas no existen y no manda las columnas nuevas).
+--
+-- HECHOS VERIFICADOS EN VIVO: `authenticated` tiene INSERT/UPDATE de TABLA COMPLETA en citas y servicios (los grants por columna de la sección 5 son
+--   redundantes pero inofensivos); servicios NO tiene índice único por nombre (varios servicios pueden llamarse igual).
 --
 -- PRE-CHECKS (correr ANTES, solo lectura; confirmar helpers y privilegios de citas / servicios)
 --   select proname, prosecdef from pg_proc where pronamespace = 'public'::regnamespace
@@ -71,6 +78,11 @@
 --   --  6. Clínicas que no son hospital: select count(*) from public.citas where profesional_id is not null or departamento_id is not null;  → 0,
 --   --     y registrar/editar una cita sin esas columnas funciona igual que antes.
 --   --  7. Anon: set local role anon; select * from public.departamentos;  → permission denied.
+--   --  9. Borrar un departamento / médico que tiene citas → ERROR 23503 (foreign_key_violation); borrar uno sin citas pasa; la clínica entera como
+--   --     service_role sigue borrándose en cascada.
+--   -- 10. Soporte (es_soporte() true, con permiso 'configuracion'): select en las 4 tablas funciona; insert/update/delete falla (RLS / 0 filas).
+--   -- 11. update public.citas set clinica_id = '<OTRA-CLINICA>' where id = '<CITA-CON-MEDICO>' → REFERENCIA_AJENA (recheck al cambiar clinica_id).
+--   -- 12. Ejercitar CADA rama del trigger (citas, servicios, profesionales, areas, recursos; INSERT y UPDATE) porque plpgsql no se valida al crear la función.
 --   --  8. Duplicados: insertar dos veces «Pediatría» (o «pediatría ») en la misma clínica → violación de departamentos_nombre_uq.
 --   rollback;
 --
@@ -117,7 +129,6 @@ create table public.profesionales (
   telefono text check (telefono is null or char_length(telefono) <= 30),
   color text check (color is null or color ~ '^#[0-9A-Fa-f]{6}$'),
   activo boolean not null default true,
-  user_id uuid unique references auth.users on delete set null,                        -- optional link to a login (later stages)
   created_at timestamptz default now()
 );
 create index profesionales_clinica_idx on public.profesionales (clinica_id);
@@ -151,8 +162,8 @@ create index recursos_clinica_idx on public.recursos (clinica_id);
 
 -- 4. columnas nuevas (nullable) en citas y servicios -----------------------------------------------------------------------------------
 alter table public.citas
-  add column profesional_id uuid references public.profesionales on delete set null,
-  add column departamento_id uuid references public.departamentos on delete set null;
+  add column profesional_id uuid references public.profesionales,          -- NO ACTION on purpose: a doctor with citas cannot be deleted (23503)
+  add column departamento_id uuid references public.departamentos;        -- NO ACTION on purpose: a department with citas cannot be deleted (23503)
 create index citas_profesional_fecha_idx on public.citas (clinica_id, profesional_id, fecha);
 create index citas_departamento_fecha_idx on public.citas (clinica_id, departamento_id, fecha);
 
@@ -176,26 +187,26 @@ declare
   ajena boolean := false;
 begin
   if tg_table_name = 'citas' then
-    if new.profesional_id is not null and (tg_op = 'INSERT' or new.profesional_id is distinct from old.profesional_id) then
+    if new.profesional_id is not null and (tg_op = 'INSERT' or new.profesional_id is distinct from old.profesional_id or new.clinica_id is distinct from old.clinica_id) then
       ajena := ajena or not exists (select 1 from public.profesionales x where x.id = new.profesional_id and x.clinica_id = new.clinica_id);
     end if;
-    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id) then
+    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id or new.clinica_id is distinct from old.clinica_id) then
       ajena := ajena or not exists (select 1 from public.departamentos x where x.id = new.departamento_id and x.clinica_id = new.clinica_id);
     end if;
   elsif tg_table_name = 'servicios' then
-    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id) then
+    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id or new.clinica_id is distinct from old.clinica_id) then
       ajena := not exists (select 1 from public.departamentos x where x.id = new.departamento_id and x.clinica_id = new.clinica_id);
     end if;
   elsif tg_table_name = 'profesionales' then
-    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id) then
+    if new.departamento_id is not null and (tg_op = 'INSERT' or new.departamento_id is distinct from old.departamento_id or new.clinica_id is distinct from old.clinica_id) then
       ajena := not exists (select 1 from public.departamentos x where x.id = new.departamento_id and x.clinica_id = new.clinica_id);
     end if;
   elsif tg_table_name = 'areas' then
-    if new.sede_id is not null and (tg_op = 'INSERT' or new.sede_id is distinct from old.sede_id) then
+    if new.sede_id is not null and (tg_op = 'INSERT' or new.sede_id is distinct from old.sede_id or new.clinica_id is distinct from old.clinica_id) then
       ajena := not exists (select 1 from public.sedes x where x.id = new.sede_id and x.clinica_id = new.clinica_id);
     end if;
   elsif tg_table_name = 'recursos' then
-    if tg_op = 'INSERT' or new.area_id is distinct from old.area_id then
+    if tg_op = 'INSERT' or new.area_id is distinct from old.area_id or new.clinica_id is distinct from old.clinica_id then
       ajena := not exists (select 1 from public.areas x where x.id = new.area_id and x.clinica_id = new.clinica_id);
     end if;
   end if;
@@ -227,9 +238,10 @@ begin
     execute format('alter table public.%I enable row level security', t);
 
     execute format('create policy %I on public.%I for select to authenticated using (clinica_id = (select public.mi_clinica()))', t || '_ver', t);
-    execute format('create policy %I on public.%I for insert to authenticated with check (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')))', t || '_crear', t);
-    execute format('create policy %I on public.%I for update to authenticated using (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion''))) with check (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')))', t || '_editar', t);
-    execute format('create policy %I on public.%I for delete to authenticated using (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')))', t || '_borrar', t);
+    -- support sessions are READ-ONLY on these tables (and not (select public.es_soporte()))
+    execute format('create policy %I on public.%I for insert to authenticated with check (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')) and not (select public.es_soporte()))', t || '_crear', t);
+    execute format('create policy %I on public.%I for update to authenticated using (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')) and not (select public.es_soporte())) with check (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')) and not (select public.es_soporte()))', t || '_editar', t);
+    execute format('create policy %I on public.%I for delete to authenticated using (clinica_id = (select public.mi_clinica()) and (select public.tiene_permiso(''configuracion'')) and not (select public.es_soporte()))', t || '_borrar', t);
 
     -- an expired account is read-only (same form as the other clinic data tables, see 2026-11-27_codigo_promo.sql)
     execute format('create policy %I on public.%I as restrictive for insert to authenticated with check (not (select public.clinica_vencida()))', t || '_no_vencida_ins', t);
@@ -237,7 +249,7 @@ begin
     execute format('create policy %I on public.%I as restrictive for delete to authenticated using (not (select public.clinica_vencida()))', t || '_no_vencida_del', t);
 
     -- table privileges: nothing for anon / public
-    execute format('revoke all on public.%I from public, anon', t);
+    execute format('revoke all on public.%I from public, anon, authenticated', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
     execute format('grant all on public.%I to service_role', t);
   end loop;

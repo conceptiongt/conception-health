@@ -13,7 +13,8 @@ import { toast } from '../components/ui/Toast'
 import { VinculoStudio } from '../components/VinculoStudio'
 import { SelectorColor } from '../components/SelectorColor'
 import { SedeModal } from '../components/inventario/Formularios'
-import { ESPECIALIDADES, especialidad } from '../lib/especialidades'
+import { TipoCuenta } from '../components/ui/TipoCuenta'
+import { especialidad } from '../lib/especialidades'
 import { cargarSugeridos } from '../lib/sugeridos'
 import { FichaClinica, PagosYRegistro, Usuarios } from '../components/ConfigExtra'
 import { EliminarCuenta } from '../components/EliminarCuenta'
@@ -108,9 +109,9 @@ function Marca() {
         <div>
           <Campo label="Nombre del consultorio o doctor"><Input value={nombre} onChange={setNombre} /></Campo>
           <div style={{ marginTop: 14 }}>
-            <Campo label="Especialidad" ayuda="Adapta los tipos de consulta, los datos clínicos de cada cita y sus tarifas sugeridas">
-              <Select value={esp} onChange={setEsp}><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
-            </Campo>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <TipoCuenta value={esp} onChange={setEsp} ayuda="Adapta los tipos de consulta, los datos clínicos de cada cita y sus tarifas sugeridas" />
+            </div>
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: C.g600, margin: '18px 0 8px' }}>Logotipo</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

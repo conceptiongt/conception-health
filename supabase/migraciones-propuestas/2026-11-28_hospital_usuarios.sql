@@ -140,6 +140,7 @@ begin
   end if;
   return new;
 end $$;
+revoke all on function public.hospital_clinica_codigo() from public, anon, authenticated;
 drop trigger if exists clinicas_codigo_acceso_proteger on public.clinicas;
 create trigger clinicas_codigo_acceso_proteger before insert or update on public.clinicas
   for each row execute function public.hospital_clinica_codigo();
@@ -217,6 +218,7 @@ begin
   end if;
   return new;
 end $$;
+revoke all on function public.hospital_perfil_campos() from public, anon, authenticated;
 drop trigger if exists perfil_campos_hospital on public.perfiles;
 create trigger perfil_campos_hospital before update on public.perfiles
   for each row execute function public.hospital_perfil_campos();

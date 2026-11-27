@@ -78,9 +78,11 @@ Deno.serve(async (req) => {
   if (!correo) return fallar()
 
   // a FRESH anonymous client (never the service client): the session that comes back belongs to the user
+  // the attempt is recorded as failed BEFORE trying, so parallel requests cannot get past the lockout; a success flips it to ok
+  const { data: intento } = await db.from('acceso_intentos').insert({ clinica_id: clinica.id, usuario, ip, ok: false }).select('id').single()
   const { data: sesion, error } = await nuevoCliente(ip).auth.signInWithPassword({ email: correo, password })
   const ok = !error && !!sesion?.session
-  await db.from('acceso_intentos').insert({ clinica_id: clinica.id, usuario, ip, ok })
   if (!ok) return fallar()
+  if (intento?.id) await db.from('acceso_intentos').update({ ok: true }).eq('id', intento.id)
   return json({ access_token: sesion!.session!.access_token, refresh_token: sesion!.session!.refresh_token })
 })

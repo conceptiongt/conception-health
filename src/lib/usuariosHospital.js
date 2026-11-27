@@ -136,15 +136,40 @@ export function textoAcceso({ hospital, codigoHospital, usuario, password }) {
   ].join('\n')
 }
 
+// ─── Linked doctors ───
+// A user can be linked to several doctors: permisos.profesional_ids (array of ids). The legacy single key permisos.profesional_id is still read
+// (rows saved before this change). Every place that needs the link goes through profesionalesDe().
+export function profesionalesDe(permisos) {
+  const ids = Array.isArray(permisos?.profesional_ids) ? permisos.profesional_ids.filter(x => typeof x === 'string' && x) : []
+  const viejo = typeof permisos?.profesional_id === 'string' && permisos.profesional_id ? [permisos.profesional_id] : []
+  return [...new Set([...ids, ...viejo])]
+}
+// Permissions ready to save: `ids` replaces any previous link. During the transition BOTH keys are sent: profesional_ids (all) and profesional_id (the first).
+// The new database/edge function folds the legacy key into the array and never stores it; the old ones ignore profesional_ids and store only the first doctor,
+// so saving works before and after the SQL is applied (the old version simply keeps one doctor).
+export function permisosConMedicos(permisos, ids) {
+  const { profesional_id, profesional_ids, ...resto } = permisos || {}
+  const lista = [...new Set(ids || [])]
+  return lista.length ? { ...resto, profesional_ids: lista, profesional_id: lista[0] } : resto
+}
+// «Vinculado a: Dr. X, Dra. Y» (or «N médicos» when there are many) for the users list; '' when nobody is linked
+export function textoVinculo(permisos, profesionales = []) {
+  const ids = profesionalesDe(permisos)
+  if (!ids.length) return ''
+  const nombres = ids.map(id => profesionales.find(m => m.id === id)?.nombre).filter(Boolean)
+  if (ids.length > 3 || nombres.length < ids.length) return ids.length === 1 && !nombres.length ? 'Vinculado a 1 médico' : `Vinculado a ${ids.length} médicos`
+  return `Vinculado a: ${nombres.join(', ')}`
+}
+
 // ─── «Ver los expedientes de todos los pacientes» (UI-only in this stage, NOT enforced by the database) ───
-// When a staff user has ver_todos_pacientes = false, the lists show only their linked doctor's patients and citas (permisos.profesional_id),
+// When a staff user has ver_todos_pacientes = false, the lists show only their linked doctors' patients and citas (profesionalesDe),
 // plus the patients they registered themselves. It limits what is shown on screen; a direct call to the API is not blocked by this.
 export function filtrarPorMedico(datos, perfil) {
   if (!datos || !esPersonal(perfil) || perfil.permisos?.ver_todos_pacientes !== false) return datos
-  const prof = perfil.permisos?.profesional_id || null
-  const citas = prof ? datos.citas.filter(c => c.profesional_id === prof) : []
-  const ids = new Set(citas.map(c => c.paciente_id))
+  const profs = new Set(profesionalesDe(perfil.permisos))
+  const citasMias = datos.citas.filter(c => c.profesional_id && profs.has(c.profesional_id))
+  const ids = new Set(citasMias.map(c => c.paciente_id))
   const pacientes = datos.pacientes.filter(p => ids.has(p.id) || p.created_by === perfil.user_id)
   const propios = new Set(pacientes.map(p => p.id))
-  return { ...datos, citas: datos.citas.filter(c => (prof && c.profesional_id === prof) || (propios.has(c.paciente_id) && !c.profesional_id)), pacientes }
+  return { ...datos, citas: datos.citas.filter(c => (c.profesional_id && profs.has(c.profesional_id)) || (propios.has(c.paciente_id) && !c.profesional_id)), pacientes }
 }

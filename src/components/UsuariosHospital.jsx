@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { esAdmin, puede } from '../lib/permisos'
@@ -6,7 +6,7 @@ import { fmtFecha } from '../lib/formato'
 import { usuariosIncluidosUI, precioUsuarioExtraUI } from '../lib/constantes'
 import {
   PUESTOS, CLAVE_TEMPORAL_HORAS, REGLA_CLAVE, claveValida, generarClave, sugerirUsuario, limpiarUsuario, errorUsuario, plantillaPermisos, clavesVisibles,
-  gruposVisibles, llamarUsuarios, actualizarPerfil, mensajeUsuarios, textoAcceso, limpiarCodigoHospital,
+  gruposVisibles, llamarUsuarios, actualizarPerfil, mensajeUsuarios, textoAcceso, limpiarCodigoHospital, profesionalesDe, permisosConMedicos, textoVinculo,
 } from '../lib/usuariosHospital'
 import { atiendeCitas } from '../hooks/useHospital'
 import { useDatos } from '../hooks/useDatos'
@@ -141,6 +141,7 @@ export function UsuariosHospital() {
             <div style={{ flex: 1, minWidth: 180 }}>
               <div style={{ fontWeight: 500 }}>{u.nombre}</div>
               <div style={{ fontSize: 12.5, color: C.g500 }}><span style={mono}>{u.usuario}</span>{u.puesto ? ` · ${u.puesto}` : ''}</div>
+              {textoVinculo(u.permisos, hospital?.profesionales) && <div style={{ fontSize: 12.5, color: C.g500, marginTop: 2 }}>{textoVinculo(u.permisos, hospital?.profesionales)}</div>}
             </div>
             {estado(u)}
           </div>
@@ -159,7 +160,8 @@ export function UsuariosHospital() {
         <div key={u.user_id} style={{ padding: '14px 0', borderBottom: `1px solid ${C.g100}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Icon name="usuarios" size={18} style={{ color: C.g500 }} />
-            <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 500 }}>{u.nombre}</div><div style={{ fontSize: 12.5, color: C.g500, overflowWrap: 'anywhere' }}>{u.email}</div></div>
+            <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 500 }}>{u.nombre}</div><div style={{ fontSize: 12.5, color: C.g500, overflowWrap: 'anywhere' }}>{u.email}</div>
+              {textoVinculo(u.permisos, hospital?.profesionales) && <div style={{ fontSize: 12.5, color: C.g500, marginTop: 2 }}>{textoVinculo(u.permisos, hospital?.profesionales)}</div>}</div>
             <Badge>Con correo</Badge>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
@@ -177,9 +179,9 @@ export function UsuariosHospital() {
         </div>
       ))}
 
-      {modal?.tipo === 'crear' && <UsuarioModal modo="crear" existentes={existentes} medicos={medicos} onClose={() => setModal(null)}
+      {modal?.tipo === 'crear' && <UsuarioModal modo="crear" existentes={existentes} medicos={medicos} todos={hospital?.profesionales || []} departamentos={hospital?.departamentos || []} onClose={() => setModal(null)}
         onListo={(d) => { setModal({ tipo: 'datos', titulo: 'Usuario creado', ...d }); cargar() }} />}
-      {modal?.tipo === 'editar' && <UsuarioModal modo="editar" u={modal.u} existentes={existentes} medicos={medicos} onClose={() => setModal(null)}
+      {modal?.tipo === 'editar' && <UsuarioModal modo="editar" u={modal.u} existentes={existentes} medicos={medicos} todos={hospital?.profesionales || []} departamentos={hospital?.departamentos || []} onClose={() => setModal(null)}
         onListo={() => { setModal(null); cargar() }} />}
       {modal?.tipo === 'clave' && <ClaveModal u={modal.u} onClose={() => setModal(null)}
         onListo={(d) => { setModal({ tipo: 'datos', titulo: 'Contraseña restablecida', ...d }); cargar() }} />}
@@ -204,8 +206,50 @@ function CampoClave({ value, onChange }) {
   )
 }
 
+const AYUDA_MEDICOS = 'Opcional. Vincule a este usuario con los médicos con los que trabaja. Sirve para dos cosas: 1) podrá confirmar la atención de las citas de esos médicos y registrar los insumos usados; 2) si apaga «Ver los expedientes de todos los pacientes», en pantalla solo verá los pacientes y las citas de esos médicos. Si no vincula a nadie, el usuario funciona igual con los permisos que usted le dé.'
+
+// Multi-select of doctors: checklist with «Seleccionar todos» / «Quitar todos», and a search box when the list is long.
+// `medicos` = active doctors; doctors already linked but no longer active (in `todos`) stay listed as «inactivo» so they can be removed.
+function SelectorMedicos({ medicos, todos, departamentos, value, onChange }) {
+  const [buscar, setBuscar] = useState('')
+  const lista = useMemo(() => {
+    const extra = value.filter(id => !medicos.some(m => m.id === id)).map(id => todos.find(m => m.id === id)).filter(Boolean)
+    return [...medicos, ...extra.map(m => ({ ...m, _inactivo: true }))]
+  }, [medicos, todos, value])
+  const dep = (m) => departamentos.find(d => d.id === m.departamento_id)?.nombre || ''
+  const q = buscar.trim().toLowerCase()
+  const visibles = q ? lista.filter(m => `${m.nombre} ${dep(m)}`.toLowerCase().includes(q)) : lista
+  const elegido = new Set(value)
+  const alternar = (id) => onChange(elegido.has(id) ? value.filter(x => x !== id) : [...value, id])
+  const todosElegidos = lista.length > 0 && lista.every(m => elegido.has(m.id))
+  return (
+    <div style={{ border: `1px solid ${C.g200}`, borderRadius: 12, background: 'rgba(255,255,255,0.9)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderBottom: lista.length ? `1px solid ${C.g100}` : 'none', background: C.g50 }}>
+        <span style={{ flex: 1, minWidth: 120, fontSize: 13, color: C.g600 }} aria-live="polite">{value.length === 0 ? 'Ninguno seleccionado' : `${value.length} de ${lista.length} seleccionados`}</span>
+        <Button size="sm" variant="ghost" disabled={!lista.length || todosElegidos} onClick={() => onChange([...new Set([...value, ...lista.map(m => m.id)])])}>Seleccionar todos</Button>
+        <Button size="sm" variant="ghost" disabled={!value.length} onClick={() => onChange([])}>Quitar todos</Button>
+      </div>
+      {lista.length === 0 && <div style={{ padding: '12px 14px', fontSize: 13.5, color: C.g400 }}>Aún no hay médicos activos. Agréguelos en Mi hospital.</div>}
+      {lista.length > 8 && (
+        <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.g100}` }}>
+          <Input value={buscar} onChange={setBuscar} placeholder="Buscar médico o especialidad" aria-label="Buscar médico" autoComplete="off" />
+        </div>
+      )}
+      <div role="group" aria-label="Médicos vinculados" style={{ maxHeight: 232, overflowY: 'auto' }}>
+        {visibles.map(m => (
+          <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', cursor: 'pointer', fontSize: 14, borderBottom: `1px solid ${C.g100}`, background: elegido.has(m.id) ? C.purpleMid : 'transparent' }}>
+            <input type="checkbox" checked={elegido.has(m.id)} onChange={() => alternar(m.id)} style={{ width: 17, height: 17, accentColor: 'var(--acento)', flexShrink: 0, margin: 0 }} />
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{m.nombre}{(dep(m) || m._inactivo) && <span style={{ color: C.g400, fontSize: 12.5 }}> · {[dep(m), m._inactivo ? 'inactivo' : ''].filter(Boolean).join(' · ')}</span>}</span>
+          </label>
+        ))}
+        {lista.length > 0 && visibles.length === 0 && <div style={{ padding: '12px 14px', fontSize: 13.5, color: C.g400 }}>Ningún médico coincide con «{buscar}».</div>}
+      </div>
+    </div>
+  )
+}
+
 // Create or edit a user: name, user name, position (pre-fills the permissions), temporary password (create only) and what they can do
-function UsuarioModal({ modo, u, existentes, medicos, onClose, onListo }) {
+function UsuarioModal({ modo, u, existentes, medicos, todos, departamentos, onClose, onListo }) {
   const crear = modo === 'crear'
   const personal = !!u?.usuario || crear // false: an e-mail assistant (only its permissions are editable)
   const claves = clavesVisibles()
@@ -216,7 +260,8 @@ function UsuarioModal({ modo, u, existentes, medicos, onClose, onListo }) {
   const [puestoOtro, setPuestoOtro] = useState(() => (u?.puesto && !PUESTOS.includes(u.puesto) ? u.puesto : ''))
   const [password, setPassword] = useState('')
   const [permisos, setPermisos] = useState(() => crear ? plantillaPermisos('') : Object.fromEntries(claves.map(k => [k, puede(u, k)])))
-  const [profesionalId, setProfesionalId] = useState(u?.permisos?.profesional_id || '')
+  // linked doctors (legacy single key included); ids of doctors that no longer exist are dropped, inactive ones stay until the person removes them
+  const [profesionalIds, setProfesionalIds] = useState(() => profesionalesDe(u?.permisos).filter(id => todos.some(m => m.id === id)))
   const [busy, setBusy] = useState(false)
   const errUsuario = crear && usuario ? errorUsuario(usuario, existentes) : ''
   const verTodos = !!permisos.ver_todos_pacientes
@@ -236,10 +281,10 @@ function UsuarioModal({ modo, u, existentes, medicos, onClose, onListo }) {
       if (e) { toast.error(e); return }
       if (!claveValida(password)) { toast.error(`La contraseña no es válida. ${REGLA_CLAVE}`); return }
     }
-    const permisosFinal = { ...permisos, ...(profesionalId ? { profesional_id: profesionalId } : {}) }
+    const permisosFinal = permisosConMedicos(permisos, profesionalIds)
     setBusy(true)
     if (!personal) { // e-mail assistant: keep its other keys, change only what this window shows
-      const r = await actualizarPerfil(u.user_id, { permisos: { ...(u.permisos || {}), ...permisosFinal } })
+      const r = await actualizarPerfil(u.user_id, { permisos: { ...permisosConMedicos(u.permisos, []), ...permisosFinal } })
       setBusy(false)
       if (r.error) toast.error(mensajeUsuarios(r.error, 'No se pudo guardar')); else { toast.success('Permisos guardados'); onListo() }
       return
@@ -288,12 +333,11 @@ function UsuarioModal({ modo, u, existentes, medicos, onClose, onListo }) {
       ))}
 
       {claves.includes('ver_todos_pacientes') && (
-        <div style={{ marginTop: 18, opacity: verTodos ? 0.55 : 1 }}>
-          <Campo label="Médico vinculado (opcional)" ayuda="Si no ve a todos los pacientes, verá solo los de este médico. Limita lo que ve en pantalla.">
-            <Desplegable value={profesionalId} onChange={setProfesionalId} ariaLabel="Médico vinculado" placeholder="Ninguno" style={{ width: '100%' }}
-              options={[{ value: '', label: 'Ninguno' }, ...medicos.map(m => ({ value: m.id, label: m.nombre }))]} />
+        <div style={{ marginTop: 18 }}>
+          <Campo label="Médicos vinculados (opcional)" ayuda={AYUDA_MEDICOS}>
+            <SelectorMedicos medicos={medicos} todos={todos} departamentos={departamentos} value={profesionalIds} onChange={setProfesionalIds} />
           </Campo>
-          {!verTodos && !profesionalId && <div style={{ fontSize: 12.5, color: C.amber, marginTop: 6 }}>Sin médico vinculado, esta persona no verá ningún paciente de otros.</div>}
+          {!verTodos && profesionalIds.length === 0 && <div style={{ fontSize: 12.5, color: C.amber, marginTop: 6 }}>Sin médicos vinculados, esta persona no verá ningún paciente de otros.</div>}
         </div>
       )}
 

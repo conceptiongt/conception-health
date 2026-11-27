@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { esHospital } from '../lib/especialidades'
 import { useDatos } from './useDatos'
 import { faltaSQL } from '../lib/insumos'
+import { profesionalesDe } from '../lib/usuariosHospital'
 import { accesos } from '../lib/constantes'
 
 // Confirmed attendances, their supplies and the warehouse pending list of a hospital account. One shared copy for every screen
@@ -50,7 +51,7 @@ function cargar(clinicaId) {
     // product names are only for labels: without inventory access they simply stay empty
     poner({ disponible: true, cargado: true, atenciones: a.filas, lineas: l.filas, pendientes: p.filas, productos: pr.error ? [] : pr.data || [],
       // doctors that already have a user linked: the «no doctor linked» fallback of puedeConfirmar needs them
-      vinculados: new Set(pfFinal.error ? [] : (pfFinal.data || []).filter(x => x.activo !== false).map(x => x.permisos?.profesional_id).filter(Boolean)), version: store.estado.version + 1 })
+      vinculados: new Set(pfFinal.error ? [] : (pfFinal.data || []).filter(x => x.activo !== false).flatMap(x => profesionalesDe(x.permisos))), version: store.estado.version + 1 })
     return true
   })().finally(() => { store.enCurso = null })
   return store.enCurso

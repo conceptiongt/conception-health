@@ -1,5 +1,6 @@
 import { esAdmin, esSoporte } from './permisos'
 import { fmtCant } from '../hooks/useInventario'
+import { profesionalesDe } from './usuariosHospital'
 
 // Hospital supplies: «Confirmar atención» (supplies leave the stock when the assigned doctor confirms), pending items for the warehouse
 // and the cost per specialty. Server side: supabase/migraciones-propuestas/2026-11-28_hospital_insumos.sql (RPCs atencion_confirmar,
@@ -12,14 +13,13 @@ export const faltaSQL = (e) => !!e && (['42P01', 'PGRST205', 'PGRST202', 'PGRST2
 // cita.estado values (live CHECK): the ones from which an attendance can be confirmed
 export const ESTADOS_CONFIRMABLES = ['Pendiente', 'Confirmada', 'Asistió']
 
-// Mirror of the server rule (atencion_confirmar): owner, or the doctor linked to the cita (perfil.permisos.profesional_id),
+// Mirror of the server rule (atencion_confirmar): owner, or one of the doctors linked to the user is the cita's doctor (profesionalesDe),
 // or — when the cita has no doctor or the user has no linked doctor yet — anyone with the «expedientes» permission. The database decides.
 // `vinculados` = Set of profesional ids that have a user linked (useAtenciones). Like the server, a missing permission key counts as false.
 export function puedeConfirmar(perfil, cita, vinculados = new Set()) {
   if (!perfil || !cita || esSoporte(perfil)) return false
   if (esAdmin(perfil)) return true
-  const vinculo = perfil.permisos?.profesional_id || null
-  if (vinculo && cita.profesional_id && vinculo === cita.profesional_id) return true
+  if (cita.profesional_id && profesionalesDe(perfil.permisos).includes(cita.profesional_id)) return true
   return (!cita.profesional_id || !vinculados.has(cita.profesional_id)) && perfil.permisos?.expedientes === true
 }
 // «Pendientes de bodega» buttons: owner, or «inventario» = true (a missing key is false on the server)

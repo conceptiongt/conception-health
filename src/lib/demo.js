@@ -105,9 +105,9 @@ const DB = {
   // Emergencias (hospital): one row per emergency cita, written only through the emergencia_* functions below
   emergencias: [],
   perfiles: [
-    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('personal') === '1' || q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true, ...(q.get('medico') === '1' ? { profesional_id: 'demo-prof1' } : {}) }, password_creada: true, created_at: '2026-01-01',
+    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('personal') === '1' || q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true, ...(q.get('medico') === '1' ? { profesional_ids: ['demo-prof1'] } : {}) }, password_creada: true, created_at: '2026-01-01',
       // ?personal=1 previews a hospital staff user (no e-mail): inactivity logout, «Cambiar de usuario», list limited to the linked doctor
-      ...(q.get('personal') === '1' ? { email: null, usuario: 'ana.lopez', puesto: 'Médico', activo: true, password_creada: q.get('clave') !== '1', permisos: { expedientes: true, registrar: true, ver_todos_pacientes: q.get('todos') !== '0', profesional_id: q.get('medico') || undefined, ...Object.fromEntries((q.get('sin') || '').split(',').filter(Boolean).map(k => [k, false])) /* ?sin=camas,quirofano turns those permisos off */ } } : {}) },
+      ...(q.get('personal') === '1' ? { email: null, usuario: 'ana.lopez', puesto: 'Médico', activo: true, password_creada: q.get('clave') !== '1', permisos: { expedientes: true, registrar: true, ver_todos_pacientes: q.get('todos') !== '0', ...vinculoDemo(q.get('medico'), q.get('legacy') === '1'), ...Object.fromEntries((q.get('sin') || '').split(',').filter(Boolean).map(k => [k, false])) /* ?sin=camas,quirofano turns those permisos off */ } } : {}) },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
   clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: q.get('plan') || 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' || INSUMOS ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], calendario: {}, created_at: '2026-01-01' }],
@@ -634,9 +634,8 @@ function insumosRpc(fn, a) {
   const cita = DB.citas.find(x => x.id === a.p_cita)
   if (fn === 'atencion_confirmar') {
     if (!cita) return falla('CITA_AJENA')
-    const vinculo = perfil.permisos?.profesional_id || null
-    const hayVinculado = cita.profesional_id && DB.perfiles.some(x => x.permisos?.profesional_id === cita.profesional_id) // a user is linked to that doctor
-    if (!(dueno || (vinculo && cita.profesional_id && vinculo === cita.profesional_id) || ((!cita.profesional_id || !hayVinculado) && perfil.permisos?.expedientes === true))) return falla('NO_AUTORIZADO')
+    const hayVinculado = cita.profesional_id && DB.perfiles.some(x => x.activo !== false && vinculadosDemo(x.permisos).includes(cita.profesional_id)) // an active user is linked to that doctor
+    if (!(dueno || (cita.profesional_id && vinculadosDemo(perfil.permisos).includes(cita.profesional_id)) || ((!cita.profesional_id || !hayVinculado) && perfil.permisos?.expedientes === true))) return falla('NO_AUTORIZADO')
     if (!['Pendiente', 'Confirmada', 'Asistió'].includes(cita.estado)) return falla('CITA_NO_VALIDA')
     const em = DB.emergencias.find(x => x.cita_id === cita.id)
     if (em && !em.cerrado_at) return falla('EMERGENCIA_ABIERTA')
@@ -731,7 +730,7 @@ function funcionDemo(nombre, b) {
   if (DB.clinicas[0].especialidad !== 'hospital') return responde('NO_HOSPITAL')
   const claveOk = typeof b.password === 'string' && b.password.length >= 10 && /[A-Za-z]/.test(b.password) && /\d/.test(b.password)
   const col = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'emergencias', 'exportar', 'eliminar_citas', 'eliminar_inventario', 'eliminar', 'configuracion', 'registrar', 'ver_todos_pacientes', 'quirofano', 'camas']
-  const permisosOk = (p) => p && typeof p === 'object' && Object.entries(p).every(([k, v]) => (k === 'profesional_id' ? typeof v === 'string' : col.includes(k) && typeof v === 'boolean'))
+  const permisosOk = (p) => p && typeof p === 'object' && Object.entries(p).every(([k, v]) => (k === 'profesional_id' ? typeof v === 'string' : k === 'profesional_ids' ? Array.isArray(v) && v.length <= 100 && v.every(x => typeof x === 'string') : col.includes(k) && typeof v === 'boolean'))
   if (b.accion === 'crear') {
     const usuario = String(b.usuario || '').trim().toLowerCase()
     if (!/^[a-z0-9._-]{3,30}$/.test(usuario) || String(b.nombre || '').trim().length < 2 || !permisosOk(b.permisos)) return responde('DATOS_INVALIDOS')
@@ -739,7 +738,7 @@ function funcionDemo(nombre, b) {
     const c = cuposDemo()
     if (c.ocupados >= c.permitidos) return responde('LIMITE_USUARIOS')
     if (DB.perfiles.some(p => p.usuario === usuario)) return responde('USUARIO_OCUPADO')
-    const perfil = { user_id: id(), clinica_id: cid, nombre: String(b.nombre).trim(), email: null, rol: 'asistente', permisos: b.permisos, password_creada: false, usuario, puesto: b.puesto || null, activo: true, clave_temporal_at: new Date().toISOString(), created_at: new Date().toISOString() }
+    const perfil = { user_id: id(), clinica_id: cid, nombre: String(b.nombre).trim(), email: null, rol: 'asistente', permisos: permisosDemo(b.permisos), password_creada: false, usuario, puesto: b.puesto || null, activo: true, clave_temporal_at: new Date().toISOString(), created_at: new Date().toISOString() }
     DB.perfiles.push(perfil)
     return responde(null, { perfil: { ...perfil } })
   }
@@ -752,6 +751,19 @@ function funcionDemo(nombre, b) {
   return responde('ACCION')
 }
 
+// Mirrors what the database stores for the doctor link: profesional_ids (deduplicated array); the legacy profesional_id is folded in and never kept.
+// ?medico=demo-prof1,demo-prof2 links several doctors; ?legacy=1 seeds the old single-key shape.
+function vinculoDemo(lista, legado) {
+  const ids = String(lista || '').split(',').map(x => x.trim()).filter(Boolean)
+  return !ids.length ? {} : legado ? { profesional_id: ids[0] } : { profesional_ids: ids }
+}
+function permisosDemo(p) {
+  const { profesional_id: viejo, profesional_ids: ids, ...resto } = p || {}
+  const todos = [...new Set([...(Array.isArray(ids) ? ids : []), ...(viejo ? [viejo] : [])])]
+  return todos.length ? { ...resto, profesional_ids: todos } : resto
+}
+const vinculadosDemo = (permisos) => [...new Set([...(Array.isArray(permisos?.profesional_ids) ? permisos.profesional_ids : []), ...(permisos?.profesional_id ? [permisos.profesional_id] : [])])]
+
 async function rpc(fn, a) {
   if (fn === 'perfil_admin_actualizar') { // same shape as the real RPC: returns void; ?rpc=falta simulates the function not existing yet
     if (q.get('rpc') === 'falta') return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.perfil_admin_actualizar' } }
@@ -759,7 +771,7 @@ async function rpc(fn, a) {
     if (!u) return falla('SIN_PERMISO')
     if (a.p_nombre != null) u.nombre = String(a.p_nombre).trim()
     if (a.p_puesto != null) u.puesto = String(a.p_puesto).trim() || null
-    if (a.p_permisos != null) u.permisos = a.p_permisos
+    if (a.p_permisos != null) u.permisos = permisosDemo(a.p_permisos)
     return { data: null, error: null }
   }
   if (q.get('rpc') === 'falta' && fn.startsWith('hospital_')) return { data: null, error: { code: 'PGRST202', message: `Could not find the function public.${fn}` } } // SQL of the stage not applied yet

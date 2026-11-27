@@ -17,7 +17,7 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { sta
 
 const USUARIO = /^[a-z0-9._-]{3,30}$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-// Keep in sync with PERMISOS in src/lib/permisos.js (+ the two UI-only keys). Boolean values; `profesional_id` is the only string key.
+// Keep in sync with PERMISOS in src/lib/permisos.js (+ the two UI-only keys). Boolean values; the doctor links (`profesional_ids`, legacy `profesional_id`) are the only non-boolean keys.
 const PERMISOS_BOOL = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'emergencias', 'exportar', 'eliminar_citas', 'eliminar_inventario', 'eliminar', 'configuracion', 'registrar', 'ver_todos_pacientes', 'quirofano', 'camas']
 const COLUMNAS = 'user_id, nombre, usuario, puesto, permisos, activo, password_creada, clave_temporal_at, created_at' // never email
 
@@ -33,21 +33,34 @@ function sintetico() {
   return `u-${[...b].map(x => x.toString(16).padStart(2, '0')).join('')}@usuarios.conception-gt.com`
 }
 
-// Validates the permissions object; returns the clean object or null. profesional_id must be a doctor of THIS clinic ('' = none).
+// Validates the permissions object; returns the clean object or null. Doctors: `profesional_ids` (array of up to 100 uuid strings) and the legacy
+// single `profesional_id` are merged into `profesional_ids`; every id must be a doctor of THIS clinic. The legacy key is never stored.
 async function permisosLimpios(p: unknown, clinicaId: string) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return null
-  const salida: Record<string, boolean | string> = {}
+  const salida: Record<string, boolean | string[]> = {}
+  const ids = new Set<string>()
   for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
     if (k === 'profesional_id') {
       if (v === '' || v == null) continue
       if (typeof v !== 'string' || !UUID.test(v)) return null
-      const { data } = await db.from('profesionales').select('id').eq('id', v).eq('clinica_id', clinicaId).maybeSingle()
-      if (!data) return null
-      salida[k] = v
+      ids.add(v.toLowerCase())
+    } else if (k === 'profesional_ids') {
+      if (v == null) continue
+      if (!Array.isArray(v) || v.length > 100) return null
+      for (const x of v) {
+        if (typeof x !== 'string' || !UUID.test(x)) return null
+        ids.add(x.toLowerCase())
+      }
     } else if (PERMISOS_BOOL.includes(k)) {
       if (typeof v !== 'boolean') return null
       salida[k] = v
     } // unknown keys are dropped
+  }
+  if (ids.size > 0) {
+    const lista = [...ids]
+    const { data } = await db.from('profesionales').select('id').eq('clinica_id', clinicaId).in('id', lista)
+    if ((data?.length ?? 0) !== lista.length) return null
+    salida.profesional_ids = lista
   }
   return salida
 }

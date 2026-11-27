@@ -261,7 +261,7 @@ function UsuarioModal({ modo, u, existentes, medicos, todos, departamentos, onCl
   const [password, setPassword] = useState('')
   const [permisos, setPermisos] = useState(() => crear ? plantillaPermisos('') : Object.fromEntries(claves.map(k => [k, puede(u, k)])))
   // linked doctors (legacy single key included); ids of doctors that no longer exist are dropped, inactive ones stay until the person removes them
-  const [profesionalIds, setProfesionalIds] = useState(() => profesionalesDe(u?.permisos).filter(id => todos.some(m => m.id === id)))
+  const [profesionalIds, setProfesionalIds] = useState(() => profesionalesDe(u?.permisos).filter(id => !todos.length || todos.some(m => m.id === id))) // list not loaded yet: keep the saved links
   const [busy, setBusy] = useState(false)
   const errUsuario = crear && usuario ? errorUsuario(usuario, existentes) : ''
   const verTodos = !!permisos.ver_todos_pacientes

@@ -150,7 +150,7 @@ export function profesionalesDe(permisos) {
 export function permisosConMedicos(permisos, ids) {
   const { profesional_id, profesional_ids, ...resto } = permisos || {}
   const lista = [...new Set(ids || [])]
-  return lista.length ? { ...resto, profesional_ids: lista, profesional_id: lista[0] } : resto
+  return lista.length ? { ...resto, profesional_ids: lista } : resto
 }
 // «Vinculado a: Dr. X, Dra. Y» (or «N médicos» when there are many) for the users list; '' when nobody is linked
 export function textoVinculo(permisos, profesionales = []) {

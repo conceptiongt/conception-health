@@ -18,7 +18,8 @@ const APP_ID = Deno.env.get('WHATSAPP_APP_ID') || '3080365948836514' // Concepti
 const STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text' // ElevenLabs Speech to Text (Create transcript)
 const STT_MODELO = 'scribe_v2'
 const STT_MAX_MS = 25_000 // whole voice-note download + transcription budget
-const AUDIO_MAX_BYTES = 16_000_000 // WhatsApp's own audio limit
+const AUDIO_MAX_BYTES = 3_000_000 // bigger voice notes are not transcribed (cost control)
+const LIMITE_AUDIOS_DIA = 150 // voice notes per clinic and day that are sent to the transcription service
 const ESPERA_MS = 4000 // patients often send several messages in a row: Lía answers once, after the last one
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -377,10 +378,11 @@ function turnos(mensajes: any[], foto?: { media_type: string, data: string }) {
   for (const m of mensajes) {
     if (m.de === 's') continue
     const role = m.de === 'p' ? 'user' : 'assistant'
-    // voice notes: `audio` = 'ok' means `texto` holds the transcription; 'fallo' / 'pendiente' means Lía could not hear it
+    // voice notes: `audio` = 'ok' means `texto` holds the transcription; 'fallo' / 'pendiente' means Lía could not hear it.
+    // A plain "[Audio]" text (old rows, fallback insert, note without media id) is also an unheard voice note.
     const nota = m.de === 'p' && m.audio
       ? (m.audio === 'ok' && m.texto ? `[Nota de voz] ${m.texto}` : '[Nota de voz que no se pudo escuchar]')
-      : null
+      : (m.de === 'p' && !m.audio && m.texto === '[Audio]' ? '[Nota de voz que no se pudo escuchar]' : null)
     const texto = nota ?? (m.de === 'p'
       ? ((m.foto ? '[El paciente mandó una foto] ' : '') + (m.texto || '')).trim() || '[foto]'
       : (m.de === 'd' ? '[Lo escribió el consultorio] ' : '') + (m.texto || ''))
@@ -553,7 +555,8 @@ async function transcribir(mediaId: string): Promise<{ texto: string, seg: numbe
     const form = new FormData()
     form.append('model_id', STT_MODELO)
     form.append('file', new Blob([bytes], { type: tipo }), `nota.${tipo.split('/')[1]?.replace(/[^a-z0-9]/g, '') || 'ogg'}`)
-    form.append('language_code', 'es') // ISO-639-1: Spanish
+    // Fixed on purpose: the clinics' patients write and speak Spanish, and forcing it avoids wrong auto-detection on short notes
+    form.append('language_code', 'es')
     form.append('tag_audio_events', 'false')
     const r = await fetch(STT_URL, { method: 'POST', headers: { 'xi-api-key': llave }, body: form, signal: ctl.signal })
     if (!r.ok) { console.error('lia-audio', r.status); return undefined }
@@ -567,9 +570,22 @@ async function transcribir(mediaId: string): Promise<{ texto: string, seg: numbe
     return undefined
   } finally { clearTimeout(reloj) }
 }
+// Spending guard: no transcription when Lía would not answer anyway (paused / outside her mode) or past the daily cap
+async function puedeTranscribir(clinica: any) {
+  if (iaPausada()) return false
+  const { data: c } = await db.from('lia_config').select('config').eq('clinica_id', clinica.id).maybeSingle()
+  const cfg = configuracion(c?.config, clinica)
+  if (cfg.modo === 'pausa' || (cfg.modo === 'fuera' && enHorario(cfg))) return false
+  // the row being processed is already counted, so the cap is exceeded only above the limit
+  const desde = new Date(`${ahora().fecha}T00:00:00Z`)
+  desde.setUTCHours(desde.getUTCHours() - OFFSET_GT) // start of today in Guatemala, as UTC
+  const { count, error } = await db.from('lia_mensajes').select('id', { count: 'exact', head: true })
+    .eq('clinica_id', clinica.id).not('audio', 'is', null).gte('created_at', desde.toISOString())
+  return !error && count != null && count <= LIMITE_AUDIOS_DIA
+}
 // Transcribes a stored voice note and writes the result on its row (also bumps the conversation so the app reloads it)
-async function transcribirYGuardar(filaId: string, convId: string, mediaId: string | undefined) {
-  const t = mediaId ? await transcribir(mediaId) : undefined
+async function transcribirYGuardar(clinica: any, filaId: string, convId: string, mediaId: string | undefined) {
+  const t = mediaId && await puedeTranscribir(clinica) ? await transcribir(mediaId) : undefined
   const { error } = await db.from('lia_mensajes').update(t ? { audio: 'ok', texto: t.texto, audio_seg: t.seg } : { audio: 'fallo' }).eq('id', filaId)
   if (error) console.error('lia-audio guardar', error.message)
   await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString() }).eq('id', convId)
@@ -618,7 +634,7 @@ async function recibirMensaje(linea: any, clinica: any, m: any, nombrePerfil: st
     fila = await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto, wa_id: m.id }).select('id').single()
   } else if (!fila.error && esAudio) {
     // runs in parallel with the burst wait and even if the doctor took the conversation (the transcript is still shown)
-    transcripcion = transcribirYGuardar(fila.data.id, conv.id, m.audio.id).catch(e => console.error('lia-audio', e))
+    transcripcion = transcribirYGuardar(clinica, fila.data.id, conv.id, m.audio.id).catch(e => console.error('lia-audio', e))
   }
   if (fila.error) return // Meta delivered this message twice
   await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString(), ...(conv.nombre === tel && nombrePerfil ? { nombre: nombrePerfil } : {}) }).eq('id', conv.id)
@@ -626,11 +642,11 @@ async function recibirMensaje(linea: any, clinica: any, m: any, nombrePerfil: st
 
   wa(linea.phone_number_id, { status: 'read', message_id: m.id, typing_indicator: { type: 'text' } }).catch(() => {})
   await Promise.all([new Promise(r => setTimeout(r, ESPERA_MS)), transcripcion])
+  await esperarAudios(conv.id) // an earlier voice note may still be transcribing: wait BEFORE deciding who answers
   const { data: ultimo } = await db.from('lia_mensajes').select('wa_id').eq('conversacion_id', conv.id).eq('de', 'p').order('created_at', { ascending: false }).limit(1).single()
   if (ultimo?.wa_id !== m.id) return // a newer message arrived: that one answers
   const { data: fresca } = await db.from('lia_conversaciones').select('*').eq('id', conv.id).single()
   if (fresca.tomado) return
-  await esperarAudios(conv.id) // a voice note sent just before may still be transcribing: Lía needs its text
 
   const foto = m.type === 'image' && m.image?.id ? await bajarFoto(m.image.id) : undefined
   const r = await responder(clinica, fresca, false, foto)

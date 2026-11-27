@@ -31,9 +31,9 @@ export function Burbuja({ m, mio, fondo, etiqueta, leido }) {
         : <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, marginBottom: 4 }}><Icon name="camara" size={15} />Foto</div>)}
       {m.audio && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, marginBottom: m.audio === 'ok' && m.texto ? 4 : 0 }}>
-          <Icon name="microfono" size={15} />
+          <Icon name="microfono" size={15} style={{ flexShrink: 0 }} />
           {m.audio === 'ok' ? `Nota de voz${m.audio_seg != null ? ` · ${Math.floor(m.audio_seg / 60)}:${String(m.audio_seg % 60).padStart(2, '0')}` : ''}`
-            : m.audio === 'pendiente' ? 'Escuchando la nota de voz…' : 'Nota de voz (no se pudo transcribir)'}
+            : m.audio === 'pendiente' && !(m.created_at && Date.now() - new Date(m.created_at).getTime() > 120000) ? 'Escuchando la nota de voz…' : 'Nota de voz (no se pudo transcribir)'}
         </div>
       )}
       {m.texto && <TextoWA texto={m.texto} />}

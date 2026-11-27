@@ -5,7 +5,7 @@ import { ESTADOS_CITA, ETAPAS_FOTO, estadoCita, MOTIVOS_ELIMINAR_CITA } from '..
 import { especialidad, tiposDe, claveEspCita } from '../lib/especialidades'
 import { CamposHospital, hayEspecialidades } from './HospitalCita'
 import { seccionesActivas, limpiarHtml, tieneTexto } from '../lib/ficha'
-import { puede } from '../lib/permisos'
+import { puede, esAdmin } from '../lib/permisos'
 import { hoyISO, fmtFecha, fmtFechaCorta, fmtQ, saldo } from '../lib/formato'
 import { CamposEspecialidad, limpiarDatos } from './CamposEspecialidad'
 import { EditorTexto } from './EditorTexto'
@@ -105,6 +105,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
 
   const fichaLimpia = () => Object.fromEntries(Object.entries(f.ficha).filter(([, h]) => tieneTexto(h)).map(([k, h]) => [k, limpiarHtml(h)]))
 
+  // an emergency cita is controlled by the Emergencias module: tipo and estado are read-only here and never sent
+  const esEmergencia = cita?.tipo === TIPO_EMERGENCIA
   const guardar = async () => {
     if (!f.fecha) { toast.error('La fecha es requerida'); return }
     // a hospital appointment carries its specialty (older ones without it can still be edited)
@@ -112,7 +114,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
-      fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado, agendo_nombre: f.agendo.trim() || null,
+      fecha: f.fecha, hora: f.hora || null, agendo_nombre: f.agendo.trim() || null,
+      ...(esEmergencia ? {} : { tipo: f.tipo || null, estado: f.estado }),
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
@@ -145,7 +148,8 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   const eliminar = async () => {
     const motivo = await confirmar({
       titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`,
-      mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.'],
+      mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.',
+        ...(esEmergencia ? ['Se perderá el registro de la emergencia (gravedad, motivo, tiempos y resultado).'] : [])],
       aceptar: 'Eliminar cita', peligro: true,
       motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_ELIMINAR_CITA },
     })
@@ -203,7 +207,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <div style={{ fontSize: 13.5, color: C.g500, marginTop: 4 }}>{fmtFecha(f.fecha)}{f.hora ? ` · ${f.hora}` : ''}{f.tipo ? ` · ${f.tipo}` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {cita && puede(perfil, 'eliminar_citas') && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
+          {cita && puede(perfil, 'eliminar_citas') && (!esEmergencia || esAdmin(perfil)) && <Button variant="danger" onClick={eliminar} icon="eliminar">Eliminar</Button>}
           {paciente && <EnlacePaciente paciente={paciente} size="md" />}
           {soloCita && clinico && <Button variant="ghost" onClick={() => ir('expedientes', paciente.id)} icon="expedientes">Abrir expediente</Button>}
           {cita && ficha && <Button variant="ghost" onClick={() => setCompartir(true)} icon="compartir">Imprimir o compartir</Button>}
@@ -219,10 +223,14 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
             <Grid min={190}>
               <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
               {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
-              <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
+              {esEmergencia
+                ? <Campo label="Estado" ayuda="Se cambia desde Emergencias"><Input value={f.estado} onChange={() => {}} readOnly aria-readonly="true" /></Campo>
+                : <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>}
               <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}
-              <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(claveEsp, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>
+              {esEmergencia
+                ? <Campo label="Tipo" ayuda="Se cambia desde Emergencias"><Input value={f.tipo} onChange={() => {}} readOnly aria-readonly="true" /></Campo>
+                : <Campo label="Tipo de consulta"><Select value={f.tipo} onChange={cambiarTipo}>{tiposDe(claveEsp, f.tipo).map(t => <option key={t}>{t}</option>)}</Select></Campo>}
               <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita && finanzas} conPrecios={finanzas} departamentoId={depId} />
             </Grid>
           </section>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { C, SHADOW, GLASS } from '../lib/theme'
 import { useDatos } from '../hooks/useDatos'
 import { colorProfesional } from '../hooks/useHospital'
@@ -19,6 +19,7 @@ import { Exportar } from '../components/Documento'
 import { confirmar } from '../components/ui/Confirmar'
 import { toast } from '../components/ui/Toast'
 import { supabase } from '../lib/supabase'
+import { leerRango } from '../hooks/useEmergencias'
 import { FaltanDatos, EtiquetaTriage, EstadoEm } from '../components/EmergenciaBits'
 import { RegistrarLlegada, FinalizarModal, CompletarDatosModal, FotosModal, moverEstado } from '../components/EmergenciaModales'
 
@@ -45,27 +46,38 @@ export function Emergencias({ sub }) {
   const pacPorId = useMemo(() => new Map(pacientes.map(p => [p.id, p])), [pacientes])
   const citaPorId = useMemo(() => new Map(citas.map(c => [c.id, c])), [citas])
   // every emergency with its cita and patient (the patient comes from the cita: that is where a merge points)
-  const items = useMemo(() => emergencias.filas.map(em => {
+  const armar = useCallback((filas) => filas.map(em => {
     const cita = citaPorId.get(em.cita_id)
     return { em, cita, paciente: pacPorId.get(cita?.paciente_id ?? em.paciente_id) }
-  }), [emergencias.filas, citaPorId, pacPorId])
+  }), [citaPorId, pacPorId])
+  const items = useMemo(() => armar(emergencias.filas), [armar, emergencias.filas])
   const abiertas = useMemo(() => items.filter(i => !i.em.cerrado_at), [items])
   const sinIdentificar = useMemo(() => pacientes.filter(p => p.sin_identificar), [pacientes])
 
-  // keyboard shortcut N: register an arrival when nothing is being typed and no window is open
+  // keyboard shortcut N: register an arrival only when nothing else is taking the keyboard (typing, an open list, a Desplegable, a window)
   useEffect(() => {
     if (soporte) return
     const fn = (e) => {
-      if (e.key.toLowerCase() !== 'n' || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key?.toLowerCase() !== 'n') return
       const a = document.activeElement
-      if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return
-      if (document.querySelector('[role="dialog"]')) return
+      if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable || a.closest?.('[role="listbox"], [aria-haspopup="listbox"], [contenteditable]:not([contenteditable="false"])'))) return
+      if (document.querySelector('[role="dialog"], [role="listbox"]')) return // any open window or open list
       e.preventDefault(); setRegistrar(true)
     }
     window.addEventListener('keydown', fn)
     return () => window.removeEventListener('keydown', fn)
   }, [soporte])
 
+  if (hospital.disponible && emergencias.cargado && emergencias.fallo && !emergencias.disponible) {
+    return (
+      <>
+        <Encabezado titulo="Emergencias" />
+        <Vacio icono="emergencia" titulo="No se pudieron cargar las emergencias" texto="Revise su conexión. Se reintentará automáticamente.">
+          <Button icon="refrescar" onClick={() => emergencias.recargar(true)}>Reintentar</Button>
+        </Vacio>
+      </>
+    )
+  }
   if (!hospital.disponible || (emergencias.cargado && !emergencias.disponible)) {
     return (
       <>
@@ -109,7 +121,7 @@ export function Emergencias({ sub }) {
       )}
 
       {!conTabla ? null : historial
-        ? <Historial items={items} ahora={ahora} soporte={soporte} onExpediente={abrirExpediente} />
+        ? <Historial armar={armar} ahora={ahora} soporte={soporte} onExpediente={abrirExpediente} />
         : <Tablero abiertas={abiertas} ahora={ahora} soporte={soporte} hospital={hospital} emergencias={emergencias}
             onFinalizar={setFinalizar} onCompletar={setCompletar} onFotos={setFotos} onExpediente={abrirExpediente} onRegistrar={() => setRegistrar(true)} />}
 
@@ -209,11 +221,11 @@ function Tarjeta({ item, ahora, soporte, hospital, emergencias, onFinalizar, onC
             {em.estado === 'espera' && <Button icon="play" onClick={() => mover('atencion')} disabled={ocupado} style={{ flex: '1 1 140px' }}>Pasar a atención</Button>}
             {em.estado === 'atencion' && <Button variant="soft" onClick={() => mover('observacion')} disabled={ocupado} style={{ flex: '1 1 120px' }}>Observación</Button>}
             {em.estado === 'observacion' && <Button variant="soft" onClick={() => mover('atencion')} disabled={ocupado} style={{ flex: '1 1 120px' }}>Pasar a atención</Button>}
-            <Button variant={em.estado === 'espera' ? 'ghost' : 'primary'} icon="check" onClick={() => onFinalizar(item)} disabled={ocupado} style={{ flex: '1 1 110px' }}>Finalizar</Button>
+            <Button variant={em.estado === 'espera' ? 'ghost' : 'primary'} icon="check" onClick={() => onFinalizar(item)} disabled={ocupado || !cita} title={!cita ? 'Cargando la cita…' : undefined} style={{ flex: '1 1 110px' }}>Finalizar</Button>
           </div>
         )}
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', borderTop: `1px solid ${C.g100}`, paddingTop: 8, marginTop: 2 }}>
-          <Button size="sm" variant="texto" icon="camara" onClick={() => onFotos(item)}>Fotos</Button>
+          <Button size="sm" variant="texto" icon="camara" onClick={() => onFotos(item)} disabled={!cita} title={!cita ? 'Cargando la cita…' : undefined}>Fotos</Button>
           <Button size="sm" variant="texto" icon="expedientes" onClick={() => onExpediente(item)} disabled={!paciente}>Abrir expediente</Button>
           {!soporte && paciente?.sin_identificar && <Button size="sm" variant="soft" icon="editar" onClick={() => onCompletar(item)}>Completar datos</Button>}
         </div>
@@ -223,7 +235,7 @@ function Tarjeta({ item, ahora, soporte, hospital, emergencias, onFinalizar, onC
 }
 
 // ───────────────────────── History ─────────────────────────
-function Historial({ items, ahora, soporte, onExpediente }) {
+function Historial({ armar, ahora, soporte, onExpediente }) {
   const { hospital, emergencias, clinica } = useDatos()
   const [desde, setDesde] = useState(() => hoyGT(6))
   const [hasta, setHasta] = useState(() => hoyGT(0))
@@ -232,6 +244,20 @@ function Historial({ items, ahora, soporte, onExpediente }) {
   const [medico, setMedico] = useState('')
   const [buscar, setBuscar] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  // the shared state only holds recent emergencies: this view loads its own date range (paginated beyond 1000 rows)
+  const [filas, setFilas] = useState(null)
+  const [fallo, setFallo] = useState(false)
+  const version = emergencias.version
+  useEffect(() => {
+    let vigente = true
+    leerRango(desde, hasta).then(r => {
+      if (!vigente) return
+      if (r.error) setFallo(true) // keeps the rows already shown
+      else { setFilas(r.filas); setFallo(false) }
+    })
+    return () => { vigente = false }
+  }, [desde, hasta, version])
+  const items = useMemo(() => armar(filas || []), [armar, filas])
 
   const q = normalizar(buscar).trim()
   const lista = useMemo(() => items.filter(({ em, cita, paciente }) => {
@@ -293,6 +319,7 @@ function Historial({ items, ahora, soporte, onExpediente }) {
         </div>
       </div>
 
+      {fallo && <div role="alert" style={{ background: C.redLight, color: C.red, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 14 }}>No se pudo actualizar el historial. Se muestran los datos anteriores.</div>}
       <div role="group" aria-label="Resumen del historial" style={{ ...GLASS, borderRadius: 18, padding: '12px 16px', marginBottom: 14, display: 'flex', gap: '8px 20px', flexWrap: 'wrap', alignItems: 'center', boxShadow: SHADOW }}>
         {chip(<><strong style={{ fontSize: 20, color: C.black }}>{lista.length}</strong> {lista.length === 1 ? 'emergencia' : 'emergencias'}</>, 'total')}
         {TRIAGES.map(t => chip(<><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 9, background: t.color }} />Triaje {t.n}: <strong>{cuantos(t.n)}</strong></>, t.n))}
@@ -301,7 +328,7 @@ function Historial({ items, ahora, soporte, onExpediente }) {
 
       <Tabla
         columnas={['Llegada', 'Paciente', 'Triaje', 'Motivo', 'Médico', 'Resultado', 'Hasta la atención', 'Tiempo total', '']}
-        vacio="No hay emergencias con estos filtros"
+        vacio={filas === null ? 'Cargando…' : 'No hay emergencias con estos filtros'}
         filas={lista.map(it => {
           const { em, cita, paciente } = it
           const m = hospital.profesional(cita?.profesional_id)

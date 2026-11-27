@@ -8,13 +8,17 @@
 --   Un paciente que llega sin poder identificarse se crea como paciente provisional (`pacientes.sin_identificar = true`, nombre
 --   «Sin identificar — DD/MM HH:MM»); la app muestra el aviso «Faltan datos» hasta que se completan.
 --
--- Objetos nuevos
---   * Columna pacientes.sin_identificar boolean not null default false (las clínicas la dejan en false para siempre).
---   * Tabla emergencias (RLS activo; ver = cualquier usuario de la clínica; crear/editar = usuario de la clínica que NO sea soporte; sin delete
---     para clientes: borrar la cita con cita_eliminar arrastra la fila por la llave foránea; más las tres políticas RESTRICTIVE
---     emergencias_no_vencida_ins|upd|del para que una cuenta vencida sea de solo lectura).
---   * Trigger emergencias_integridad() (security definer): cita y paciente son de la clínica de la fila, la cita es de ese paciente, y
---     clinica_id / cita_id / paciente_id no cambian (paciente_id solo lo mueve emergencia_identificar, ver abajo).
+-- Objetos nuevos / cambios
+--   * Sección 0: el CHECK citas_tipo_check (lista cerrada en producción) se reemplaza por el mismo con 'Emergencia' agregado. Es lo ÚNICO
+--     existente que se modifica.
+--   * Columna pacientes.sin_identificar boolean not null default false (las clínicas la dejan en false para siempre) y el trigger
+--     pacientes_sin_identificar_guard(): un cliente NUNCA puede dejarla en true (insert la fuerza a false; update false→true = CAMPO_INMUTABLE).
+--     Solo emergencia_registrar la pone en true, mediante una variable de configuración local a la transacción.
+--   * Tabla emergencias (RLS activo). Los clientes SOLO LEEN (select de la clínica); NO escriben directo: toda escritura pasa por las tres RPC
+--     SECURITY DEFINER, que ya rechazan cuenta vencida y sesión de soporte. Sin insert/update/delete para clientes: borrar la cita con
+--     cita_eliminar arrastra la fila por la llave foránea (la cascada corre con el dueño de la tabla).
+--   * Trigger emergencias_integridad() (security definer): defensa en profundidad; cita y paciente son de la clínica de la fila, la cita es
+--     de ese paciente, y clinica_id / cita_id / paciente_id no cambian (paciente_id solo lo mueve emergencia_identificar, ver abajo).
 --   * RPC emergencia_registrar(...)   registra la llegada: paciente (existente / nuevo / provisional) + cita + emergencia en UNA transacción.
 --   * RPC emergencia_estado(...)      cambia el estado; al cerrar pone cerrado_at y el estado de la cita ('Asistió' / 'No asistió').
 --   * RPC emergencia_identificar(...) completa los datos de un paciente provisional (renombrar) o lo UNE con un paciente existente.
@@ -26,35 +30,39 @@
 --   habría que llamar a tiene_permiso('emergencias') en las RPC y revisar cómo trata esa función una llave nueva.
 --
 -- RIESGOS (revisar ANTES de aplicar)
---   * Solo agrega: no se modifica ninguna política, función ni trigger existente. pacientes.sin_identificar es NOT NULL DEFAULT false: en
---     PostgreSQL 11+ es un cambio de metadatos (no reescribe pacientes).
---   * Privilegios por columna: si `authenticated` tuviera select/update POR COLUMNA en pacientes, `select *` no traería la columna nueva (y la
---     app no podría limpiarla desde la ficha). La sección 2 concede select y update de esa sola columna; es inofensivo si ya son de tabla
---     completa. Confirmar con el PRE-CHECK de privilegios.
---   * Valores permitidos que este SQL ASUME (confirmar con los PRE-CHECKS; las RPC usan solo valores que la app ya escribe hoy):
---       citas.tipo = 'Emergencia'      → si citas.tipo tiene un CHECK con lista cerrada, hay que agregar 'Emergencia' ANTES.
---       citas.estado = 'Pendiente' / 'Asistió' / 'No asistió'  (los de ESTADOS_CITA en src/lib/constantes.js).
---       pacientes.origen = 'otro'      (uno de ORIGENES en la app; Registrar lo exige y la ficha lo deja editar a null).
---       pacientes.sexo ∈ 'Masculino' | 'Femenino' | 'Otro' (los de la ficha); «No determinado» de la pantalla se guarda como 'Otro'.
---       citas.fecha / citas.hora aceptan un date / time (o texto ISO); la función usa v_local::date y date_trunc('minute', v_local)::time,
---       que sirven tanto si la columna es date/time como si es text.
+--   * Se modifica UNA restricción existente: citas_tipo_check (se quita y se vuelve a crear con 'Emergencia'). El ALTER bloquea brevemente la
+--     tabla citas y valida todas las filas (el valor nuevo no invalida ninguna). Lo demás solo agrega: ninguna política, función o trigger
+--     existente cambia. pacientes.sin_identificar es NOT NULL DEFAULT false: en PostgreSQL 11+ es un cambio de metadatos (no reescribe pacientes).
+--   * Valores permitidos que este SQL usa (VERIFICADOS en producción): citas.estado ∈ ('Pendiente','Confirmada','Asistió','No asistió',
+--     'Reagendada','Cancelada') (la RPC usa Pendiente / Asistió / No asistió); citas.tipo acepta NULL. NOT NULL sin default que la RPC llena:
+--     citas.clinica_id, citas.paciente_id, citas.fecha, pacientes.clinica_id, pacientes.nombre. citas.portal tiene default false.
+--     Sin verificar aquí (ver PRE-CHECKS 1 y 2): pacientes.origen = 'otro' (uno de ORIGENES en la app), pacientes.sexo ∈ 'Masculino' | 'Femenino' |
+--     'Otro' («No determinado» de la pantalla se guarda como 'Otro'), y que citas.fecha / citas.hora acepten un date / time (o texto ISO): la función
+--     usa v_local::date y date_trunc('minute', v_local)::time, que sirven tanto si la columna es date/time como si es text.
+--   * Escritura de clientes: `authenticated` tiene INSERT/UPDATE de tabla completa en pacientes y citas, por eso la inmutabilidad de
+--     sin_identificar se hace con un trigger (no con privilegios de columna) y no se concede nada por columna.
 --   * Triggers vivos sobre citas y pacientes que la RPC dispara (security definer los ejecuta igual): limite_prueba (pacientes; puede
 --     lanzar 'LIMITE_PRUEBA' y se deja pasar: la app ya lo traduce), el que llena agendo_nombre / creado_por en citas, y
 --     citas_hospital_ref (valida departamento / profesional de la clínica). Ver el PRE-CHECK de triggers.
---   * emergencia_identificar (unir) BORRA el paciente provisional solo si ya no tiene otras citas. Antes mueve a la cita las filas de
---     archivos y cobros de esa cita. Si OTRA tabla apunta al paciente provisional con llave foránea sin cascada, el borrado falla con
---     foreign_key_violation: la función lo captura y deja el paciente provisional vacío en su lugar (no se pierde nada, solo queda un
---     paciente «Sin identificar» sin citas). Ver el PRE-CHECK de llaves foráneas hacia pacientes.
+--   * emergencia_identificar (unir) mueve al paciente de destino: la cita, la emergencia, los archivos, cobros (con sus abonos, que cuelgan del
+--     cobro) y movimientos de inventario de ESA cita. Si el provisional se queda sin citas, antes de borrarlo mueve también sus archivos, cobros,
+--     inventario_movimientos y documentos_compartidos restantes (por paciente_id), así el borrado no pierde ni desvincula nada. Si el
+--     provisional ya tiene datos escritos en su ficha NO se une ni se borra: lanza PROVISIONAL_CON_DATOS (la pantalla pide completar su nombre).
+--     Si alguna otra tabla (no listada) apuntara al provisional con una llave sin cascada, el DELETE falla y TODA la función se revierte (nada
+--     queda a medias). Los UPDATE de paciente_id sobre inventario_movimientos y documentos_compartidos disparan sus triggers (inv_aplicar,
+--     documentos_codigo): ver los PRE-CHECKS 9 y 10 y ejercitarlos en el dry-run (el stock no debe cambiar al mover un movimiento de paciente).
 --     Las rutas de storage de las fotos movidas siguen llevando el id viejo del paciente en la carpeta (la ruta es solo una llave); si la
 --     política de storage dependiera del segundo segmento de la ruta, revisarla (la guía de este repo solo usa la clínica como primer segmento).
---   * La excepción de inmutabilidad usa una variable de configuración local a la transacción (conception.emergencia_mover). Los clientes de
---     PostgREST no pueden ejecutar SET ni set_config (pg_catalog no se expone) y ninguna función expuesta la fija salvo
---     emergencia_identificar, que la pone al id de la cita y la limpia en cuanto mueve la fila. Aun si alguien lograra fijarla, el trigger
---     sigue comprobando que la cita sea de ese paciente y de esa clínica.
---   * Sesiones de soporte: SOLO LECTURA (las políticas de escritura exigen not es_soporte() y las RPC lanzan SIN_PERMISO).
+--   * Las excepciones usan variables de configuración locales a la transacción: conception.emergencia_mover (mover paciente_id de una
+--     emergencia) y conception.emergencia_alta (crear un paciente provisional). Los clientes de PostgREST no pueden ejecutar SET ni
+--     set_config (pg_catalog no se expone) y ninguna función expuesta las fija salvo las RPC de emergencias, que las limpian en cuanto
+--     terminan el paso. Verificar con el PRE-CHECK 11. Aun si alguien lograra fijarlas, los triggers siguen comprobando clínica / cita.
+--   * Sesiones de soporte: SOLO LECTURA (las RPC lanzan SIN_PERMISO y los clientes no tienen escritura directa).
 --   * Nada para anon: ningún privilegio a anon ni a public.
+--   * Google Calendar: las emergencias nunca se reflejan (la edge function google-calendar las excluye por tipo; desplegar la función junto
+--     con el front).
 --   * Orden de despliegue: aplicar este SQL ANTES del front. Si el front sale primero, «Emergencias» muestra «Disponible pronto» y nada más
---     cambia (el front detecta que la tabla no existe).
+--     cambia (el front detecta que la tabla no existe y no vuelve a consultarla durante esa carga de página).
 --
 -- PRE-CHECKS (correr ANTES, solo lectura; la planificadora confirma cada uno)
 --   -- 1. restricciones vivas de citas y pacientes (busque CHECK sobre tipo, estado, origen, sexo, hora)
@@ -83,6 +91,15 @@
 --   select column_name from information_schema.columns where table_schema = 'public' and table_name = 'pacientes' and column_name = 'sin_identificar';
 --   -- 8. la clínica hospital tiene (o no) su especialidad de emergencias
 --   select id, clinica_id, clave, nombre, activo, es_emergencia from public.departamentos where es_emergencia;
+--   -- 9. ¿el trigger de stock se dispara al cambiar paciente_id de un movimiento? (debe ser «after insert» / «update of» otras columnas; si es
+--   --    «before/after update» sin lista de columnas, probar que mover un movimiento de paciente no vuelve a aplicar el stock)
+--   select pg_get_triggerdef(oid) from pg_trigger where tgname = 'inv_aplicar';
+--   -- 10. trigger de documentos_compartidos (¿regenera el código al actualizar?)
+--   select pg_get_triggerdef(oid) from pg_trigger where tgname = 'documentos_codigo';
+--   -- 11. funciones que fijan variables de configuración (tras aplicar: solo las RPC de emergencias deben aparecer)
+--   select proname from pg_proc where pronamespace = 'public'::regnamespace and prosrc ilike '%set_config%';
+--   -- 12. citas_tipo_check actual (debe ser la lista de 5 tipos, NULL permitido)
+--   select pg_get_constraintdef(oid) from pg_constraint where conname = 'citas_tipo_check' and conrelid = 'public.citas'::regclass;
 --
 -- CÓMO APLICAR: como UNA sola migración (la herramienta la envuelve en transacción; por eso no lleva begin/commit).
 --
@@ -92,48 +109,100 @@
 --     -- simular a un usuario de una clínica HOSPITAL de prueba (<USER-HOSP>) y a uno de otra clínica (<USER-OTRA>):
 --     select set_config('request.jwt.claims', json_build_object('sub', '<USER-HOSP>', 'role', 'authenticated')::text, true);
 --     set local role authenticated;
---     -- 1. llegada con paciente nuevo, sin identificar y existente
+--     -- 1. TRES caminos de registro: paciente nuevo, sin identificar y existente
 --     select public.emergencia_registrar(null, 'Prueba Nueva', '5555-0000', null, null, 2::smallint, 'Dolor en el pecho', 'Esposo', null, null);
 --     select public.emergencia_registrar(null, null, null, 'Masculino', '35', 1::smallint, 'Trauma por accidente', null, null, null);
 --     select public.emergencia_registrar('<PACIENTE-DE-LA-CLINICA>', null, null, null, null, 4::smallint, 'Fiebre', null, '<PROFESIONAL-DE-LA-CLINICA>', null);
 --     select e.estado, e.triage, c.tipo, c.estado, c.fecha, c.hora, c.departamento_id, p.nombre, p.sin_identificar
 --       from public.emergencias e join public.citas c on c.id = e.cita_id join public.pacientes p on p.id = e.paciente_id order by e.llegada_at;
---     -- 2. estados: atencion pone atendido_at; alta cierra (cita 'Asistió'); reabrir limpia cerrado_at (cita 'Pendiente'); retirado → 'No asistió'
+--         (solo el camino «sin identificar» deja sin_identificar = true; con la variable conception.emergencia_alta ya limpia: current_setting(...,true) = '')
+--     -- 2. TRANSICIONES de estado: atencion pone atendido_at; alta cierra (cita 'Asistió'); REABRIR (alta → espera) limpia cerrado_at y deja la
+--     --    cita 'Pendiente'; retirado → cita 'No asistió' y sin atendido_at
 --     select public.emergencia_estado('<CITA>', 'atencion');  select public.emergencia_estado('<CITA>', 'alta', 'Se va a casa');
 --     select estado, atendido_at, cerrado_at, destino_nota from public.emergencias where cita_id = '<CITA>';
+--     select public.emergencia_estado('<CITA>', 'espera');  -- reabrir
+--     select e.cerrado_at, e.destino_nota, c.estado from public.emergencias e join public.citas c on c.id = e.cita_id where e.cita_id = '<CITA>';
 --     select public.emergencia_estado('<CITA>', 'observacion');  select public.emergencia_estado('<CITA2>', 'retirado');
---     -- 3. identificar: renombrar y unir (la cita, archivos y cobros pasan al paciente existente; el provisional se borra si queda sin citas)
---     select public.emergencia_identificar('<CITA-SIN-IDENTIFICAR>', null, 'Nombre Real', '5555-1111');
---     select public.emergencia_identificar('<CITA-SIN-IDENTIFICAR-2>', '<PACIENTE-EXISTENTE>', null, null);
---   -- Pruebas negativas (cada una con su set_config / set local role; usar reset role entre una y otra):
---   --  4. Usuario de OTRA clínica llama emergencia_estado / emergencia_identificar con una cita ajena → NO_ENCONTRADO; con p_paciente /
---   --     p_profesional / p_sede ajenos en emergencia_registrar → REFERENCIA_AJENA; select * from emergencias solo trae las suyas.
---   --  5. Clínica que NO es hospital llama emergencia_registrar → SIN_PERMISO. Clínica vencida → SIN_PERMISO. Sesión de soporte → SIN_PERMISO.
---   --  6. Clínica en prueba con 3 pacientes: registrar un paciente nuevo → LIMITE_PRUEBA (con uno existente pasa).
---   --  7. update public.emergencias set paciente_id = '<OTRO-PACIENTE-DE-LA-CLINICA>' where cita_id = '<CITA>';  → CAMPO_INMUTABLE
---   --     update public.emergencias set cita_id = '<OTRA-CITA>' ...;  update ... set clinica_id = '<OTRA-CLINICA>' ...;  → CAMPO_INMUTABLE
---   --     insert into public.emergencias (cita_id, clinica_id, paciente_id, triage, motivo) con una cita de otra clínica → REFERENCIA_AJENA.
---   --  8. update public.emergencias set estado = 'alta' where cita_id = '<CITA>';  (sin cerrado_at) → viola emergencias_cierre_coherente.
---   --  9. delete from public.emergencias → permission denied; cita_eliminar de la cita borra también su fila (cascada).
---   -- 10. Soporte: select funciona; insert/update directos fallan (RLS) y las RPC lanzan SIN_PERMISO.
---   -- 11. Anon: set local role anon; select * from public.emergencias; select public.emergencia_registrar(...) → permission denied.
---   -- 12. Clínicas que no son hospital: select count(*) from public.pacientes where sin_identificar;  → 0.
---   -- 13. Ejercitar CADA rama de las tres funciones y del trigger (plpgsql no se valida al crear la función).
+--     -- 3. IDENTIFICAR
+--     --   a. renombrar: select public.emergencia_identificar('<CITA-SIN-IDENTIFICAR>', null, 'Nombre Real', '5555-1111');  → sin_identificar = false
+--     --   b. unir con un paciente existente cuando la cita tiene archivos, cobros (con abonos), inventario_movimientos y el provisional tiene
+--     --      documentos_compartidos: select public.emergencia_identificar('<CITA-SIN-IDENTIFICAR-2>', '<PACIENTE-EXISTENTE>', null, null);
+--     --      → archivos / cobros / abonos (vía cobro) / inventario_movimientos de la cita y los documentos del provisional ahora son del destino;
+--     --        el provisional ya no existe; el STOCK de inventario no cambió (comparar select de stock antes y después)
+--     --   c. unir cuando el provisional tiene una SEGUNDA cita: la cita elegida pasa al destino y el provisional se QUEDA (con su otra cita)
+--     --   d. destino sin identificar (sin_identificar = true) → DATOS_INVALIDOS
+--     --   e. paciente de la cita ya identificado → NO_APLICA
+--     --   f. provisional con datos en su ficha (p. ej. update pacientes set alergias = 'Penicilina' where id = '<PROVISIONAL>') y unir →
+--     --      PROVISIONAL_CON_DATOS, y no se movió nada (la cita sigue con el provisional)
+--     -- 4. NEGATIVAS como authenticated (cada una con su set_config / set local role; usar reset role entre una y otra):
+--     --   a. insert / update / delete sobre public.emergencias → permission denied (clientes solo tienen select)
+--     --   b. update public.pacientes set sin_identificar = true where id = '<PACIENTE-IDENTIFICADO>';  → CAMPO_INMUTABLE
+--     --   c. insert into public.pacientes (clinica_id, nombre, sin_identificar) values ('<SU-CLINICA>', 'Prueba', true) returning sin_identificar;  → false
+--     --   d. update public.pacientes set sin_identificar = false where id = '<PROVISIONAL>';  funciona (limpiarla se permite)
+--     -- 5. OTRA CLÍNICA (<USER-OTRA>): emergencia_estado / emergencia_identificar con una cita ajena → NO_ENCONTRADO; con p_paciente /
+--     --    p_profesional / p_sede ajenos en emergencia_registrar → REFERENCIA_AJENA; select * from emergencias solo trae las suyas.
+--     -- 6. Clínica que NO es hospital, clínica VENCIDA o sesión de SOPORTE llama cualquiera de las tres RPC → SIN_PERMISO.
+--     -- 7. Clínica en prueba con 3 pacientes: registrar un paciente nuevo → LIMITE_PRUEBA (con uno existente pasa).
+--     -- 8. Integridad (como dueño, set local role postgres; los clientes ya no escriben): update public.emergencias set paciente_id / cita_id /
+--     --    clinica_id = <otro> → CAMPO_INMUTABLE; insert con una cita de otra clínica → REFERENCIA_AJENA; update ... set estado = 'alta' sin
+--     --    cerrado_at → viola emergencias_cierre_coherente.
+--     -- 9. cita_eliminar de una cita de emergencia borra también su fila de emergencias (cascada).
+--     -- 10. ANON: set local role anon; select * from public.emergencias; select public.emergencia_registrar(...) → permission denied.
+--     -- 11. Clínicas que no son hospital: select count(*) from public.pacientes where sin_identificar;  → 0.
+--     -- 12. Ayudantes que fijan variables: select proname from pg_proc where pronamespace = 'public'::regnamespace and prosrc ilike '%set_config%';
+--     --     → SOLO emergencia_registrar y emergencia_identificar.
+--     -- 13. cita con tipo 'Emergencia' ya se acepta (sección 0); tipo 'Otro' sigue rechazado.
+--     -- 14. Ejercitar CADA rama de las tres funciones y de los dos triggers (plpgsql no se valida al crear la función).
 --   rollback;
 --
 -- ROLLBACK (deshacer todo; las citas ya creadas con tipo 'Emergencia' y los pacientes provisionales QUEDAN como datos normales)
+--   -- el CHECK de tipo vuelve a la lista de 5 SOLO si ninguna fila tiene tipo 'Emergencia' (si hay, primero cambiarles el tipo o el ALTER falla):
+--   --   select count(*) from public.citas where tipo = 'Emergencia';  → debe ser 0
+--   alter table public.citas drop constraint citas_tipo_check;
+--   alter table public.citas add constraint citas_tipo_check check (tipo = any (array['Primera consulta','Seguimiento','Evaluación','Procedimiento','Cirugía']));
 --   drop function if exists public.emergencia_identificar(uuid, uuid, text, text);
 --   drop function if exists public.emergencia_estado(uuid, text, text);
 --   drop function if exists public.emergencia_registrar(uuid, text, text, text, text, smallint, text, text, uuid, uuid);
 --   drop table if exists public.emergencias;
 --   drop function if exists public.emergencias_integridad();
+--   drop trigger if exists pacientes_sin_identificar_guard on public.pacientes;
+--   drop function if exists public.pacientes_sin_identificar_guard();
 --   alter table public.pacientes drop column if exists sin_identificar;
+
+-- 0. citas.tipo accepts 'Emergencia' (production has a closed-list CHECK; NULL stays allowed) ----------------------------------------------
+alter table public.citas drop constraint citas_tipo_check;
+alter table public.citas add constraint citas_tipo_check
+  check (tipo = any (array['Primera consulta', 'Seguimiento', 'Evaluación', 'Procedimiento', 'Cirugía', 'Emergencia']));
 
 -- 1. pacientes.sin_identificar ---------------------------------------------------------------------------------------------------------
 alter table public.pacientes add column sin_identificar boolean not null default false;
 
--- Harmless when authenticated already has table-wide privileges (see RIESGOS)
-grant select (sin_identificar), update (sin_identificar) on public.pacientes to authenticated;
+-- Clients can never turn it ON. authenticated has table-wide insert/update on pacientes, so this is enforced by a trigger:
+--   * INSERT: forced to false unless the transaction-local setting conception.emergencia_alta = 'on', which only emergencia_registrar sets
+--     (right around its own insert of a provisional patient, and cleared right after). Clients cannot set it: PostgREST cannot issue SET /
+--     set_config (pg_catalog is not exposed) and no other exposed function sets it.
+--   * UPDATE of sin_identificar: false -> true raises CAMPO_INMUTABLE; true -> false (completing the patient) stays allowed.
+create or replace function public.pacientes_sin_identificar_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.sin_identificar and coalesce(current_setting('conception.emergencia_alta', true), '') <> 'on' then
+      new.sin_identificar := false;
+    end if;
+  elsif new.sin_identificar and not old.sin_identificar then
+    raise exception 'CAMPO_INMUTABLE' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.pacientes_sin_identificar_guard() from public, anon, authenticated;
+
+create trigger pacientes_sin_identificar_guard before insert or update of sin_identificar on public.pacientes
+  for each row execute function public.pacientes_sin_identificar_guard();
 
 -- 2. emergencias (1:1 with the cita) ---------------------------------------------------------------------------------------------------
 create table public.emergencias (
@@ -158,7 +227,7 @@ create index emergencias_clinica_llegada_idx on public.emergencias (clinica_id, 
 create index emergencias_abiertas_idx on public.emergencias (clinica_id, estado) where cerrado_at is null;
 create index emergencias_paciente_idx on public.emergencias (paciente_id);
 
--- 3. integrity: same clinic, same patient, immutable keys ------------------------------------------------------------------------------
+-- 3. integrity (defence in depth: clients cannot write this table at all): same clinic, same patient, immutable keys ------------------------------------------------------------------------------
 -- SECURITY DEFINER: it reads citas / pacientes of every clinic (RLS does not apply), so it compares with the clinica_id of the row being saved.
 -- emergencia_identificar() is the ONLY code that may change paciente_id: it sets the transaction-local setting conception.emergencia_mover to the
 -- id of the cita being moved (is_local = true: it disappears at the end of the transaction and is cleared right after the move). A client cannot
@@ -203,30 +272,16 @@ revoke all on function public.emergencias_integridad() from public, anon, authen
 create trigger emergencias_integridad before insert or update of clinica_id, cita_id, paciente_id on public.emergencias
   for each row execute function public.emergencias_integridad();
 
--- 4. RLS -------------------------------------------------------------------------------------------------------------------------------
+-- 4. RLS + privileges -----------------------------------------------------------------------------------------------------------------
+-- Clients only READ. Every write goes through the SECURITY DEFINER RPCs below (they refuse expired accounts and support sessions), so there
+-- are no insert / update / delete policies and no such grants. The cascade from citas / pacientes removes rows with the table owner's rights.
 alter table public.emergencias enable row level security;
 
 create policy emergencias_ver on public.emergencias for select to authenticated
   using (clinica_id = (select public.mi_clinica()));
--- support sessions are READ-ONLY (and not (select public.es_soporte()))
-create policy emergencias_crear on public.emergencias for insert to authenticated
-  with check (clinica_id = (select public.mi_clinica()) and not (select public.es_soporte()));
-create policy emergencias_editar on public.emergencias for update to authenticated
-  using (clinica_id = (select public.mi_clinica()) and not (select public.es_soporte()))
-  with check (clinica_id = (select public.mi_clinica()) and not (select public.es_soporte()));
--- no delete policy on purpose: only the foreign key cascade (cita_eliminar / deleting the patient) removes a row
 
--- an expired account is read-only (same form as the other clinic data tables, see 2026-11-27_codigo_promo.sql)
-create policy emergencias_no_vencida_ins on public.emergencias as restrictive for insert to authenticated
-  with check (not (select public.clinica_vencida()));
-create policy emergencias_no_vencida_upd on public.emergencias as restrictive for update to authenticated
-  using (not (select public.clinica_vencida())) with check (not (select public.clinica_vencida()));
-create policy emergencias_no_vencida_del on public.emergencias as restrictive for delete to authenticated
-  using (not (select public.clinica_vencida()));
-
--- table privileges: nothing for anon / public, no delete for clients
 revoke all on public.emergencias from public, anon, authenticated;
-grant select, insert, update on public.emergencias to authenticated;
+grant select on public.emergencias to authenticated;
 grant all on public.emergencias to service_role;
 
 -- 5. emergencia_registrar: arrival of a patient (patient + cita + emergency in ONE transaction) ---------------------------------------
@@ -286,9 +341,12 @@ begin
         || coalesce(' · ' || v_sexo, '') || coalesce(' · ' || v_edad, '');
     end if;
     -- the trial-limit trigger on pacientes may raise LIMITE_PRUEBA: it propagates (the app already translates it)
+    -- pacientes_sin_identificar_guard() only keeps sin_identificar = true while this transaction-local setting is on
+    perform set_config('conception.emergencia_alta', 'on', true);
     insert into public.pacientes (clinica_id, nombre, telefono, origen, sede_id, created_by, sexo, sin_identificar)
     values (v_clinica, v_nombre, v_tel, 'otro', v_sede, auth.uid(), v_sexo, v_sin)
     returning id into v_pac;
+    perform set_config('conception.emergencia_alta', '', true);
   end if;
 
   -- the clinic's emergency specialty, if it has one
@@ -369,6 +427,7 @@ declare
   v_actual uuid;
   v_nombre text := left(btrim(coalesce(p_nombre, '')), 120);
   v_tel text := nullif(left(btrim(coalesce(p_telefono, '')), 30), '');
+  v_datos boolean;
 begin
   v_clinica := public.mi_clinica();
   if auth.uid() is null or v_clinica is null or public.es_soporte() or public.clinica_vencida()
@@ -396,24 +455,37 @@ begin
     perform 1 from public.pacientes x where x.id = p_paciente and not x.sin_identificar;
     if not found then raise exception 'DATOS_INVALIDOS'; end if;
 
+    -- a provisional patient whose ficha already has data typed in is never merged away (that data would be lost): rename it instead.
+    -- to_jsonb keeps this independent of the column types; empty strings / arrays / objects and null do not count as data.
+    select exists (
+      select 1 from public.pacientes x, jsonb_each(to_jsonb(x)) j
+       where x.id = v_actual
+         and (j.key in ('alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'extra')
+              or j.key like 'antecedentes%')
+         and j.value <> 'null'::jsonb and j.value <> '[]'::jsonb and j.value <> '{}'::jsonb
+         and not (jsonb_typeof(j.value) = 'string' and btrim(j.value #>> '{}') = '')
+    ) into v_datos;
+    if v_datos then raise exception 'PROVISIONAL_CON_DATOS'; end if;
+
     -- see emergencias_integridad(): only this function may move paciente_id; the setting is local to this transaction
     perform set_config('conception.emergencia_mover', p_cita::text, true);
     update public.citas c set paciente_id = p_paciente where c.id = p_cita and c.clinica_id = v_clinica;
     update public.emergencias e set paciente_id = p_paciente where e.cita_id = p_cita and e.clinica_id = v_clinica;
     perform set_config('conception.emergencia_mover', '', true);
 
+    -- everything that hangs from THIS cita follows it (abonos hang from the cobro)
     update public.archivos a set paciente_id = p_paciente where a.cita_id = p_cita and a.clinica_id = v_clinica;
     update public.cobros b set paciente_id = p_paciente where b.cita_id = p_cita and b.clinica_id = v_clinica;
+    update public.inventario_movimientos m set paciente_id = p_paciente where m.cita_id = p_cita and m.clinica_id = v_clinica;
 
-    -- the provisional patient goes away only when nothing else hangs from it
+    -- the provisional patient goes away only when nothing else hangs from it: first move what is left, so the delete loses / unlinks nothing
     if not exists (select 1 from public.citas c where c.paciente_id = v_actual) then
       update public.archivos a set paciente_id = p_paciente where a.paciente_id = v_actual and a.clinica_id = v_clinica;
       update public.cobros b set paciente_id = p_paciente where b.paciente_id = v_actual and b.clinica_id = v_clinica;
-      begin
-        delete from public.pacientes x where x.id = v_actual and x.clinica_id = v_clinica and x.sin_identificar;
-      exception when foreign_key_violation then
-        null; -- something else still references it: it stays as an empty provisional patient (see RIESGOS)
-      end;
+      update public.inventario_movimientos m set paciente_id = p_paciente where m.paciente_id = v_actual and m.clinica_id = v_clinica;
+      update public.documentos_compartidos d set paciente_id = p_paciente where d.paciente_id = v_actual and d.clinica_id = v_clinica;
+      -- any other reference without a cascade makes this fail and the whole function rolls back (nothing is left half done)
+      delete from public.pacientes x where x.id = v_actual and x.clinica_id = v_clinica and x.sin_identificar;
     end if;
   end if;
 end;

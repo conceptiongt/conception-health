@@ -94,9 +94,9 @@ function AppPrivada() {
 
 function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, vencida, recargar: recargarSesion } = sesion
-  const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
+  const { datos, error, recargar, recargarSilencioso } = useCargarDatos(perfil.clinica_id)
   const hospital = useCargarHospital(clinica)
-  const emergencias = useCargarEmergencias(clinica, recargar)
+  const emergencias = useCargarEmergencias(clinica, recargarSilencioso, datos?.citas)
   const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
   const acc = accesos(clinica, planActivo)
   // Emergencias go right after Inicio, for hospital accounts only

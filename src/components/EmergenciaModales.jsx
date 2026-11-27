@@ -12,6 +12,7 @@ import { Icon } from './ui/Icon'
 import { Campo, Input, Textarea } from './ui/Campos'
 import { Desplegable } from './ui/Desplegable'
 import { toast } from './ui/Toast'
+import { confirmar } from './ui/Confirmar'
 import { BotonesSubir, subirArchivos } from './SubirArchivos'
 import { FaltanDatos } from './EmergenciaBits'
 
@@ -264,12 +265,13 @@ export function FinalizarModal({ item, onClose }) {
   // the assigned doctor is who confirms that the patient was attended (not needed when the patient left without being seen)
   const necesitaMedico = hayMedicos && resultado !== 'retirado'
   const medicoOk = !necesitaMedico || !!prof
-  const valido = !!resultado && medicoOk
+  const valido = !!resultado && medicoOk && !!cita
   const medico = hospital.profesional(prof)
 
   const finalizar = async () => {
     if (!valido || enviando.current) return
     enviando.current = true; setBusy(true)
+    if (!cita) { enviando.current = false; setBusy(false); toast.error('La cita todavía no se cargó. Intente de nuevo'); return }
     if (prof !== (cita?.profesional_id || '')) {
       const { error } = await supabase.from('citas').update({ profesional_id: prof || null }).eq('id', cita.id)
       if (error) { enviando.current = false; setBusy(false); toast.error('No se pudo asignar el médico'); return }
@@ -317,6 +319,10 @@ export function CompletarDatosModal({ item, onClose }) {
 
   const guardar = async () => {
     if (!valido || enviando.current) return
+    if (modo === 'existente' && !await confirmar({
+      titulo: '¿Unir con este paciente?', subtitulo: pac.nombre,
+      mensaje: ['La emergencia, sus fotos, cobros y productos usados pasan a este paciente y el registro «Sin identificar» se elimina. No se puede deshacer.'], aceptar: 'Unir',
+    })) return
     enviando.current = true; setBusy(true)
     const { error } = await supabase.rpc('emergencia_identificar', {
       p_cita: item.em.cita_id, p_paciente: modo === 'existente' ? pac.id : null,
@@ -348,7 +354,7 @@ export function CompletarDatosModal({ item, onClose }) {
               <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 15 }}>{pac.nombre}</div><div style={{ fontSize: 12.5, color: C.g500 }}>{pac.telefono || 'Sin teléfono'}</div></div>
               <Button size="sm" variant="ghost" onClick={() => { setPac(null); setQ('') }}>Cambiar</Button>
             </div>
-            <div style={{ fontSize: 13, color: C.g500, marginTop: 10, lineHeight: 1.5 }}>La emergencia, sus fotos y cobros pasan a este paciente y el registro «Sin identificar» se elimina.</div>
+            <div style={{ fontSize: 13, color: C.g500, marginTop: 10, lineHeight: 1.5 }}>La emergencia, sus fotos, cobros y productos usados pasan a este paciente y el registro «Sin identificar» se elimina.</div>
           </div>
         ) : (
           <BuscadorPacientes valor={q} onValor={setQ} onElegir={setPac} placeholder="Buscar paciente por nombre o teléfono" />
@@ -369,6 +375,7 @@ export function FotosModal({ item, onClose }) {
   const [archivos, setArchivos] = useState(null)
   const [subiendo, setSubiendo] = useState(false)
   const cargar = useCallback(async () => {
+    if (!cita) return
     const { data } = await supabase.from('archivos').select('*').eq('cita_id', cita.id).order('created_at')
     const lista = data || []
     if (lista.length) {
@@ -377,9 +384,10 @@ export function FotosModal({ item, onClose }) {
       lista.forEach(a => { a.url = porPath[a.path] })
     }
     setArchivos(lista)
-  }, [cita.id])
+  }, [cita?.id])
   useEffect(() => { cargar() }, [cargar])
   const subir = async (files) => {
+    if (!cita) return
     setSubiendo(true)
     const errores = await subirArchivos(files, { clinicaId: perfil.clinica_id, pacienteId: cita.paciente_id, citaId: cita.id, etapa: 'estudio', fecha: cita.fecha || hoyGT() })
     setSubiendo(false)

@@ -98,6 +98,8 @@ export function mensajeEmergencia(error, porDefecto = 'No se pudo guardar') {
   if (t.includes('LIMITE_PRUEBA')) return 'La versión de prueba permite 3 pacientes. Active su suscripción para registrar más.'
   if (t.includes('SIN_PERMISO')) return 'Su usuario no puede registrar emergencias en este momento'
   if (t.includes('NO_ENCONTRADO')) return 'No se encontró la emergencia. Actualice la lista'
+  if (t.includes('PROVISIONAL_CON_DATOS')) return 'Ese paciente provisional ya tiene datos en su ficha. Complete su nombre en lugar de unirlo.'
+  if (t.includes('DATOS_INVALIDOS')) return 'Revise los datos ingresados'
   if (t.includes('NO_APLICA')) return 'Este paciente ya está identificado. Actualice la lista'
   if (t.includes('REFERENCIA_AJENA')) return 'Ese dato no pertenece a su hospital'
   return porDefecto

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, origenLabel } from '../lib/constantes'
@@ -381,7 +381,19 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
 
 // ─── Consultations: each one readable on its own, with its clinical file sections ───
 function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
-  const { sedes, clinica, hospital, emergencias } = useDatos()
+  const { sedes, clinica, hospital, emergencias, perfil } = useDatos()
+  // the emergency block (motive, outcome, notes) is clinical data: only for who may see expedientes or emergencias
+  const veEmergencia = puede(perfil, 'expedientes') || puede(perfil, 'emergencias')
+  // the shared state only holds recent emergencies: older ones of this patient are fetched here
+  const faltan = useMemo(() => (veEmergencia && emergencias?.disponible ? citas.filter(c => c.tipo === TIPO_EMERGENCIA && !emergencias.porCita.has(c.id)).map(c => c.id) : []), [citas, emergencias, veEmergencia])
+  const [antiguas, setAntiguas] = useState(() => new Map())
+  const llaveFaltan = faltan.join(',')
+  useEffect(() => {
+    if (!faltan.length) return
+    let vigente = true
+    supabase.from('emergencias').select('*').in('cita_id', faltan).then(({ data }) => { if (vigente && data) setAntiguas(new Map(data.map(e => [e.cita_id, e]))) })
+    return () => { vigente = false }
+  }, [llaveFaltan]) // eslint-disable-line react-hooks/exhaustive-deps
   const [abiertas, setAbiertas] = useState(() => new Set(citas.slice(0, 1).map(c => c.id)))
   const alternar = (id) => setAbiertas(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   return (
@@ -395,7 +407,7 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
             const depC = hospital.disponible ? hospital.departamento(c.departamento_id) : null // hospital: specialty and doctor of each consultation
             const medC = hospital.disponible ? hospital.profesional(c.profesional_id) : null
             const abierta = abiertas.has(c.id)
-            const em = emergencias?.porCita?.get(c.id) // emergency record of this consultation (hospital accounts)
+            const em = veEmergencia ? (emergencias?.porCita?.get(c.id) || antiguas.get(c.id)) : null // emergency record of this consultation (hospital accounts)
             const contenido = secciones.length || dc || c.procedimiento || (clinico && c.notas) || em
             return (
               <div key={c.id} style={{ border: `1px solid ${C.line}`, borderRadius: 18, overflow: 'hidden' }}>

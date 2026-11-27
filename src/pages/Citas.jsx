@@ -205,9 +205,12 @@ function ListaCitas({ citas, porId, sedes, hospital, abierta, setAbierta, perfil
                 {hospital && <td style={td}>{hospital.departamento(c.departamento_id)?.nombre || <span style={{ color: C.g300 }}>—</span>}</td>}
                 {hospital && <td style={td}>{(() => { const m = hospital.profesional(c.profesional_id); return m ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 9, background: colorProfesional(m, hospital.profesionales.indexOf(m)), flexShrink: 0 }} />{m.nombre}</span> : <span style={{ color: C.g300 }}>—</span> })()}</td>}
                 <td style={td} onClick={ev => ev.stopPropagation()}>
-                  <select value={c.estado} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
+                  {c.tipo === TIPO_EMERGENCIA ? (
+                    // an emergency cita is controlled by the Emergencias module
+                    <span title="Se cambia desde Emergencias" style={{ display: 'inline-block', padding: '4px 8px', borderRadius: 4, fontWeight: 500, fontSize: 12.5, color: e.color, background: e.bg }}>{c.estado}</span>
+                  ) : <select value={c.estado} onChange={ev => onEstado(c, ev.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', fontWeight: 500, fontSize: 12.5, fontFamily: 'inherit', color: e.color, background: e.bg, cursor: 'pointer' }}>
                     {ESTADOS_CITA.map(x => <option key={x.value}>{x.value}</option>)}
-                  </select>
+                  </select>}
                 </td>
                 {conSede && <td style={td}>{nombreSede(sedes, c.sede_id) || <span style={{ color: C.g300 }}>—</span>}</td>}
                 <td style={td}>{p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen)}</td>

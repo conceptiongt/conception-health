@@ -103,7 +103,7 @@ const DB = {
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   // fictional support-code history (the real database never exposes the hash column)
@@ -129,14 +129,32 @@ function from(t) {
   const b = {
     select(c) { if (op === 'select') cols = c; return b }, order(k, o) { ord = [k, o?.ascending]; return b }, range() { return b }, limit() { return b },
     eq(k, v) { filt.push([k, v]); return b }, is(k, v) { filt.push([k, v, 'is']); return b }, in(k, arr) { filt.push([k, arr, 'in']); return b },
-    lt() { return b }, gte() { return b }, single() { one = true; return b }, maybeSingle() { maybe = true; return b },
+    lt(k, v) { filt.push([k, v, 'lt']); return b }, gte(k, v) { filt.push([k, v, 'gte']); return b }, or(txt) { filt.push([null, txt, 'or']); return b }, single() { one = true; return b }, maybeSingle() { maybe = true; return b },
     insert(x) { op = 'insert'; payload = x; return b }, upsert(x) { op = 'upsert'; payload = x; return b }, update(x) { op = 'update'; payload = x; return b }, delete() { op = 'delete'; return b },
     then(res, rej) { return Promise.resolve(correr()).then(res, rej) },
   }
-  const coincide = r => filt.every(([k, v, o]) => o === 'in' ? v.includes(r[k]) : o === 'is' ? (r[k] ?? null) === v : r[k] === v)
+  // PostgREST-like conditions used by the app: «col.is.null», «col.gte.X», «col.neq.X» joined by commas (OR)
+  const condicion = (r, c) => {
+    const [k, op, ...resto] = c.split('.'), v = resto.join('.')
+    if (op === 'is') return (r[k] ?? null) === (v === 'null' ? null : v)
+    if (op === 'gte') return r[k] != null && String(r[k]) >= v
+    if (op === 'neq') return r[k] !== v
+    return r[k] === v
+  }
+  const coincide = r => filt.every(([k, v, o]) => o === 'in' ? v.includes(r[k]) : o === 'is' ? (r[k] ?? null) === v : o === 'gte' ? r[k] != null && String(r[k]) >= v : o === 'lt' ? r[k] != null && String(r[k]) < v
+    : o === 'or' ? v.split(',').some(c => condicion(r, c)) : r[k] === v)
   const sinPermiso = ['cobros', 'abonos'].includes(t) && DB.perfiles[0].rol !== 'dueno'
   function correr() {
     const filas = DB[t] || (DB[t] = [])
+    // test switches (demo only): ?em_tabla=falta simulates the missing emergencias table; window.__demoFalla = { tabla, veces } fails the next reads
+    if (t === 'emergencias') {
+      const m = (window.__demoCuenta ||= { emergencias: 0 }); if (op === 'select') m.emergencias++
+      if (op !== 'select') return { data: null, error: { code: '42501', message: 'permission denied for table emergencias' } } // clients only read; writes go through the RPCs
+      if (q.get('em_tabla') === 'falta') return { data: null, error: { code: '42P01', message: 'relation "public.emergencias" does not exist' } }
+    }
+    const f = window.__demoFalla
+    if (op === 'select' && f && f.veces > 0 && (f.tabla === t || f.tabla === '*')) { f.veces--; return { data: null, error: { message: 'Failed to fetch' } } }
+    if (t === 'pacientes' && op === 'update' && payload.sin_identificar === true && filas.some(r => coincide(r) && !r.sin_identificar)) return { data: null, error: { code: '23514', message: 'CAMPO_INMUTABLE' } }
     if (op === 'select') {
       if (sinPermiso || (t === 'gastos' && DB.perfiles[0].rol !== 'dueno')) return { data: one || maybe ? null : [], error: null }
       let d = filas.filter(coincide).map(r => ({ ...r }))
@@ -146,7 +164,7 @@ function from(t) {
     if (op === 'insert') {
       const lista = [].concat(payload).map(x => ({ id: id(), clinica_id: cid, created_at: new Date().toISOString(), ...x }))
       if (['citas', 'cobros', 'abonos', 'gastos', 'archivos', 'ordenes_compra', 'inventario_movimientos'].includes(t)) lista.forEach(x => { x.fecha = x.fecha || hoy })
-      if (t === 'pacientes') lista.forEach(x => { x.portal_token = id(); x.portal_codigo = `${(x.nombre || 'paciente').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}-demo`; x.extra = x.extra || {}; x.portal_datos = true })
+      if (t === 'pacientes') lista.forEach(x => { x.sin_identificar = false; x.portal_token = id(); x.portal_codigo = `${(x.nombre || 'paciente').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}-demo`; x.extra = x.extra || {}; x.portal_datos = true })
       if (t === 'inventario_movimientos') {
         const copia = JSON.stringify(DB.existencias)
         for (const r of lista) { const err = aplicar(r, r.delta); if (err) { DB.existencias = JSON.parse(copia); return { data: null, error: err } } }
@@ -275,13 +293,20 @@ function emergenciaRpc(fn, a) {
     const destino = DB.pacientes.find(x => x.id === a.p_paciente)
     if (!destino) return falla('REFERENCIA_AJENA')
     if (destino.sin_identificar || destino.id === actual.id) return falla('DATOS_INVALIDOS')
+    // a provisional patient with data typed in its ficha is never merged away
+    const CAMPOS = ['alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'extra']
+    const hayDatos = Object.entries(actual).some(([k, v]) => (CAMPOS.includes(k) || k.startsWith('antecedentes')) && v != null && !(typeof v === 'string' && !v.trim()) && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length))
+    if (hayDatos) return falla('PROVISIONAL_CON_DATOS')
     DB.citas.find(x => x.id === em.cita_id).paciente_id = destino.id
     em.paciente_id = destino.id
     DB.archivos.filter(x => x.cita_id === em.cita_id).forEach(x => { x.paciente_id = destino.id })
     DB.cobros.filter(x => x.cita_id === em.cita_id).forEach(x => { x.paciente_id = destino.id })
+    DB.inventario_movimientos.filter(x => x.cita_id === em.cita_id).forEach(x => { x.paciente_id = destino.id })
     if (!DB.citas.some(x => x.paciente_id === actual.id)) {
       DB.archivos.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
       DB.cobros.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
+      DB.inventario_movimientos.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
+      DB.documentos_compartidos.filter(x => x.paciente_id === actual.id).forEach(x => { x.paciente_id = destino.id })
       DB.pacientes = DB.pacientes.filter(x => x.id !== actual.id)
     }
     return { data: null, error: null }

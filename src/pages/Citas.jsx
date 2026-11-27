@@ -18,6 +18,8 @@ import { Desplegable } from '../components/ui/Desplegable'
 import { sincronizarCita } from '../lib/google'
 import { MeetCita } from '../components/EnlaceMeet'
 import { colorProfesional } from '../hooks/useHospital'
+import { confirmar } from '../components/ui/Confirmar'
+import { usaCirugias } from '../lib/calendario'
 
 // Inicio → a status box opens Citas already filtered (status, month, location)
 let filtroPendiente = null
@@ -71,6 +73,11 @@ export function Citas() {
     .sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
 
   const cambiarEstado = async (c, nuevo) => {
+    // cancelling a surgery's cita releases its operating room and team: ask first
+    if (c.tipo === 'Cirugía' && ['Cancelada', 'No asistió', 'Reagendada'].includes(nuevo) && usaCirugias(clinica)) {
+      const { data: cir } = await supabase.from('cirugias').select('quirofano_id, estado').eq('cita_id', c.id).maybeSingle()
+      if (cir && cir.estado !== 'suspendida' && !await confirmar({ titulo: '¿Liberar el quirófano?', mensaje: [`Esta cita es una cirugía programada. Con el estado «${nuevo}» se libera ${hospital.recursos.find(r => r.id === cir.quirofano_id)?.nombre || 'el quirófano'} y el equipo.`], aceptar: 'Sí, liberar', cancelar: 'No cambiar' })) { recargar(); return }
+    }
     const { error } = await supabase.from('citas').update({ estado: nuevo }).eq('id', c.id)
     if (error) { toast.error('No se pudo cambiar el estado'); return }
     sincronizarCita(c.id)

@@ -26,6 +26,8 @@ import { EventoModal } from '../components/EventoModal'
 import { MeetCita } from '../components/EnlaceMeet'
 import { Desplegable } from '../components/ui/Desplegable'
 import { colorProfesional, nombreCorto as cortoMedico } from '../hooks/useHospital'
+import { useCirugias } from '../hooks/useCirugias'
+import { usaCirugias } from '../lib/calendario'
 import { BandaEvento, ChipEvento, ElegirNuevo, ListaEventosDia, TarjetaEventos } from '../components/EventosCalendario'
 
 const PX_HORA = 56 // height of one hour in the time grids
@@ -102,7 +104,9 @@ export function Calendario({ fechaInicial }) {
   const prefsEf = useMemo(() => ({ ...prefs, colorPor: modo === 'medico' ? 'tipo' : modo }), [prefs, modo])
   const colorMedico = (id) => { const m = hospital.profesional(id); return m ? colorProfesional(m, hospital.profesionales.indexOf(m)) : '#8A93A8' }
   const colorDe = (c) => (modo === 'medico' ? estiloColor(colorMedico(c.profesional_id)) : colorDeCita(c, prefsEf))
-  const medicoCorto = (c) => { const m = hosp ? hospital.profesional(c.profesional_id) : null; return m ? cortoMedico(m) : '' }
+  // «Dr. Pérez · Quirófano 2»: the doctor (hospitals) and the operating room when the cita is a booked surgery
+  const salaDe = (c) => { const k = cirPorCita[c.id]; return k ? hospital.recursos.find(r => r.id === k.quirofano_id)?.nombre || '' : '' }
+  const medicoCorto = (c) => { const m = hosp ? hospital.profesional(c.profesional_id) : null; return [m ? cortoMedico(m) : '', salaDe(c)].filter(Boolean).join(' · ') }
 
   // the visible day lives in the address too (replace, so Back does not step through every arrow click)
   const fijarFecha = (iso) => {
@@ -129,6 +133,9 @@ export function Calendario({ fechaInicial }) {
     return () => { vivo = false }
   }, [googleConectado, verGoogle, desde, hasta])
   const gPorDia = useMemo(() => agruparGoogle(eventosG, desde, hasta), [eventosG, desde, hasta])
+  // surgeries booked in the visible range (to name the operating room on their chips)
+  const { cirugias: cirugiasRango } = useCirugias({ desde, hasta, reservas: false, activo: usaCirugias(clinica), ms: 120000 })
+  const cirPorCita = useMemo(() => Object.fromEntries(cirugiasRango.filter(c => c.estado !== 'suspendida').map(c => [c.cita_id, c])), [cirugiasRango])
   // { 'YYYY-MM-DD': [own event of that day] } for the visible range
   const ePorDia = useMemo(() => {
     const o = {}
@@ -202,7 +209,7 @@ export function Calendario({ fechaInicial }) {
       {evento && <EventoModal entrada={evento.entrada} fechaInicial={evento.fecha} horaInicial={evento.hora} citas={citas} clinica={clinica} googleListo={googleConectado} onClose={() => setEvento(null)} onGuardado={setAgenda} />}
       {googleAbierto && <DetalleGoogle g={googleAbierto} onClose={() => setGoogleAbierto(null)} />}
       {abierta && (
-        <DetalleCita cita={abierta} paciente={porId[abierta.paciente_id]} sedes={sedes} hospital={hosp ? hospital : null} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}
+        <DetalleCita cita={abierta} sala={salaDe(abierta)} paciente={porId[abierta.paciente_id]} sedes={sedes} hospital={hosp ? hospital : null} clinica={clinica} perfil={perfil} onClose={() => setAbierta(null)}
           onEditar={() => { setEditando(abierta); setAbierta(null) }} onExpediente={() => ir('expedientes', abierta.paciente_id)} />
       )}
       {personalizando && (
@@ -564,7 +571,7 @@ function DetalleGoogle({ g, onClose }) {
 }
 
 // In-platform window with one appointment: same actions and permissions as Citas
-function DetalleCita({ cita: c, paciente: p, sedes, hospital, clinica, perfil, onClose, onEditar, onExpediente }) {
+function DetalleCita({ cita: c, sala, paciente: p, sedes, hospital, clinica, perfil, onClose, onEditar, onExpediente }) {
   if (!p) return null
   const e = estadoCita(c.estado)
   const wa = linkWhatsApp(p.telefono, mensajeConfirmacion(p, c, clinica?.nombre || perfil.nombre))
@@ -576,6 +583,7 @@ function DetalleCita({ cita: c, paciente: p, sedes, hospital, clinica, perfil, o
         {dato('Fecha y hora', `${c.fecha.split('-').reverse().join('/')}${c.hora ? ` · ${fmtHora(c.hora)} · ${textoDuracion(duracionCita(c))}` : ' · Sin hora'}`)}
         {dato('Tipo', c.tipo)}
         {dato('Servicio', c.servicio)}
+        {dato('Quirófano', sala)}
         {hospital && dato('Especialidad', hospital.departamento(c.departamento_id)?.nombre)}
         {hospital && dato('Médico', hospital.profesional(c.profesional_id)?.nombre)}
         {dato('Estado', <Badge color={e.color === C.purple ? 'var(--acento-fuerte)' : e.color} bg={e.bg}>{c.estado}</Badge>)}

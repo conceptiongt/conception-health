@@ -265,9 +265,11 @@ function EditarEspecialidadModal({ d, onClose, onGuardado }) {
 }
 
 // ─── 2. Médicos y personal ───
-function Personal() {
+// `compacto`: the surgery-calendar version for clinics that are not hospitals (only surgeons and anesthesiologists, no specialties)
+export function Personal({ compacto = false }) {
   const { citas, hospital, perfil } = useDatos()
-  const { profesionales, departamentos } = hospital
+  const { departamentos } = hospital
+  const profesionales = compacto ? hospital.profesionales.filter(p => p.funcion === 'medico' || p.funcion === 'anestesiologo') : hospital.profesionales
   const lectura = esSoporte(perfil)
   const [modal, setModal] = useState(undefined) // undefined closed · null new · profesional edit
   const nombreFuncion = (v) => FUNCIONES.find(f => f.value === v)?.label || v
@@ -297,8 +299,8 @@ function Personal() {
   }
 
   return (
-    <Card title={`Médicos y personal${profesionales.length ? ` (${profesionales.length})` : ''}`} right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal(null)}>Agregar</Button>}>
-      <Ayuda>Médicos y personal «de planta» o «externo», cada uno con su especialidad. El color identifica al médico en el calendario.</Ayuda>
+    <Card title={`${compacto ? 'Cirujanos y anestesiólogos' : 'Médicos y personal'}${profesionales.length ? ` (${profesionales.length})` : ''}`} right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal(null)}>Agregar</Button>}>
+      <Ayuda>{compacto ? 'Los cirujanos y anestesiólogos que operan en sus quirófanos. El color identifica a cada uno en el calendario de quirófanos.' : 'Médicos y personal «de planta» o «externo», cada uno con su especialidad. El color identifica al médico en el calendario.'}</Ayuda>
       {profesionales.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay médicos ni personal.{!lectura && ' Agregue el primero con «Agregar».'}</div> : (
         <div>
           {profesionales.map((p, i) => (
@@ -309,7 +311,7 @@ function Personal() {
                   {p.nombre}{p.tipo === 'externo' && <span style={{ marginLeft: 8 }}><Badge color={C.amber} bg={C.amberLight}>Externo</Badge></span>}
                 </div>
                 <div style={{ fontSize: 12.5, color: C.g500 }}>
-                  {[nombreFuncion(p.funcion), hospital.departamento(p.departamento_id)?.nombre || 'Sin especialidad', p.colegiado && `Col. ${p.colegiado}`, p.telefono].filter(Boolean).join(' · ')}
+                  {[nombreFuncion(p.funcion), (hospital.departamento(p.departamento_id)?.nombre || (compacto ? '' : 'Sin especialidad')), p.colegiado && `Col. ${p.colegiado}`, p.telefono].filter(Boolean).join(' · ')}
                 </div>
               </div>
               {lectura ? <Badge color={p.activo ? C.green : C.g500} bg={p.activo ? C.greenLight : C.g100}>{p.activo ? 'Activo' : 'Inactivo'}</Badge> : <>
@@ -323,12 +325,12 @@ function Personal() {
           ))}
         </div>
       )}
-      {modal !== undefined && <PersonalModal p={modal} departamentos={departamentos} usados={profesionales.map(x => x.color).filter(Boolean)} onClose={() => setModal(undefined)} onGuardado={() => { setModal(undefined); hospital.recargar() }} />}
+      {modal !== undefined && <PersonalModal p={modal} compacto={compacto} departamentos={departamentos} usados={profesionales.map(x => x.color).filter(Boolean)} onClose={() => setModal(undefined)} onGuardado={() => { setModal(undefined); hospital.recargar() }} />}
     </Card>
   )
 }
 
-function PersonalModal({ p, departamentos, usados, onClose, onGuardado }) {
+function PersonalModal({ p, compacto, departamentos, usados, onClose, onGuardado }) {
   const { clinica } = useDatos()
   const siguiente = COLOR_MEDICO_DEFECTO.find(c => !usados.includes(c)) || COLOR_MEDICO_DEFECTO[usados.length % COLOR_MEDICO_DEFECTO.length]
   const [f, setF] = useState(() => ({
@@ -356,14 +358,14 @@ function PersonalModal({ p, departamentos, usados, onClose, onGuardado }) {
     <Modal title={p ? 'Editar médico o personal' : 'Agregar médico o personal'} onClose={onClose} maxWidth={560}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }}>
         <div style={{ gridColumn: '1 / -1' }}><Campo label="Nombre completo *"><Input value={f.nombre} onChange={set('nombre')} maxLength={80} autoFocus placeholder="Ej. Dra. Ana López" /></Campo></div>
-        <Campo label="Función"><Desplegable ariaLabel="Función" value={f.funcion} onChange={set('funcion')} options={FUNCIONES} style={caja} /></Campo>
+        <Campo label="Función"><Desplegable ariaLabel="Función" value={f.funcion} onChange={set('funcion')} options={compacto ? FUNCIONES.filter(x => x.value === 'medico' || x.value === 'anestesiologo') : FUNCIONES} style={caja} /></Campo>
         <Campo label="Tipo"><Desplegable ariaLabel="Tipo" value={f.tipo} onChange={set('tipo')} options={TIPOS_PROFESIONAL} style={caja} /></Campo>
-        <div style={{ gridColumn: '1 / -1' }}>
+        {!compacto && <div style={{ gridColumn: '1 / -1' }}>
           <Campo label="Especialidad" ayuda={departamentos.length === 0 ? 'Primero cargue las especialidades de su hospital' : undefined}>
             <Desplegable ariaLabel="Especialidad" value={f.departamento_id} onChange={set('departamento_id')} style={caja}
               options={[{ value: '', label: 'Sin especialidad' }, ...departamentos.filter(d => d.activo || d.id === f.departamento_id).map(d => ({ value: d.id, label: d.nombre + (d.activo ? '' : ' (inactiva)') }))]} />
           </Campo>
-        </div>
+        </div>}
         <Campo label="Número de colegiado"><Input value={f.colegiado} onChange={set('colegiado')} maxLength={30} /></Campo>
         <Campo label="Teléfono"><Input type="tel" value={f.telefono} onChange={set('telefono')} maxLength={30} /></Campo>
         <div style={{ gridColumn: '1 / -1' }}>
@@ -395,9 +397,11 @@ function nombresNuevos(tipo, cuantos, existentes) {
   return Array.from({ length: cuantos }, (_, i) => `${base} ${inicio + i}`)
 }
 
-function Areas() {
+// `compacto`: only the operating rooms (for clinics that are not hospitals and use the surgery calendar)
+export function Areas({ compacto = false }) {
   const { hospital, sedes, perfil } = useDatos()
-  const { areas, recursos } = hospital
+  const areas = compacto ? hospital.areas.filter(a => a.tipo === 'quirofanos') : hospital.areas
+  const recursos = compacto ? hospital.recursos.filter(r => r.tipo === 'quirofano') : hospital.recursos
   const lectura = esSoporte(perfil)
   const [modal, setModal] = useState(null) // { area: null | área } · { recursos: área } · { recurso }
   const recursosDe = (id) => recursos.filter(r => r.area_id === id)
@@ -417,9 +421,9 @@ function Areas() {
   }
 
   return (
-    <Card title="Áreas, quirófanos y camas" right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal({ area: null })}>Agregar área</Button>}>
-      <Ayuda>Arme su hospital por áreas y agregue sus quirófanos, camas y consultorios, tantos como tenga.</Ayuda>
-      {areas.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>Aún no hay áreas.{!lectura && ' Ej. «Quirófanos», «Encamamiento» o «Emergencia».'}</div> : (
+    <Card title={compacto ? 'Quirófanos' : 'Áreas, quirófanos y camas'} right={!lectura && <Button size="sm" variant="ghost" icon="mas" onClick={() => setModal({ area: null })}>{compacto ? 'Agregar quirófanos' : 'Agregar área'}</Button>}>
+      <Ayuda>{compacto ? 'Registre sus quirófanos (puede ser uno solo). Un quirófano en mantenimiento se marca «fuera de servicio».' : 'Arme su hospital por áreas y agregue sus quirófanos, camas y consultorios, tantos como tenga.'}</Ayuda>
+      {areas.length === 0 ? <div style={{ color: C.g400, fontSize: 13.5 }}>{compacto ? `Aún no hay quirófanos.${!lectura ? ' Agréguelos con «Agregar quirófanos».' : ''}` : `Aún no hay áreas.${!lectura ? ' Ej. «Quirófanos», «Encamamiento» o «Emergencia».' : ''}`}</div> : (
         <>
           <div style={{ fontSize: 13.5, fontWeight: 600, color: C.g700, marginBottom: 14 }}>
             {totales.length ? totales.join(' · ') : 'Sin quirófanos ni camas todavía'}{fuera > 0 && <span style={{ color: C.amber, fontWeight: 500 }}> · {plural(fuera, 'fuera de servicio', 'fuera de servicio')}</span>}
@@ -463,15 +467,15 @@ function Areas() {
           ))}
         </>
       )}
-      {modal?.area !== undefined && <AreaModal a={modal.area} sedes={sedes} onClose={() => setModal(null)}
+      {modal?.area !== undefined && <AreaModal a={modal.area} compacto={compacto} sedes={sedes} onClose={() => setModal(null)}
         onGuardado={(nueva) => { hospital.recargar(); setModal(nueva ? { recursos: nueva } : null) }} />}
-      {modal?.recursos && <RecursosModal area={modal.recursos} existentes={recursosDe(modal.recursos.id)} onClose={() => setModal(null)} onGuardado={() => { setModal(null); hospital.recargar() }} />}
+      {modal?.recursos && <RecursosModal compacto={compacto} area={modal.recursos} existentes={recursosDe(modal.recursos.id)} onClose={() => setModal(null)} onGuardado={() => { setModal(null); hospital.recargar() }} />}
       {modal?.recurso && <RecursoModal r={modal.recurso} onClose={() => setModal(null)} onGuardado={() => { setModal(null); hospital.recargar() }} />}
     </Card>
   )
 }
 
-function AreaModal({ a, sedes, onClose, onGuardado }) {
+function AreaModal({ a, compacto, sedes, onClose, onGuardado }) {
   const { clinica, hospital } = useDatos()
   const [f, setF] = useState(() => ({ nombre: a?.nombre || sugerenciaArea.quirofanos, tipo: a?.tipo || 'quirofanos', sede_id: a?.sede_id || '' }))
   const [busy, setBusy] = useState(false)
@@ -496,7 +500,7 @@ function AreaModal({ a, sedes, onClose, onGuardado }) {
   return (
     <Modal title={a ? 'Editar área' : 'Agregar área'} onClose={onClose} maxWidth={480}>
       <div style={{ display: 'grid', gap: 16 }}>
-        <Campo label="Tipo de área"><Desplegable ariaLabel="Tipo de área" value={f.tipo} onChange={cambiarTipo} options={TIPOS_AREA.map(t => ({ value: t.value, label: t.label }))} style={{ width: '100%', justifyContent: 'space-between', padding: '11px 14px' }} /></Campo>
+        {!compacto && <Campo label="Tipo de área"><Desplegable ariaLabel="Tipo de área" value={f.tipo} onChange={cambiarTipo} options={TIPOS_AREA.map(t => ({ value: t.value, label: t.label }))} style={{ width: '100%', justifyContent: 'space-between', padding: '11px 14px' }} /></Campo>}
         <Campo label="Nombre del área *"><Input value={f.nombre} onChange={v => setF(x => ({ ...x, nombre: v }))} maxLength={60} autoFocus placeholder="Ej. Quirófanos del segundo nivel" onKeyDown={e => { if (e.key === 'Enter') guardar() }} /></Campo>
         {sedes.length > 0 && (
           <Campo label="Sede">
@@ -511,7 +515,7 @@ function AreaModal({ a, sedes, onClose, onGuardado }) {
 }
 
 // several quirófanos / camas at once: «cuántos» stepper, names numbered automatically and editable
-function RecursosModal({ area, existentes, onClose, onGuardado }) {
+function RecursosModal({ area, compacto, existentes, onClose, onGuardado }) {
   const { clinica } = useDatos()
   const [tipo, setTipo] = useState(() => TIPOS_AREA.find(t => t.value === area.tipo)?.recurso || 'cubiculo')
   const [cuantos, setCuantos] = useState(1)
@@ -538,7 +542,7 @@ function RecursosModal({ area, existentes, onClose, onGuardado }) {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 180px' }}>
           <Campo label="Qué va a agregar">
-            <Desplegable ariaLabel="Qué va a agregar" value={tipo} onChange={(t) => { setTipo(t); regenerar(t, cuantos) }} options={RECURSOS_OPCIONES} style={{ width: '100%', justifyContent: 'space-between', padding: '11px 14px' }} />
+            <Desplegable ariaLabel="Qué va a agregar" value={tipo} onChange={(t) => { setTipo(t); regenerar(t, cuantos) }} options={compacto ? RECURSOS_OPCIONES.filter(o => o.value === 'quirofano') : RECURSOS_OPCIONES} style={{ width: '100%', justifyContent: 'space-between', padding: '11px 14px' }} />
           </Campo>
         </div>
         <Campo label="¿Cuántos?">

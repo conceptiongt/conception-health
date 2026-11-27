@@ -13,9 +13,9 @@ const flecha = { width: 34, height: 34, borderRadius: 160, border: `1px solid ${
 //   marca(iso, sel) → small node at the bottom of the day · etiquetaDia(iso) → extra words for screen readers
 //   estiloDia(iso, sel) → extra style for the day button · enRango(iso) → day is inside a highlighted range
 //   leyenda → node under the grid · cierraAlElegir (default true)
-export function MiniCalendario({ etiqueta, valor, onElegir, vacio = 'Elegir fecha', marca, etiquetaDia, estiloDia, enRango, leyenda, cierraAlElegir = true, minimo }) {
+export function MiniCalendario({ etiqueta, valor, onElegir, vacio = 'Elegir fecha', marca, etiquetaDia, estiloDia, enRango, leyenda, cierraAlElegir = true, minimo, abiertoInicial = false }) {
   const id = useId()
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(abiertoInicial)
   const base = esISO(valor) ? valor : (minimo && esISO(minimo) ? minimo : hoyISO())
   const [vista, setVista] = useState(() => base.slice(0, 7) + '-01') // first day of the month being shown
   const hoy = hoyISO()

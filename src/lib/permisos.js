@@ -6,6 +6,8 @@ export const PERMISOS = [
   { k: 'inventario', label: 'Usar el inventario', ayuda: 'Productos, entradas, salidas, traslados y conteos', defecto: true },
   { k: 'costos', label: 'Ver costos del inventario', ayuda: 'Precio de cada producto y valor del inventario', defecto: false },
   { k: 'compras', label: 'Hacer órdenes de compra', ayuda: 'Pedir a proveedores y registrar órdenes que ya llegaron, con sus montos. No le muestra el costo de los productos en el inventario', defecto: false },
+  { k: 'quirofano', label: 'Quirófanos', ayuda: 'Ver el calendario de quirófanos y programar cirugías', defecto: true, cirugias: true },
+  { k: 'camas', label: 'Camas y hospitalización', ayuda: 'Ver las camas, ingresar y dar egreso a pacientes y escribir notas', defecto: true, hospital: true },
   { k: 'exportar', label: 'Descargar e imprimir reportes', ayuda: 'Excel, PDF e impresión de listas y reportes', defecto: true },
   { k: 'eliminar_citas', label: 'Eliminar citas', ayuda: 'Siempre pide el motivo; queda en el historial de citas eliminadas', defecto: true },
   { k: 'eliminar_inventario', label: 'Eliminar en el inventario', ayuda: 'Productos, movimientos, paquetes, sedes y borradores. Siempre pide el motivo; queda en el historial', defecto: true },
@@ -18,7 +20,8 @@ export const esAdmin = (perfil) => perfil?.rol === 'dueno'
 // Temporary Conception support session (opened with a code the clinic generated). Mirrors tiene_permiso() in the database.
 export const esSoporte = (perfil) => perfil?.rol === 'soporte'
 // Allowlist: must match tiene_permiso() in the database (everything except eliminar, eliminar_citas, eliminar_inventario, exportar)
-const PERMITIDOS_SOPORTE = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'configuracion']
+// ('quirofano' and 'camas' are not checked by the database: their functions only look at the clinic, and support sessions are blocked there)
+const PERMITIDOS_SOPORTE = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'configuracion', 'quirofano', 'camas']
 // permissions added later fall back to their default for assistants saved before them
 // ('compras' used to be part of 'costos', so it inherits it)
 export const puede = (perfil, k) => {

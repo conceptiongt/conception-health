@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { plantillaDe, camposPaciente, urlRegistro, codigoRegistro, LINK_PAGO_EJEMPLO } from '../lib/ficha'
 import { PERMISOS, permisosIniciales, esAdmin, puede } from '../lib/permisos'
+import { usaCirugias } from '../lib/calendario'
 import { fmtFecha, linkWhatsAppSinNumero } from '../lib/formato'
 import { USUARIOS_INCLUIDOS, PRECIO_USUARIO_EXTRA, LINK_USUARIO_EXTRA, usuariosIncluidosUI, precioUsuarioExtraUI } from '../lib/constantes'
 import { esHospital } from '../lib/especialidades'
@@ -14,6 +15,9 @@ import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { toast } from './ui/Toast'
 import { Interruptor } from './MensajePaciente'
+
+// permissions that only make sense for some accounts: Quirófanos (surgery calendar) and Camas (hospitals)
+const permisosDe = (clinica) => PERMISOS.filter(p => (!p.cirugias || usaCirugias(clinica)) && (!p.hospital || esHospital(clinica?.especialidad)))
 import { confirmar } from './ui/Confirmar'
 
 // Invitation email (edge function invitar-asistente). Returns null when sent, or the reason it was not
@@ -230,7 +234,7 @@ export function Usuarios() {
             <Badge>Asistente</Badge><Button size="sm" variant="texto" onClick={() => quitar(u)}>Quitar acceso</Button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
-            {PERMISOS.map(p => (
+            {permisosDe(clinica).map(p => (
               <label key={p.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, cursor: 'pointer' }}>
                 <Interruptor activo={puede(u, p.k)} onChange={v => cambiarPermiso(u, p.k, v)} />
                 <span>{p.label}{p.ayuda && <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>{p.ayuda}</span>}</span>
@@ -311,7 +315,7 @@ function InvitarModal({ clinica, onClose, onListo }) {
       </Grid>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.g600, margin: '18px 0 8px' }}>¿Qué puede hacer?</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {PERMISOS.map(p => (
+        {permisosDe(clinica).map(p => (
           <label key={p.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, cursor: 'pointer' }}>
             <Interruptor activo={!!permisos[p.k]} onChange={v => setPermisos({ ...permisos, [p.k]: v })} />
             <span>{p.label}{p.ayuda && <span style={{ display: 'block', fontSize: 12, color: C.g400 }}>{p.ayuda}</span>}</span>

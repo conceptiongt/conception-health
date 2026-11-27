@@ -5,6 +5,9 @@ import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, o
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
 import { resumenDatosCita } from '../lib/especialidades'
 import { colorProfesional } from '../hooks/useHospital'
+import { useEstanciasPaciente } from '../hooks/useCamas'
+import { EtiquetaIngreso, Hospitalizaciones } from '../components/Hospitalizaciones'
+import { esHospital } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -152,11 +155,15 @@ const TABS = [
   { value: 'archivos', label: 'Fotos y documentos', icono: 'camara' },
   { value: 'cobros', label: 'Cobros', icono: 'cartera', permiso: 'finanzas' },
   { value: 'productos', label: 'Productos usados', icono: 'caja', inventario: true },
+  { value: 'hospitalizaciones', label: 'Hospitalizaciones', icono: 'cama', hospital: true },
 ]
 
 function Expediente({ paciente, onVolver }) {
-  const { citas, cobros, clinica, perfil, recargar, acc, sedes } = useDatos()
+  const { citas, cobros, clinica, perfil, recargar, acc, sedes, hospital } = useDatos()
   const clinico = puede(perfil, 'expedientes')
+  // hospital: the patient's stays (current + past) and the «Ingresado — Cama X» tag
+  const conCamas = esHospital(clinica?.especialidad) && hospital.tablas && clinico
+  const { estancias } = useEstanciasPaciente(paciente.id, conCamas)
   const finanzas = puede(perfil, 'finanzas')
   const [tab, setTab] = useState('consultas')
   const [portal, setPortal] = useState(false)
@@ -202,7 +209,7 @@ function Expediente({ paciente, onVolver }) {
   return (
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+      <Encabezado titulo={conCamas && estancias?.some(e => !e.egreso_at) ? <>{paciente.nombre} <span style={{ fontSize: 14, fontFamily: 'inherit', verticalAlign: 'middle', marginLeft: 6 }}><EtiquetaIngreso estancias={estancias} /></span></> : paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <EnlacePaciente paciente={paciente} />
         {clinico && <Button size="sm" variant="ghost" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
         {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
@@ -217,12 +224,13 @@ function Expediente({ paciente, onVolver }) {
         <Stat label="Fotos y documentos" valor={archivos ? archivos.length : '…'} />
       </div>
 
-      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => (!t.inventario || (acc.inventario && puede(perfil, 'inventario'))) && (!t.permiso || puede(perfil, t.permiso)) && (clinico || ['consultas', 'cobros'].includes(t.value)))} valor={tab} onChange={setTab} /></div>
+      <div style={{ marginBottom: 16 }}><Pestanas opciones={TABS.filter(t => (!t.inventario || (acc.inventario && puede(perfil, 'inventario'))) && (!t.permiso || puede(perfil, t.permiso)) && (!t.hospital || conCamas) && (clinico || ['consultas', 'cobros'].includes(t.value)))} valor={tab} onChange={setTab} /></div>
 
       {tab === 'ficha' && clinico && <FichaPaciente paciente={paciente} onEditar={() => setEditando(true)} />}
       {tab === 'consultas' && <Consultas citas={misCitas} clinico={clinico} onAbrir={setCitaAbierta} onCompartir={(c) => setCompartir(c)} onCambio={recargar} />}
       {tab === 'archivos' && clinico && <Archivos paciente={paciente} archivos={archivos} citas={misCitas} clinicaId={perfil.clinica_id} onCambio={cargarArchivos} />}
       {tab === 'productos' && acc.inventario && <ProductosPaciente paciente={paciente} citas={misCitas} />}
+      {tab === 'hospitalizaciones' && conCamas && <Hospitalizaciones estancias={estancias} />}
       {tab === 'cobros' && finanzas && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
 
       {editando && <PacienteModal paciente={paciente} onClose={() => setEditando(false)} onGuardado={() => { setEditando(false); recargar() }} />}

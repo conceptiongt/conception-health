@@ -16,6 +16,7 @@ import { sedeCobro } from '../components/Pagos'
 import { abrirCitasCon } from './Citas'
 import { CalendarioInicio } from '../components/CalendarioInicio'
 import { colorProfesional } from '../hooks/useHospital'
+import { InicioQuirofanosCamas } from '../components/InicioQuirofanosCamas'
 
 const hoy = new Date()
 const NO_CUENTAN = ['Cancelada', 'No asistió']
@@ -239,6 +240,8 @@ export function Inicio() {
           </Panel>
         </div>
       )}
+
+      <InicioQuirofanosCamas />
 
       <div style={{ margin: '34px 0 14px' }}>
         <div className="eyebrow">Estado de citas</div>

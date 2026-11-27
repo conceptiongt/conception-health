@@ -24,6 +24,10 @@ import { QuienAgendo, nombreUsuario } from './QuienAgendo'
 import { useDatos } from '../hooks/useDatos'
 import { ServicioCampos, servicioInicial, servicioParaGuardar } from './ServicioCampos'
 import { SelectorFechaHora } from './SelectorFechaHora'
+import { BloqueCirugia } from './BloqueCirugia'
+import { useCirugiaDeCita } from '../hooks/useCirugias'
+import { usaCirugias } from '../lib/calendario'
+import { fechaDe as fechaCirugia } from '../lib/quirofanos'
 import { useAgenda } from '../hooks/useAgenda'
 import { MeetCita } from './EnlaceMeet'
 
@@ -32,6 +36,8 @@ import { MeetCita } from './EnlaceMeet'
 export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, soloCita }) {
   const { servicios, sedes = [], acc, citas = [], cobros = [], clinica, perfil, ir, hospital } = useDatos()
   const hosp = hospital.disponible // hospital account with its tables ready
+  // a cita that is a booked surgery: its date, time and doctor are read-only here (changed by re-programming in Quirófanos)
+  const cir = useCirugiaDeCita(cita?.id, !!cita && usaCirugias(clinica))
   const { bloqueos } = useAgenda()
   const secciones = seccionesActivas(clinica)
   const clinico = puede(perfil, 'expedientes')
@@ -109,11 +115,11 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
     const s = servicioParaGuardar(serv)
     const fila = {
       servicio_id: s.servicio_id, servicio: s.servicio,
-      fecha: f.fecha, hora: f.hora || null, tipo: f.tipo || null, estado: f.estado, agendo_nombre: f.agendo.trim() || null,
+      ...(cir ? {} : { fecha: f.fecha, hora: f.hora || null }), tipo: f.tipo || null, estado: f.estado, agendo_nombre: f.agendo.trim() || null,
       peso: f.peso === '' ? null : Number(f.peso), talla: f.talla === '' ? null : Number(f.talla),
       ...(ficha ? { procedimiento: f.procedimiento.trim() || null, notas: f.notas.trim() || null, datos: limpiarDatos(f.datos), ficha: fichaLimpia(), portal: f.portal } : {}),
       ...(conSedes ? { sede_id: f.sede || null } : {}),
-      ...(hosp ? { departamento_id: f.departamento_id || null, profesional_id: f.profesional_id || null } : {}),
+      ...(hosp ? { departamento_id: f.departamento_id || null, ...(cir ? {} : { profesional_id: f.profesional_id || null }) } : {}),
     }
     setBusy(true)
     const { data: guardada, error } = cita
@@ -142,7 +148,7 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
   const eliminar = async () => {
     const motivo = await confirmar({
       titulo: '¿Eliminar esta cita?', subtitulo: `${paciente?.nombre} · ${fmtFecha(cita.fecha)}`,
-      mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.'],
+      mensaje: ['Se quita solo esta cita, con su cobro. Si se usaron productos, regresan al inventario. El expediente del paciente no se toca.', ...(cir ? [`Es una cirugía programada: también se libera ${hospital.recursos.find(r => r.id === cir.quirofano_id)?.nombre || 'el quirófano'} y el equipo.`] : [])],
       aceptar: 'Eliminar cita', peligro: true,
       motivo: { label: '¿Por qué se elimina?', opciones: MOTIVOS_ELIMINAR_CITA },
     })
@@ -214,8 +220,9 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
           <section className="bloque">
             <h3>Datos de la cita</h3>
             <Grid min={190}>
-              <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />
-              {hosp && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
+              {cir ? <BloqueCirugia cir={cir} liberando={['Cancelada', 'No asistió', 'Reagendada'].includes(f.estado)} onReprogramar={() => { onClose(); ir('quirofanos', fechaCirugia(Date.parse(cir.inicio))) }} />
+                : <SelectorFechaHora fecha={f.fecha} hora={f.hora} onFecha={set('fecha')} onHora={set('hora')} citas={citas} bloqueos={bloqueos} sedeId={conSedes && f.sede ? f.sede : undefined} citaId={cita?.id} />}
+              {hosp && !cir && <CamposHospital valor={f} onChange={cambiarHospital} fecha={f.fecha} hora={f.hora} citas={citas} citaId={cita?.id} />}
               <Campo label="Estado"><Select value={f.estado} onChange={set('estado')}>{ESTADOS_CITA.map(e => <option key={e.value}>{e.value}</option>)}</Select></Campo>
               <Campo label="¿Quién agendó?"><QuienAgendo valor={f.agendo} onChange={set('agendo')} /></Campo>
               {conSedes && <Campo label="Sede"><Select value={f.sede} onChange={set('sede')}><option value="">—</option>{sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</Select></Campo>}

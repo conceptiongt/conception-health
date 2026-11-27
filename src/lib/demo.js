@@ -97,11 +97,13 @@ const DB = {
   citas_eliminadas: [],
   // hospital structure (empty until the demo clinic is switched to «Hospital» in Configuración → Marca and the owner builds it)
   departamentos: [], profesionales: [], areas: [], recursos: [],
+  // operating rooms and beds (read-only for the app: every write goes through the RPCs below, like in the database)
+  cirugias: [], reservas: [], estancias: [], estancia_notas: [],
   perfiles: [
     { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
-  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
+  clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], calendario: {}, created_at: '2026-01-01' }],
   pacientes, citas, cobros, abonos, servicios, sedes, archivos, gastos, productos, existencias,
   inventario_movimientos: movimientos, invitaciones: [], documentos_compartidos: [],
   // fictional support-code history (the real database never exposes the hash column)
@@ -109,6 +111,20 @@ const DB = {
   categorias_inventario: ['Medicamentos', 'Insumos', 'Equipo'].map(nombre => ({ id: id(), clinica_id: cid, nombre })),
   proveedores: [{ id: 'demo-pv1', clinica_id: cid, nombre: 'Distribuidora Médica Ejemplo', contacto: 'Luis', telefono: '55550000', activo: true }],
   ordenes_compra: [], ordenes_compra_lineas: [], paquetes: [], paquete_items: [],
+}
+// ?cirugias=1 (or ?camas=1) starts the demo with the surgery calendar already set up: 2 surgeons, 1 anesthesiologist and 2 operating rooms;
+// ?camas=1 also makes the clinic a hospital with an area of 6 beds. Only a shortcut for trying the screens: everything can also be built by hand.
+if (q.get('cirugias') === '1' || q.get('camas') === '1') {
+  const col = ['#2F6BFF', '#14998A', '#8B5CF6']
+  ;[['Dr. Carlos Méndez', 'medico'], ['Dra. Ana López', 'medico'], ['Dr. Pablo Ruiz', 'anestesiologo']].forEach(([nombre, funcion], i) =>
+    DB.profesionales.push({ id: `demo-pf${i + 1}`, clinica_id: cid, nombre, tipo: 'planta', funcion, departamento_id: null, colegiado: null, telefono: null, color: col[i], activo: true, created_at: '2026-01-01' }))
+  DB.areas.push({ id: 'demo-ar1', clinica_id: cid, nombre: 'Quirófanos', tipo: 'quirofanos', sede_id: null, orden: 0, created_at: '2026-01-01' })
+  ;[1, 2].forEach(n => DB.recursos.push({ id: `demo-q${n}`, clinica_id: cid, area_id: 'demo-ar1', tipo: 'quirofano', nombre: `Quirófano ${n}`, activo: true, fuera_de_servicio: false, orden: n, created_at: '2026-01-01' }))
+  if (q.get('camas') === '1') {
+    DB.clinicas[0].especialidad = 'hospital'
+    DB.areas.push({ id: 'demo-ar2', clinica_id: cid, nombre: 'Encamamiento', tipo: 'encamamiento', sede_id: null, orden: 1, created_at: '2026-01-01' })
+    for (let n = 1; n <= 6; n++) DB.recursos.push({ id: `demo-c${n}`, clinica_id: cid, area_id: 'demo-ar2', tipo: 'cama', nombre: `Cama ${100 + n}`, activo: true, fuera_de_servicio: n === 6, orden: n, created_at: '2026-01-01' })
+  } else DB.clinicas[0].calendario = { cirugias: true }
 }
 const recalcular = () => DB.cobros.forEach(c => { c.pagado = DB.abonos.filter(a => a.cobro_id === c.id).reduce((n, a) => n + Number(a.monto), 0) })
 recalcular()
@@ -120,6 +136,203 @@ function aplicar(r, d) {
   if (!e) DB.existencias.push(e = { clinica_id: cid, sede_id: r.sede_id, producto_id: r.producto_id, cantidad: 0 })
   e.cantidad = actual + d
 }
+
+// ─── operating rooms and beds (same rules as supabase/migraciones-propuestas/2026-11-28_hospital_quirofanos_camas.sql) ───
+const TABLAS_RPC = ['cirugias', 'reservas', 'estancias', 'estancia_notas']
+const falla = (message, details) => ({ data: null, error: { message, details: details || null } })
+const guardiaDemo = () => (DB.perfiles[0].rol === 'soporte' ? falla('SIN_PERMISO') : null)
+const MIN = 60000
+const aLocal = (ms) => new Date(ms - 6 * 3600 * 1000).toISOString() // Guatemala is UTC-6 all year
+const detalle = (r) => `${r.titulo || ''}|${new Date(r.ini).toISOString()}|${new Date(r.fin).toISOString()}`
+const choqueDe = (recursoId, ini, fin, ignorarCita) => DB.reservas.find(r => r.recurso_id === recursoId && r.cita_id !== ignorarCita && r.ini < fin && ini < r.fin)
+// the reservations of a surgery: room until the cleaning ends, doctors until the end; null when everything is free, else the error
+function reservasDe(c) {
+  const filas = [{ recurso_tipo: 'quirofano', recurso_id: c.quirofano_id, ini: c.ini, fin: c.fin + c.limpieza_min * MIN, codigo: 'CHOQUE_QUIROFANO' },
+    { recurso_tipo: 'profesional', recurso_id: c.cirujano_id, ini: c.ini, fin: c.fin, codigo: 'CHOQUE_CIRUJANO' }]
+  if (c.anestesiologo_id) filas.push({ recurso_tipo: 'profesional', recurso_id: c.anestesiologo_id, ini: c.ini, fin: c.fin, codigo: 'CHOQUE_ANESTESIOLOGO' })
+  return filas
+}
+function reservar(c) { // atomic: checks first, then writes
+  const filas = reservasDe(c)
+  for (const f of filas) { const x = choqueDe(f.recurso_id, f.ini, f.fin, c.cita_id); if (x) return falla(f.codigo, detalle(x)) }
+  DB.reservas = DB.reservas.filter(r => !(r.cita_id === c.cita_id && r.motivo === 'cirugia'))
+  const titulo = String(c.procedimiento || 'Cirugía').slice(0, 80)
+  filas.forEach(f => DB.reservas.push({ id: id(), clinica_id: cid, recurso_tipo: f.recurso_tipo, recurso_id: f.recurso_id, ini: f.ini, fin: f.fin, cita_id: c.cita_id, motivo: 'cirugia', titulo }))
+  return null
+}
+const soltarCirugia = (citaId) => { DB.reservas = DB.reservas.filter(r => !(r.cita_id === citaId && r.motivo === 'cirugia')) }
+// cascades of the foreign keys (cita → cirugia/reservas, paciente → estancias)
+function limpiarHuerfanos() {
+  const citas = new Set(DB.citas.map(c => c.id))
+  DB.cirugias = DB.cirugias.filter(c => citas.has(c.cita_id))
+  DB.reservas = DB.reservas.filter(r => !r.cita_id || citas.has(r.cita_id))
+  const pacs = new Set(DB.pacientes.map(p => p.id))
+  const idsE = new Set(DB.estancias.filter(e => !pacs.has(e.paciente_id)).map(e => e.id))
+  DB.estancias = DB.estancias.filter(e => !idsE.has(e.id)); DB.estancia_notas = DB.estancia_notas.filter(n => !idsE.has(n.estancia_id))
+}
+// same as the database triggers on citas: a surgery's cita cannot change date / time / doctor by itself, and its state drives the surgery
+function triggersCita(fila, cambios) {
+  const cir = DB.cirugias.find(c => c.cita_id === fila.id)
+  if (!cir) return null
+  if (['fecha', 'hora', 'duracion', 'profesional_id'].some(k => k in cambios && cambios[k] !== fila[k])) return { code: 'P0001', message: 'CIRUGIA_USAR_QUIROFANOS' }
+  return null
+}
+function sincronizarEstadoCita(fila) {
+  const cir = DB.cirugias.find(c => c.cita_id === fila.id)
+  if (!cir) return
+  if (['Cancelada', 'No asistió', 'Reagendada'].includes(fila.estado)) { soltarCirugia(fila.id); if (['programada', 'en_curso'].includes(cir.estado)) cir.estado = 'suspendida' }
+  else if (fila.estado === 'Asistió' && ['programada', 'en_curso'].includes(cir.estado)) cir.estado = 'realizada'
+}
+const recursoDe = (idr) => DB.recursos.find(r => r.id === idr)
+const profDe = (idp) => DB.profesionales.find(p => p.id === idp)
+const nombreAutor = () => DB.perfiles[0].nombre
+
+function cirugiaProgramar(a) {
+  const g = guardiaDemo(); if (g) return g
+  const inicio = Date.parse(a.p_inicio), mins = a.p_minutos, lim = a.p_limpieza_min ?? 0
+  if (!Number.isFinite(inicio) || !a.p_quirofano || !a.p_cirujano || !Number.isInteger(mins) || mins < 15 || mins > 960 || lim < 0 || lim > 120) return falla('DATOS_INVALIDOS')
+  if ([a.p_procedimiento, a.p_ayudantes].some(t => (t || '').length > 200) || (a.p_nota || '').length > 500) return falla('DATOS_INVALIDOS')
+  if (a.p_anestesiologo && a.p_anestesiologo === a.p_cirujano) return falla('DATOS_INVALIDOS')
+  const q = recursoDe(a.p_quirofano)
+  if (!q) return falla('REFERENCIA_AJENA')
+  if (q.tipo !== 'quirofano' || !q.activo) return falla('DATOS_INVALIDOS')
+  if (q.fuera_de_servicio) return falla('FUERA_DE_SERVICIO')
+  const m = profDe(a.p_cirujano); if (!m) return falla('REFERENCIA_AJENA')
+  if (m.funcion !== 'medico' || !m.activo) return falla('DATOS_INVALIDOS')
+  if (a.p_anestesiologo) { const an = profDe(a.p_anestesiologo); if (!an) return falla('REFERENCIA_AJENA'); if (an.funcion !== 'anestesiologo' || !an.activo) return falla('DATOS_INVALIDOS') }
+  if (a.p_departamento && !DB.departamentos.some(d => d.id === a.p_departamento)) return falla('REFERENCIA_AJENA')
+  if (a.p_sede && !DB.sedes.some(x => x.id === a.p_sede)) return falla('REFERENCIA_AJENA')
+  const proc = (a.p_procedimiento || '').trim() || null
+  const local = aLocal(inicio), fecha = local.slice(0, 10), hora = `${local.slice(11, 16)}:00`
+  const fin = inicio + mins * MIN
+  const cir = { quirofano_id: a.p_quirofano, cirujano_id: a.p_cirujano, anestesiologo_id: a.p_anestesiologo || null, ayudantes: (a.p_ayudantes || '').trim() || null, procedimiento: proc, inicio: new Date(inicio).toISOString(), fin: new Date(fin).toISOString(), ini: inicio, limpieza_min: lim, nota: (a.p_nota || '').trim() || null }
+  let cita
+  if (!a.p_cita) {
+    if (!a.p_paciente) return falla('DATOS_INVALIDOS')
+    if (!DB.pacientes.some(p => p.id === a.p_paciente)) return falla('REFERENCIA_AJENA')
+    cita = { id: id(), clinica_id: cid, paciente_id: a.p_paciente, fecha, hora, tipo: 'Cirugía', servicio: proc, procedimiento: proc, servicio_id: null, estado: 'Confirmada', duracion: Math.min(mins, 600), profesional_id: a.p_cirujano, departamento_id: a.p_departamento || null, sede_id: a.p_sede || null, agendo_nombre: nombreAutor(), ficha: {}, datos: {}, notas: null, portal: false, portal_ocultar: [], created_at: new Date().toISOString() }
+    const prueba = { ...cir, cita_id: cita.id, fin, limpieza_min: lim }
+    const e = reservar({ ...prueba }); if (e) return e
+    DB.citas.push(cita)
+  } else {
+    cita = DB.citas.find(x => x.id === a.p_cita)
+    if (!cita) return falla('NO_ENCONTRADO')
+    if (cita.tipo !== 'Cirugía') return falla('DATOS_INVALIDOS')
+    const previa = DB.cirugias.find(c => c.cita_id === cita.id)
+    if (previa && ['realizada', 'en_curso'].includes(previa.estado)) return falla('DATOS_INVALIDOS')
+    // reserve first: a clash leaves the cita, the surgery and the reservations exactly as they were
+    const copia = JSON.stringify(DB.reservas)
+    const e = reservar({ ...cir, cita_id: cita.id, fin, limpieza_min: lim }); if (e) { DB.reservas = JSON.parse(copia); return e }
+    Object.assign(cita, { fecha, hora, duracion: Math.min(mins, 600), profesional_id: a.p_cirujano, departamento_id: a.p_departamento || cita.departamento_id, sede_id: a.p_sede || cita.sede_id, servicio: proc || cita.servicio, procedimiento: proc || cita.procedimiento, estado: 'Confirmada' })
+  }
+  const fila = { cita_id: cita.id, clinica_id: cid, quirofano_id: cir.quirofano_id, cirujano_id: cir.cirujano_id, anestesiologo_id: cir.anestesiologo_id, ayudantes: cir.ayudantes, procedimiento: cir.procedimiento, inicio: cir.inicio, fin: cir.fin, limpieza_min: lim, estado: 'programada', nota: cir.nota, creado_por: uid, created_at: new Date().toISOString() }
+  const i = DB.cirugias.findIndex(c => c.cita_id === cita.id)
+  if (i >= 0) DB.cirugias[i] = { ...DB.cirugias[i], ...fila, created_at: DB.cirugias[i].created_at }; else DB.cirugias.push(fila)
+  return { data: cita.id, error: null }
+}
+function cirugiaEstado(a) {
+  const g = guardiaDemo(); if (g) return g
+  const c = DB.cirugias.find(x => x.cita_id === a.p_cita)
+  if (!c) return falla('NO_ENCONTRADO')
+  const nuevo = a.p_estado, cita = DB.citas.find(x => x.id === a.p_cita)
+  if (!['programada', 'en_curso', 'realizada', 'suspendida'].includes(nuevo) || (a.p_nota || '').length > 500) return falla('DATOS_INVALIDOS')
+  const ok = (c.estado === 'programada' && ['en_curso', 'realizada', 'suspendida'].includes(nuevo)) || (c.estado === 'en_curso' && ['realizada', 'suspendida'].includes(nuevo)) || (c.estado === 'suspendida' && nuevo === 'programada')
+  if (!ok) return falla('DATOS_INVALIDOS')
+  const nota = (a.p_nota || '').trim() || c.nota
+  if (nuevo === 'programada') {
+    const e = reservar({ ...c, cita_id: c.cita_id, ini: Date.parse(c.inicio), fin: Date.parse(c.fin) }); if (e) return e
+    Object.assign(c, { estado: 'programada', nota }); if (cita) cita.estado = 'Confirmada'
+  } else if (nuevo === 'suspendida') { soltarCirugia(c.cita_id); Object.assign(c, { estado: 'suspendida', nota }); if (cita) cita.estado = 'Cancelada' }
+  else if (nuevo === 'realizada') { Object.assign(c, { estado: 'realizada', nota }); if (cita) cita.estado = 'Asistió' }
+  else Object.assign(c, { estado: 'en_curso', nota })
+  return { data: null, error: null }
+}
+function reservaBloquear(a) {
+  const g = guardiaDemo(); if (g) return g
+  const ini = Date.parse(a.p_inicio), fin = Date.parse(a.p_fin), titulo = (a.p_titulo || '').trim()
+  if (!['quirofano', 'profesional'].includes(a.p_tipo) || !a.p_recurso || !Number.isFinite(ini) || !Number.isFinite(fin) || !titulo || titulo.length > 80 || fin <= ini || fin > ini + 31 * 86400000) return falla('DATOS_INVALIDOS')
+  let funcion = null
+  if (a.p_tipo === 'quirofano') { const q = recursoDe(a.p_recurso); if (!q) return falla('REFERENCIA_AJENA'); if (q.tipo !== 'quirofano') return falla('DATOS_INVALIDOS') }
+  else { const p = profDe(a.p_recurso); if (!p) return falla('REFERENCIA_AJENA'); funcion = p.funcion }
+  const x = choqueDe(a.p_recurso, ini, fin, null)
+  if (x) return falla(a.p_tipo === 'quirofano' ? 'CHOQUE_QUIROFANO' : funcion === 'anestesiologo' ? 'CHOQUE_ANESTESIOLOGO' : 'CHOQUE_CIRUJANO', detalle(x))
+  const fila = { id: id(), clinica_id: cid, recurso_tipo: a.p_tipo, recurso_id: a.p_recurso, ini, fin, cita_id: null, motivo: 'bloqueo', titulo, creado_por: uid }
+  DB.reservas.push(fila)
+  return { data: fila.id, error: null }
+}
+function reservaQuitar(a) {
+  const g = guardiaDemo(); if (g) return g
+  const antes = DB.reservas.length
+  DB.reservas = DB.reservas.filter(r => !(r.id === a.p_id && r.motivo === 'bloqueo'))
+  return DB.reservas.length === antes ? falla('NO_ENCONTRADO') : { data: null, error: null }
+}
+const disponibilidad = (a) => {
+  const d = Date.parse(a.p_desde), h = Math.min(Date.parse(a.p_hasta), d + 62 * 86400000)
+  return { data: DB.reservas.filter(r => r.ini < h && d < r.fin).sort((x, y) => x.ini - y.ini).map(r => ({ id: r.id, recurso_tipo: r.recurso_tipo, recurso_id: r.recurso_id, inicio: new Date(r.ini).toISOString(), fin: new Date(r.fin).toISOString(), cita_id: r.cita_id, motivo: r.motivo, titulo: r.titulo })), error: null }
+}
+// beds
+const guardiaCamas = () => guardiaDemo() || (DB.clinicas[0].especialidad === 'hospital' ? null : falla('SIN_PERMISO'))
+function camaValida(idc) {
+  const r = recursoDe(idc)
+  if (!r) return falla('REFERENCIA_AJENA')
+  if (r.tipo !== 'cama' || !r.activo) return falla('DATOS_INVALIDOS')
+  return r.fuera_de_servicio ? falla('FUERA_DE_SERVICIO') : null
+}
+const abiertaDe = (f) => DB.estancias.find(e => !e.egreso_at && f(e))
+function estanciaIngresar(a) {
+  const g = guardiaCamas(); if (g) return g
+  const motivo = (a.p_motivo || '').trim()
+  if (!a.p_paciente || !a.p_cama || motivo.length < 2 || motivo.length > 300) return falla('DATOS_INVALIDOS')
+  if (!DB.pacientes.some(p => p.id === a.p_paciente)) return falla('REFERENCIA_AJENA')
+  const v = camaValida(a.p_cama); if (v) return v
+  if (a.p_profesional && !profDe(a.p_profesional)) return falla('REFERENCIA_AJENA')
+  if (a.p_departamento && !DB.departamentos.some(d => d.id === a.p_departamento)) return falla('REFERENCIA_AJENA')
+  if (abiertaDe(e => e.paciente_id === a.p_paciente)) return falla('PACIENTE_INGRESADO')
+  if (abiertaDe(e => e.cama_id === a.p_cama)) return falla('CAMA_OCUPADA')
+  const fila = { id: id(), clinica_id: cid, paciente_id: a.p_paciente, cama_id: a.p_cama, profesional_id: a.p_profesional || null, departamento_id: a.p_departamento || null, motivo, ingreso_at: new Date().toISOString(), egreso_at: null, egreso_tipo: null, egreso_nota: null, creado_por: uid, created_at: new Date().toISOString() }
+  DB.estancias.push(fila)
+  return { data: fila.id, error: null }
+}
+function estanciaTrasladar(a) {
+  const g = guardiaCamas(); if (g) return g
+  const e = abiertaDe(x => x.id === a.p_estancia)
+  if (!e) return falla('NO_ENCONTRADO')
+  if (e.cama_id === a.p_cama) return falla('DATOS_INVALIDOS')
+  const v = camaValida(a.p_cama); if (v) return v
+  if (abiertaDe(x => x.cama_id === a.p_cama)) return falla('CAMA_OCUPADA')
+  const antes = recursoDe(e.cama_id)?.nombre || 'cama', despues = recursoDe(a.p_cama).nombre
+  e.cama_id = a.p_cama
+  DB.estancia_notas.push({ id: id(), estancia_id: e.id, clinica_id: cid, tipo: 'indicacion', texto: `Traslado de ${antes} a ${despues}`, signos: null, autor_id: uid, autor_nombre: nombreAutor(), created_at: new Date().toISOString() })
+  return { data: null, error: null }
+}
+function estanciaEgresar(a) {
+  const g = guardiaCamas(); if (g) return g
+  const nota = (a.p_nota || '').trim()
+  if (!['alta', 'traslado', 'fallecido', 'voluntario'].includes(a.p_tipo) || nota.length > 500) return falla('DATOS_INVALIDOS')
+  const e = abiertaDe(x => x.id === a.p_estancia)
+  if (!e) return falla('NO_ENCONTRADO')
+  Object.assign(e, { egreso_at: new Date().toISOString(), egreso_tipo: a.p_tipo, egreso_nota: nota || null })
+  return { data: null, error: null }
+}
+function estanciaNota(a) {
+  const g = guardiaCamas(); if (g) return g
+  const texto = (a.p_texto || '').trim()
+  if (!['evolucion', 'enfermeria', 'indicacion', 'signos'].includes(a.p_tipo) || texto.length > 4000) return falla('DATOS_INVALIDOS')
+  let signos = null
+  if (a.p_tipo === 'signos') {
+    const s = a.p_signos
+    if (!s || typeof s !== 'object' || Array.isArray(s) || JSON.stringify(s).length > 2048) return falla('DATOS_INVALIDOS')
+    const ent = Object.entries(s)
+    if (!ent.length || ent.length > 12 || ent.some(([k, v]) => k.length > 40 || !['string', 'number'].includes(typeof v))) return falla('DATOS_INVALIDOS')
+    signos = s
+  } else if (!texto) return falla('DATOS_INVALIDOS')
+  if (!abiertaDe(x => x.id === a.p_estancia)) return falla('NO_ENCONTRADO')
+  const fila = { id: id(), estancia_id: a.p_estancia, clinica_id: cid, tipo: a.p_tipo, texto: texto || null, signos, autor_id: uid, autor_nombre: nombreAutor(), created_at: new Date().toISOString() }
+  DB.estancia_notas.push(fila)
+  return { data: fila.id, error: null }
+}
+const RPC_HOSPITAL = { cirugia_programar: cirugiaProgramar, cirugia_estado: cirugiaEstado, reserva_bloquear: reservaBloquear, reserva_quitar: reservaQuitar, disponibilidad,
+  estancia_ingresar: estanciaIngresar, estancia_trasladar: estanciaTrasladar, estancia_egresar: estanciaEgresar, estancia_nota: estanciaNota }
 
 function from(t) {
   let op = 'select', payload, one = false, maybe = false, ord = null, cols = null
@@ -135,9 +348,10 @@ function from(t) {
   const sinPermiso = ['cobros', 'abonos'].includes(t) && DB.perfiles[0].rol !== 'dueno'
   function correr() {
     const filas = DB[t] || (DB[t] = [])
+    if (TABLAS_RPC.includes(t) && op !== 'select') return { data: null, error: { code: '42501', message: `permission denied for table ${t}` } }
     if (op === 'select') {
       if (sinPermiso || (t === 'gastos' && DB.perfiles[0].rol !== 'dueno')) return { data: one || maybe ? null : [], error: null }
-      let d = filas.filter(coincide).map(r => ({ ...r }))
+      let d = filas.filter(coincide).map(r => { const c = { ...r }; if (t === 'cirugias') delete c.ini; return c })
       if (ord) d.sort((a, x) => String(a[ord[0]] ?? '').localeCompare(String(x[ord[0]] ?? '')) * (ord[1] === false ? -1 : 1))
       return { data: one || maybe ? d[0] || null : d, count: d.length, error: null }
     }
@@ -168,10 +382,11 @@ function from(t) {
     }
     if (op === 'update') {
       const cambiadas = filas.filter(coincide)
+      if (t === 'citas') for (const r of cambiadas) { const e = triggersCita(r, payload); if (e) return { data: null, error: e } }
       if ((t === 'departamentos' || t === 'recursos') && payload.nombre && filas.some(r => !cambiadas.includes(r) && (t === 'departamentos' || r.area_id === cambiadas[0]?.area_id) && r.nombre.trim().toLowerCase() === payload.nombre.trim().toLowerCase())) {
         return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
       }
-      cambiadas.forEach(r => { Object.assign(r, payload); if (t === 'pacientes' && payload.registro_token) r.registro_codigo = `datos-${r.id}` })
+      cambiadas.forEach(r => { Object.assign(r, payload); if (t === 'pacientes' && payload.registro_token) r.registro_codigo = `datos-${r.id}`; if (t === 'citas' && 'estado' in payload) sincronizarEstadoCita(r) })
       return { data: one ? (cambiadas[0] ? { ...cambiadas[0] } : null) : cambiadas.map(r => ({ ...r })), error: null }
     }
     if (op === 'delete') {
@@ -189,6 +404,7 @@ function from(t) {
       if (t === 'departamentos') { DB.servicios.forEach(s => { if (ids.has(s.departamento_id)) s.departamento_id = null }); DB.profesionales.forEach(p => { if (ids.has(p.departamento_id)) p.departamento_id = null }) }
       if (t === 'areas') DB.recursos = DB.recursos.filter(r => !ids.has(r.area_id))
       DB[t] = filas.filter(r => !coincide(r))
+      if (t === 'pacientes') limpiarHuerfanos()
       if (t === 'abonos' || t === 'cobros') { DB.abonos = DB.abonos.filter(a => DB.cobros.some(c => c.id === a.cobro_id)); recalcular() }
       return { data: null, error: null }
     }
@@ -207,6 +423,7 @@ const almacen = () => ({
 })
 
 async function rpc(fn, a) {
+  if (RPC_HOSPITAL[fn]) return RPC_HOSPITAL[fn](a || {})
   if (fn === 'google_estado') return { data: null, error: null } // Google Calendar is not available in the demo (card shows «Disponible pronto»)
   if (fn === 'cita_eliminar') {
     const c = DB.citas.find(x => x.id === a.p_cita)
@@ -215,6 +432,7 @@ async function rpc(fn, a) {
     const n = DB.cobros.filter(x => x.cita_id === c.id).length
     DB.cobros = DB.cobros.filter(x => x.cita_id !== c.id); DB.citas = DB.citas.filter(x => x.id !== c.id)
     DB.abonos = DB.abonos.filter(x => DB.cobros.some(co => co.id === x.cobro_id))
+    limpiarHuerfanos()
     return { data: { cobros: n, productos: 0 }, error: null }
   }
   if (fn === 'inventario_eliminar') {

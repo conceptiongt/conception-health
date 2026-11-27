@@ -17,6 +17,8 @@ import { Configuracion } from './pages/Configuracion'
 import { Lia } from './pages/Lia'
 import { Inventario } from './pages/Inventario'
 import { Pagos } from './pages/Pagos'
+import { Quirofanos } from './pages/Quirofanos'
+import { Camas } from './pages/Camas'
 import { Finanzas } from './pages/Finanzas'
 import { urlLogo, iniciales } from './lib/marca'
 import { especialidad, esHospital } from './lib/especialidades'
@@ -31,6 +33,7 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, esSoporte, puede } from './lib/permisos'
+import { usaCirugias } from './lib/calendario'
 import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
@@ -46,25 +49,30 @@ const NAV = [
   { id: 'pagos', label: 'Pagos y saldos', icono: 'cartera', permiso: 'finanzas' },
   { id: 'finanzas', label: 'Finanzas', icono: 'actividad', soloAdmin: true },
   { id: 'inventario', label: 'Inventario', icono: 'caja', permiso: 'inventario' },
+  // only for accounts with the surgery calendar (every hospital, or a clinic that turned it on) / only for hospitals
+  { id: 'quirofanos', label: 'Quirófanos', icono: 'quirofano', permiso: 'quirofano', cirugias: true },
+  { id: 'camas', label: 'Camas', icono: 'cama', permiso: 'camas', hospital: true },
 ]
 const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario', 'quirofanos', 'camas']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion', soloAdmin: true },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes', permiso: 'configuracion' },
 ]
 // what each user can open (the administrator decides for assistants in Configuración)
 const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
+// a page that does not exist for this account (Quirófanos without the calendar, Camas outside hospitals) is not in the menu and its address goes to Inicio
+const existe = (clinica, n) => (!n.cirugias || usaCirugias(clinica)) && (!n.hospital || esHospital(clinica?.especialidad))
 const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
-// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" → { vista: 'calendario', fecha }
+// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" (also #/quirofanos/2026-11-26) → { vista, fecha }
 function leerRuta() {
   const [, v, id] = window.location.hash.split('?')[0].split('/') // a query like ?google=ok is not part of the route
   return TODAS.some(n => n.id === v) ? {
     vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
-    fecha: v === 'calendario' && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
+    fecha: (v === 'calendario' || v === 'quirofanos') && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
   } : {}
 }
 
@@ -150,8 +158,8 @@ function Aplicacion({ sesion }) {
   const ir = (v, extra) => {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
-    setFechaCal(v === 'calendario' ? extra ?? null : null)
-    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario') && extra ? '/' + extra : ''}`
+    setFechaCal(v === 'calendario' || v === 'quirofanos' ? extra ?? null : null)
+    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario' || v === 'quirofanos') && extra ? '/' + extra : ''}`
     if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
@@ -222,11 +230,11 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-            {[['MENÚ', NAV], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n))).map(([titulo, items]) => (
+            {[['MENÚ', NAV], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n) && existe(clinica, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {items.filter(n => permitido(perfil, n)).map(n => {
+                  {items.filter(n => permitido(perfil, n) && existe(clinica, n)).map(n => {
                     const activo = vista === n.id
                     return (
                       <button key={n.id} className={`nav-item${activo ? ' activo' : ''}`} onClick={() => ir(n.id)} style={{
@@ -300,6 +308,7 @@ function Aplicacion({ sesion }) {
           <div key={vista} className="vista-anim">
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
+            : TODAS.some(n => n.id === vista && !existe(clinica, n)) ? <Inicio />
             : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
             : vista === 'lia' && esHosp ? <Inicio />
@@ -310,6 +319,8 @@ function Aplicacion({ sesion }) {
             : vista === 'citas' ? <Citas />
             : vista === 'calendario' ? <Calendario fechaInicial={fechaCal} />
             : vista === 'expedientes' ? <Expedientes abrirId={expedienteId} />
+            : vista === 'quirofanos' ? <Quirofanos fechaInicial={fechaCal} />
+            : vista === 'camas' ? <Camas />
             : vista === 'pagos' ? <Pagos />
             : vista === 'finanzas' ? <Finanzas />
             : vista === 'configuracion' ? <Configuracion />

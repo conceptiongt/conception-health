@@ -131,8 +131,16 @@ export const ESPECIALIDADES = [
   },
 ]
 
+// Hospital accounts: for now they are only marked (especialidad = 'hospital') and behave exactly like general medicine.
+// Kept out of ESPECIALIDADES on purpose: that list is the clinic specialties shown in every picker.
+export const HOSPITAL = {
+  ...ESPECIALIDADES[0], value: 'hospital', label: 'Hospital', hospital: true,
+  lema: 'Admisión, consultas y expedientes de su hospital, en un solo lugar.',
+}
+export const esHospital = (v) => v === HOSPITAL.value
+
 const OTRA = ESPECIALIDADES[0]
-export const especialidad = (v) => ESPECIALIDADES.find(e => e.value === v) || OTRA
+export const especialidad = (v) => (esHospital(v) ? HOSPITAL : ESPECIALIDADES.find(e => e.value === v) || OTRA)
 
 // Consultation types offered when registering/editing (the current one is kept even if the specialty does not list it)
 export const tiposDe = (v, actual) => {

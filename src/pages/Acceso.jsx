@@ -3,8 +3,8 @@ import { supabase } from '../lib/supabase'
 import { C, SERIF, GLASS, SHADOW } from '../lib/theme'
 import { APP_NOMBRE } from '../lib/constantes'
 import { Button } from '../components/ui/Button'
-import { Campo, Input, Select } from '../components/ui/Campos'
-import { ESPECIALIDADES } from '../lib/especialidades'
+import { Campo, Input } from '../components/ui/Campos'
+import { TipoCuenta } from '../components/ui/TipoCuenta'
 import { Logo } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { toast } from '../components/ui/Toast'
@@ -105,7 +105,7 @@ export function Acceso() {
 
   const crear = async (e) => {
     e.preventDefault()
-    if (!asistente && !nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor o de la clínica.' }); return }
+    if (!asistente && !nombre.trim()) { setMsg({ tipo: 'error', t: 'Escriba el nombre del doctor, la clínica o el hospital.' }); return }
     if (!asistente && !esp) { setMsg({ tipo: 'error', t: 'Elija su especialidad.' }); return }
     if (!revisarCorreo(email)) return
     if (password.length < 8) { setMsg({ tipo: 'error', t: 'La contraseña debe tener al menos 8 caracteres.' }); return }
@@ -196,10 +196,8 @@ export function Acceso() {
               : <>Cree su cuenta y entre de inmediato. Puede probar {APP_NOMBRE} gratis con hasta 3 pacientes y suscribirse cuando quiera.</>}
           </div>
           {!asistente && <>
-            <Campo label="Nombre del doctor o clínica"><Input value={nombre} onChange={setNombre} required maxLength={120} placeholder="Ej. Dr. Juan Pérez" /></Campo>
-            <Campo label="Especialidad" ayuda="La plataforma se adapta a su especialidad; puede cambiarla después">
-              <Select value={esp} onChange={setEsp} required><option value="">Seleccione…</option>{ESPECIALIDADES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}</Select>
-            </Campo>
+            <Campo label="Nombre del doctor, clínica u hospital"><Input value={nombre} onChange={setNombre} required maxLength={120} placeholder="Ej. Dr. Juan Pérez" /></Campo>
+            <TipoCuenta value={esp} onChange={v => { setEsp(v); setMsg(null) }} ayuda="La plataforma se adapta a su especialidad; puede cambiarla después" />
           </>}
           <Campo label="Correo electrónico"><Input type="email" value={email} onChange={setEmail} required maxLength={120} autoComplete="email" /></Campo>
           <Campo label="Contraseña" ayuda="Mínimo 8 caracteres"><Input type="password" value={password} onChange={setPassword} required autoComplete="new-password" /></Campo>

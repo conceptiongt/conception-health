@@ -10,7 +10,7 @@ const sinTildes = (t) => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 
 // In-platform replacement for a filter <select>: pill button + list drawn by the app (not the operating system).
 // The list lives in <body> with fixed position, so tables never clip it and it opens above windows.
-export function Desplegable({ value, onChange, options, ariaLabel, disabled = false, style }) {
+export function Desplegable({ value, onChange, options, ariaLabel, disabled = false, style, placeholder }) {
   const [abierto, setAbierto] = useState(false)
   const [activo, setActivo] = useState(0) // option highlighted by keyboard or pointer
   const [pos, setPos] = useState(null)
@@ -18,7 +18,9 @@ export function Desplegable({ value, onChange, options, ariaLabel, disabled = fa
   const lista = useRef(null)
   const escrito = useRef({ texto: '', hora: 0 }) // type-ahead buffer
   const id = useId()
-  const elegido = Math.max(0, options.findIndex(o => o.value === value))
+  const indice = options.findIndex(o => o.value === value)
+  const elegido = Math.max(0, indice)
+  const sinElegir = indice < 0 && placeholder != null // nothing chosen yet: the pill shows the placeholder
   const visible = abierto && !disabled
 
   const abrir = (i = elegido) => { setActivo(i); setPos(null); setAbierto(true) }
@@ -111,15 +113,16 @@ export function Desplegable({ value, onChange, options, ariaLabel, disabled = fa
       <button
         ref={boton} type="button" className="desplegable-btn" disabled={disabled}
         aria-haspopup="listbox" aria-expanded={visible} aria-controls={visible ? id : undefined}
-        aria-label={`${ariaLabel}: ${options[elegido]?.label ?? ''}`}
+        aria-label={`${ariaLabel}: ${sinElegir ? placeholder : options[elegido]?.label ?? ''}`}
         onClick={() => (visible ? cerrar() : abrir())} onKeyDown={teclaBoton}
         style={{ ...filtroStyle, display: 'inline-flex', alignItems: 'center', gap: 10, maxWidth: '100%', textAlign: 'left', cursor: disabled ? 'default' : 'pointer', ...style }}
       >
         {/* every label shares one cell, so the pill keeps the width of the longest one */}
         <span style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', flex: 1, minWidth: 0 }}>
           {options.map((o, i) => (
-            <span key={o.value} aria-hidden={i !== elegido} style={{ gridArea: '1 / 1', visibility: i === elegido ? 'visible' : 'hidden', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
+            <span key={o.value} aria-hidden={i !== elegido || sinElegir} style={{ gridArea: '1 / 1', visibility: i === elegido && !sinElegir ? 'visible' : 'hidden', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
           ))}
+          {sinElegir && <span style={{ gridArea: '1 / 1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.g400 }}>{placeholder}</span>}
         </span>
         <span style={{ display: 'inline-flex', flexShrink: 0, color: C.g500, transform: visible ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }}><Icon name="abajo" size={15} /></span>
       </button>
@@ -136,12 +139,12 @@ export function Desplegable({ value, onChange, options, ariaLabel, disabled = fa
         >
           {options.map((o, i) => (
             <li
-              key={o.value} id={`${id}-${i}`} role="option" aria-selected={i === elegido}
+              key={o.value} id={`${id}-${i}`} role="option" aria-selected={i === elegido && !sinElegir}
               onPointerMove={() => i !== activo && setActivo(i)} onMouseDown={e => e.preventDefault()} onClick={() => elegir(i)}
-              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: i === elegido ? 600 : 400, color: i === elegido ? 'var(--acento-fuerte)' : C.black, background: i === activo ? C.purpleMid : 'transparent' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: i === elegido && !sinElegir ? 600 : 400, color: i === elegido && !sinElegir ? 'var(--acento-fuerte)' : C.black, background: i === activo ? C.purpleMid : 'transparent' }}
             >
               <span style={{ flex: 1, minWidth: 0 }}>{o.label}</span>
-              <span style={{ display: 'inline-flex', width: 15, visibility: i === elegido ? 'visible' : 'hidden' }}><Icon name="check" size={15} /></span>
+              <span style={{ display: 'inline-flex', width: 15, visibility: i === elegido && !sinElegir ? 'visible' : 'hidden' }}><Icon name="check" size={15} /></span>
             </li>
           ))}
         </ul>,

@@ -197,9 +197,10 @@ function Expediente({ paciente, onVolver }) {
   const eliminar = async () => {
     if (!await confirmar(`¿Eliminar a ${paciente.nombre} y TODO su expediente (citas, fotos, documentos y cobros)? Esta acción no se puede deshacer.`)) return
     const paths = (archivos || []).map(a => a.path)
-    if (paths.length) await supabase.storage.from('expedientes').remove(paths)
+    // Delete the row first: the database can refuse it (hospitalizations / surgeries); only then are the files removed
     const { error } = await supabase.from('pacientes').delete().eq('id', paciente.id)
     if (error) { toast.error(error.code === '23503' || /CIRUGIA_REALIZADA/.test(error.message || '') ? 'No se puede eliminar: el paciente tiene hospitalizaciones o cirugías registradas.' : 'No se pudo eliminar'); return }
+    if (paths.length) await supabase.storage.from('expedientes').remove(paths)
     toast.success('Paciente eliminado')
     await recargar()
     onVolver()

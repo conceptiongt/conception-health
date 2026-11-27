@@ -82,7 +82,8 @@ export function DetalleCirugia({ cirugia, onClose, onReprogramar, onEditarCita, 
           <Button variant="danger" icon="cerrar" disabled={busy} onClick={suspender}>Suspender</Button>
           <Button variant="ghost" icon="repetir" disabled={busy} onClick={() => onReprogramar(cirugia)}>Reprogramar</Button>
           <Button variant="soft" icon="play" disabled={busy} onClick={() => cambiar('en_curso', null, 'Cirugía iniciada')}>Iniciar</Button>
-          <Button icon="check" disabled={busy} onClick={() => cambiar('realizada', null, 'Cirugía marcada como realizada')}>Marcar realizada</Button>
+          {/* «Realizada» is offered only once the start time has passed (a future surgery can be started or suspended, not completed) */}
+          {ini <= Date.now() && <Button icon="check" disabled={busy} onClick={() => cambiar('realizada', null, 'Cirugía marcada como realizada')}>Marcar realizada</Button>}
         </>}
         {!lectura && cirugia.estado === 'en_curso' && <>
           <Button variant="danger" icon="cerrar" disabled={busy} onClick={suspender}>Suspender</Button>

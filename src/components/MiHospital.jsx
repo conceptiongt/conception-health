@@ -123,7 +123,7 @@ function Especialidades() {
     const nt = servicios.filter(s => s.departamento_id === d.id).length
     if (!await confirmar({ mensaje: `¿Eliminar la especialidad «${d.nombre}»?${nt ? `\n\nSus ${plural(nt, 'tarifa', 'tarifas')} pasarán a ser generales.` : ''}`, aceptar: 'Eliminar' })) return
     const { error } = await supabase.from('departamentos').delete().eq('id', d.id)
-    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene citas. Puede desactivarla.' : 'No se pudo eliminar'); return }
+    if (error) { toast.error(error.code === '23503' ? 'No se puede eliminar porque tiene citas, cirugías u hospitalizaciones registradas.' : 'No se pudo eliminar'); return }
     toast.success('Especialidad eliminada')
     await Promise.all([hospital.recargar(), recargar()])
   }

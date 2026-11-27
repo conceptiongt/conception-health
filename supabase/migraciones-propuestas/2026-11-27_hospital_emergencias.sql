@@ -460,7 +460,7 @@ begin
     select exists (
       select 1 from public.pacientes x, jsonb_each(to_jsonb(x)) j
        where x.id = v_actual
-         and (j.key in ('alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'extra')
+         and (j.key in ('alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'contacto_emergencia', 'telefono_emergencia', 'email', 'ocupacion', 'estado_civil', 'habitos', 'extra')
               or j.key like 'antecedentes%')
          and j.value <> 'null'::jsonb and j.value <> '[]'::jsonb and j.value <> '{}'::jsonb
          and not (jsonb_typeof(j.value) = 'string' and btrim(j.value #>> '{}') = '')

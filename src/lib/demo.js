@@ -294,7 +294,7 @@ function emergenciaRpc(fn, a) {
     if (!destino) return falla('REFERENCIA_AJENA')
     if (destino.sin_identificar || destino.id === actual.id) return falla('DATOS_INVALIDOS')
     // a provisional patient with data typed in its ficha is never merged away
-    const CAMPOS = ['alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'extra']
+    const CAMPOS = ['alergias', 'enfermedades', 'medicamentos', 'notas_medicas', 'tipo_sangre', 'fecha_nacimiento', 'dpi', 'direccion', 'contacto_emergencia', 'telefono_emergencia', 'email', 'ocupacion', 'estado_civil', 'habitos', 'extra']
     const hayDatos = Object.entries(actual).some(([k, v]) => (CAMPOS.includes(k) || k.startsWith('antecedentes')) && v != null && !(typeof v === 'string' && !v.trim()) && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length))
     if (hayDatos) return falla('PROVISIONAL_CON_DATOS')
     DB.citas.find(x => x.id === em.cita_id).paciente_id = destino.id

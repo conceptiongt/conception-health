@@ -21,14 +21,17 @@ export function useCargarDatos(clinicaId) {
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState(null)
   const cargado = useRef(false) // true once data is on screen: from then on a failed reload must never blank the app
+  const seq = useRef(0) // the latest reload wins: an older response must never overwrite a newer one
   // Resolves true when the reload worked. `silencioso`: background reload (poll of another hook); on failure it keeps showing the current data
   // and never sets the global `error`, the caller just retries on its next turn.
   const cargar = useCallback(async (silencioso) => {
     if (!clinicaId) return false
+    const mi = ++seq.current
     try {
       const [pacientes, citas, cobros, servicios, sedes] = await Promise.all([
         todo('pacientes', 'created_at'), todo('citas', 'fecha'), todo('cobros', 'fecha'), todo('servicios', 'created_at'), todo('sedes', 'created_at'),
       ])
+      if (mi !== seq.current) return true // a newer reload already started: drop this result
       setDatos({ pacientes, citas, cobros, servicios, sedes: sedes.filter(s => s.activa).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')) })
       cargado.current = true
       setError(null)

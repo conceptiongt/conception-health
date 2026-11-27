@@ -122,7 +122,8 @@ export const NIVELES = [
   { nivel: 2, label: 'Muy ocupado', color: '#E5484D' },
 ]
 // appointments of a day that take up the agenda, optionally for one location only
-export const citasActivas = (lista, sedeId) => (lista || []).filter(c => !NO_OCUPAN.includes(c.estado) && (!sedeId || c.sede_id === sedeId))
+// Emergencies (tipo «Emergencia») are walk-ins: they never take a slot, never count in the day's load and never trigger the «doctor already has a cita» warning.
+export const citasActivas = (lista, sedeId) => (lista || []).filter(c => !NO_OCUPAN.includes(c.estado) && c.tipo !== 'Emergencia' && (!sedeId || c.sede_id === sedeId))
 export const ocupacionDelDia = (porDia, iso, sedeId) => citasActivas(porDia[iso], sedeId).length
 
 // Appointments of the same day (and location, if given) that overlap [hora, hora + duracion)
@@ -145,7 +146,7 @@ export const colorBaseEstado = (estado) => {
   const c = ESTADOS_CITA.find(e => e.value === estado)?.color
   return valido(c) ? c : '#6B5BD6'
 }
-export const colorBaseTipo = (tipo) => PALETA[hash(tipo || 'Consulta') % PALETA.length]
+export const colorBaseTipo = (tipo) => (tipo === 'Emergencia' ? '#D1273F' : PALETA[hash(tipo || 'Consulta') % PALETA.length])
 
 // { base, fondo, texto, borde } from one hex: a pale card with dark text that always passes AA (4.5:1)
 export function estiloColor(hex) {
@@ -191,8 +192,12 @@ export function leerPreferencias(clinica) {
   return local && typeof local === 'object' ? normalizarPrefs(local) : { ...PREFS_DEFECTO }
 }
 
-// Hospitals always have the operating-room calendar; any other clinic when it turned it on
-export const usaCirugias = (clinica) => !!clinica && (esHospital(clinica.especialidad) || leerPreferencias(clinica).cirugias === true)
+// Hospital Básico (plan 'basico') does not include operating rooms nor beds; trial, Max and other hospital plans do
+const hospitalBasico = (clinica) => esHospital(clinica?.especialidad) && clinica?.plan === 'basico'
+// Hospitals have the operating-room calendar (except Hospital Básico); any other clinic when it turned it on (any plan)
+export const usaCirugias = (clinica) => !!clinica && (esHospital(clinica.especialidad) ? !hospitalBasico(clinica) : leerPreferencias(clinica).cirugias === true)
+// Beds: hospitals only (except Hospital Básico)
+export const usaCamas = (clinica) => !!clinica && esHospital(clinica.especialidad) && !hospitalBasico(clinica)
 
 // Returns { remoto, fallo, prefs } — when remoto is true the caller refreshes the session so `clinica` carries the new value
 export async function guardarPreferencias(clinica, prefs) {

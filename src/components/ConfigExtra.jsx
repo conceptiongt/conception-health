@@ -260,7 +260,7 @@ export function Usuarios() {
 function InvitarModal({ clinica, onClose, onListo }) {
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
-  const [permisos, setPermisos] = useState(permisosIniciales)
+  const [permisos, setPermisos] = useState(() => ({ ...permisosIniciales(), ...(esHospital(clinica?.especialidad) ? { emergencias: true } : {}) }))
   const [busy, setBusy] = useState(false)
   const [lista, setLista] = useState(null) // the invitation once saved
   const enviar = async () => {

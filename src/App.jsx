@@ -5,6 +5,7 @@ import { LIMITE_PRUEBA, liaVisible, accesos, nombrePlan } from './lib/constantes
 import { useSesion } from './hooks/useSesion'
 import { DatosContext, useCargarDatos } from './hooks/useDatos'
 import { useCargarHospital } from './hooks/useHospital'
+import { useCargarEmergencias } from './hooks/useEmergencias'
 import { Acceso, CrearPassword } from './pages/Acceso'
 import { Inicio } from './pages/Inicio'
 import { Registrar } from './pages/Registrar'
@@ -20,6 +21,7 @@ import { Pagos } from './pages/Pagos'
 import { Quirofanos } from './pages/Quirofanos'
 import { Camas } from './pages/Camas'
 import { Finanzas } from './pages/Finanzas'
+import { Emergencias } from './pages/Emergencias'
 import { urlLogo, iniciales } from './lib/marca'
 import { especialidad, esHospital } from './lib/especialidades'
 import { cargarSugeridos } from './lib/sugeridos'
@@ -33,7 +35,7 @@ import { Icon } from './components/ui/Icon'
 import { estadoVinculo, sincronizar } from './lib/studio'
 import { Button } from './components/ui/Button'
 import { esAdmin, esSoporte, puede } from './lib/permisos'
-import { usaCirugias } from './lib/calendario'
+import { usaCirugias, usaCamas } from './lib/calendario'
 import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
@@ -51,28 +53,31 @@ const NAV = [
   { id: 'inventario', label: 'Inventario', icono: 'caja', permiso: 'inventario' },
   // only for accounts with the surgery calendar (every hospital, or a clinic that turned it on) / only for hospitals
   { id: 'quirofanos', label: 'Quirófanos', icono: 'quirofano', permiso: 'quirofano', cirugias: true },
-  { id: 'camas', label: 'Camas', icono: 'cama', permiso: 'camas', hospital: true },
+  { id: 'camas', label: 'Camas', icono: 'cama', permiso: 'camas', hospital: true, camas: true },
 ]
+// Hospital accounts only: right after Inicio (see `navegacion` below)
+const NAV_EMERGENCIAS = { id: 'emergencias', label: 'Emergencias', icono: 'emergencia', permiso: 'emergencias', hospital: true }
 const NAV_LIA = [
   { id: 'lia', label: 'Lía', icono: 'lia' },
 ]
 // Pages that belong to Conception Health (the "Lía" plan only includes the receptionist and the appointments)
-const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario', 'quirofanos', 'camas']
+const SOLO_HEALTH = ['inicio', 'registrar', 'expedientes', 'pagos', 'finanzas', 'inventario', 'emergencias', 'quirofanos', 'camas']
 const NAV_CUENTA = [
   { id: 'suscripcion', label: 'Suscripción', icono: 'suscripcion', soloAdmin: true },
   { id: 'configuracion', label: 'Configuración', icono: 'ajustes', permiso: 'configuracion' },
 ]
 // what each user can open (the administrator decides for assistants in Configuración)
-const permitido = (perfil, n) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso))
-// a page that does not exist for this account (Quirófanos without the calendar, Camas outside hospitals) is not in the menu and its address goes to Inicio
-const existe = (clinica, n) => (!n.cirugias || usaCirugias(clinica)) && (!n.hospital || esHospital(clinica?.especialidad))
-const TODAS = [...NAV, ...NAV_LIA, ...NAV_CUENTA]
-// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" (also #/quirofanos/2026-11-26) → { vista, fecha }
+const permitido = (perfil, n, esHosp = true) => (!n.soloAdmin || esAdmin(perfil)) && (!n.permiso || puede(perfil, n.permiso)) && (!n.hospital || esHosp)
+// a page that does not exist for this account (Quirófanos without the calendar, Camas outside hospitals or on the Hospital Básico plan) is not in the menu and its address goes to Inicio
+const existe = (clinica, n) => (!n.cirugias || usaCirugias(clinica)) && (!n.camas || usaCamas(clinica))
+const TODAS = [...NAV, NAV_EMERGENCIAS, ...NAV_LIA, ...NAV_CUENTA]
+// "#/expedientes/<id>" → { vista: 'expedientes', id }; "#/calendario/2026-11-26" (also #/quirofanos/2026-11-26) → { vista, fecha }; "#/emergencias/historial" → { vista: 'emergencias', sub: 'historial' }
 function leerRuta() {
   const [, v, id] = window.location.hash.split('?')[0].split('/') // a query like ?google=ok is not part of the route
   return TODAS.some(n => n.id === v) ? {
     vista: v, id: v === 'expedientes' && /^[0-9a-f-]{36}$/i.test(id || '') ? id : null,
     fecha: (v === 'calendario' || v === 'quirofanos') && /^\d{4}-\d{2}-\d{2}$/.test(id || '') ? id : null,
+    sub: v === 'emergencias' && id === 'historial' ? 'historial' : null,
   } : {}
 }
 
@@ -97,18 +102,22 @@ function AppPrivada() {
 
 function Aplicacion({ sesion }) {
   const { perfil, clinica, planActivo, vencida, recargar: recargarSesion } = sesion
-  const { datos, error, recargar } = useCargarDatos(perfil.clinica_id)
+  const { datos, error, recargar, recargarSilencioso } = useCargarDatos(perfil.clinica_id)
   const hospital = useCargarHospital(clinica)
+  const emergencias = useCargarEmergencias(clinica, recargarSilencioso, datos?.citas)
   const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
   const acc = accesos(clinica, planActivo)
+  // Emergencias go right after Inicio, for hospital accounts only
+  const navegacion = esHosp ? [NAV[0], NAV_EMERGENCIAS, ...NAV.slice(1)] : NAV
   // the section lives in the address (#/citas), so reloading the page stays where you were
   const [vista, setVista] = useState(() => leerRuta().vista || (acc.health || !liaVisible(clinica) ? 'inicio' : 'lia'))
   const pendientesLia = usePendientesLia(acc.lia && !esHosp)
   const [menu, setMenu] = useState(false)
   const [expedienteId, setExpedienteId] = useState(() => leerRuta().id)
   const [fechaCal, setFechaCal] = useState(() => leerRuta().fecha) // day the calendar opens on (#/calendario/AAAA-MM-DD)
+  const [subVista, setSubVista] = useState(() => leerRuta().sub) // «historial» inside #/emergencias
   useEffect(() => {
-    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setFechaCal(r.fecha); setMenu(false) } }
+    const fn = () => { const r = leerRuta(); if (r.vista) { setVista(r.vista); setExpedienteId(r.id); setFechaCal(r.fecha); setSubVista(r.sub); setMenu(false) } }
     window.addEventListener('hashchange', fn)
     return () => window.removeEventListener('hashchange', fn)
   }, [])
@@ -159,12 +168,13 @@ function Aplicacion({ sesion }) {
     setVista(v); setMenu(false)
     setExpedienteId(v === 'expedientes' ? extra ?? null : null)
     setFechaCal(v === 'calendario' || v === 'quirofanos' ? extra ?? null : null)
-    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario' || v === 'quirofanos') && extra ? '/' + extra : ''}`
+    setSubVista(v === 'emergencias' && extra === 'historial' ? 'historial' : null)
+    const ruta = `#/${v}${(v === 'expedientes' || v === 'calendario' || v === 'quirofanos' || v === 'emergencias') && extra ? '/' + extra : ''}`
     if (window.location.hash !== ruta) window.history.pushState(null, '', ruta)
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital }
+  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital, emergencias }
   const enPrueba = !planActivo
   // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
   const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
@@ -230,11 +240,11 @@ function Aplicacion({ sesion }) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-            {[['MENÚ', NAV], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n) && existe(clinica, n))).map(([titulo, items]) => (
+            {[['MENÚ', navegacion], ...(esHosp ? [] : [['RECEPCIONISTA', NAV_LIA]]), ['CUENTA', NAV_CUENTA]].filter(([, items]) => items.some(n => permitido(perfil, n, esHosp) && existe(clinica, n))).map(([titulo, items]) => (
               <div key={titulo} style={{ marginBottom: 18 }}>
                 <div style={{ padding: '0 26px 8px', color: 'var(--menu-titulo)', fontSize: 11, fontWeight: 600, letterSpacing: '0.16em' }}>{titulo}</div>
                 <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {items.filter(n => permitido(perfil, n) && existe(clinica, n)).map(n => {
+                  {items.filter(n => permitido(perfil, n, esHosp) && existe(clinica, n)).map(n => {
                     const activo = vista === n.id
                     return (
                       <button key={n.id} className={`nav-item${activo ? ' activo' : ''}`} onClick={() => ir(n.id)} style={{
@@ -245,6 +255,7 @@ function Aplicacion({ sesion }) {
                         <Icon name={n.icono} size={18} style={{ opacity: activo ? 1 : 0.8 }} />{n.label}
                         {((!acc.health && SOLO_HEALTH.includes(n.id)) || (n.id === 'inventario' && !acc.inventario)) && <Icon name="candado" size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
                         {n.id === 'lia' && !liaVisible(clinica) && <span style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 10, background: C.peach, color: C.orange, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.04em' }}>PRONTO</span>}
+                        {n.id === 'emergencias' && emergencias.abiertas.length > 0 && <span title="Emergencias en curso" aria-label={`${emergencias.abiertas.length} emergencias en curso`} style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{emergencias.abiertas.length}</span>}
                         {n.id === 'lia' && pendientesLia > 0 && <span title="Conversaciones que le necesitan" style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: C.red, color: '#fff', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendientesLia}</span>}
                       </button>
                     )
@@ -308,8 +319,9 @@ function Aplicacion({ sesion }) {
           <div key={vista} className="vista-anim">
           {error ? <div style={{ color: C.red, padding: 30 }}>No se pudieron cargar los datos: {error}</div>
             : !datos ? <Cargando />
+            : vista === 'emergencias' && !esHosp ? <Inicio />
             : TODAS.some(n => n.id === vista && !existe(clinica, n)) ? <Inicio />
-            : TODAS.some(n => n.id === vista && !permitido(perfil, n)) ? <SinPermiso />
+            : TODAS.some(n => n.id === vista && !permitido(perfil, n, esHosp)) ? <SinPermiso />
             : !acc.health && SOLO_HEALTH.includes(vista) ? <SoloHealth ir={ir} />
             : vista === 'lia' && esHosp ? <Inicio />
             : vista === 'lia' ? (liaVisible(clinica) ? <Lia /> : <LiaProximamente />)
@@ -323,6 +335,7 @@ function Aplicacion({ sesion }) {
             : vista === 'camas' ? <Camas />
             : vista === 'pagos' ? <Pagos />
             : vista === 'finanzas' ? <Finanzas />
+            : vista === 'emergencias' ? <Emergencias sub={subVista} />
             : vista === 'configuracion' ? <Configuracion />
             : <Suscripcion />}
           </div>

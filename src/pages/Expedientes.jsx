@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { ORIGENES, REDES, ETAPAS_FOTO, METODOS_PAGO, TIPOS_SANGRE, estadoCita, origenLabel } from '../lib/constantes'
 import { fmtQ, fmtFecha, fmtFechaCorta, fmtHora, hoyISO, saldo, totalCobro, linkWhatsApp } from '../lib/formato'
-import { resumenDatosCita } from '../lib/especialidades'
+import { resumenDatosCita, esHospital } from '../lib/especialidades'
+import { FaltanDatos, BloqueEmergencia, EtiquetaTriage } from '../components/EmergenciaBits'
+import { CompletarDatosModal } from '../components/EmergenciaModales'
+import { TIPO_EMERGENCIA } from '../lib/emergencias'
 import { colorProfesional } from '../hooks/useHospital'
 import { useEstanciasPaciente } from '../hooks/useCamas'
 import { EtiquetaIngreso, Hospitalizaciones } from '../components/Hospitalizaciones'
-import { esHospital } from '../lib/especialidades'
 import { useDatos } from '../hooks/useDatos'
 import { Encabezado, Tabla, Card, Badge, Vacio, Stat, Cargando, Pestanas } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
@@ -27,7 +29,7 @@ import { EnlacePaciente } from '../components/EnlacePaciente'
 import { BotonesSubir, subirArchivos } from '../components/SubirArchivos'
 import { TextoFormateado } from '../components/EditorTexto'
 import { seccionesDe, camposPaciente, edad, urlPortal, urlRegistro, codigoRegistro } from '../lib/ficha'
-import { puede } from '../lib/permisos'
+import { puede, esSoporte } from '../lib/permisos'
 import { confirmar } from '../components/ui/Confirmar'
 import { Desplegable } from '../components/ui/Desplegable'
 
@@ -40,20 +42,23 @@ const ATENCIONES = [
   { value: 'Procedimiento', color: C.orange, bg: C.orangeLight },
   { value: 'Cirugía', color: C.red, bg: C.redLight },
 ]
+// Hospitals also get «Emergencia» (every arrival counts, including patients who left without being seen)
+const ATENCION_EMERGENCIA = { value: TIPO_EMERGENCIA, color: C.red, bg: C.redLight }
 const SIN_ATENCION = ['Cancelada', 'No asistió']
 const CONTACTOS = [
   { value: '', label: 'Con o sin contacto' }, { value: 'telefono', label: 'Con teléfono' },
   { value: 'email', label: 'Con correo' }, { value: 'sin', label: 'Sin teléfono ni correo' },
 ]
-const atencionDe = (tipo) => {
+const atencionDe = (tipo, lista = ATENCIONES) => {
   if (!tipo) return 'Consulta' // a cita without type counts as a consultation, as in the calendar
-  if (ATENCIONES.some(a => a.value !== 'Consulta' && a.value === tipo)) return tipo
+  if (lista.some(a => a.value !== 'Consulta' && a.value === tipo)) return tipo
   return tipo === 'Primera consulta' || /consulta/i.test(tipo || '') ? 'Consulta' : null
 }
 
 export function Expedientes({ abrirId }) {
   const { pacientes, citas, cobros, clinica, ir, sedes, perfil } = useDatos()
   const finanzas = puede(perfil, 'finanzas')
+  const atenciones = esHospital(clinica?.especialidad) ? [...ATENCIONES, ATENCION_EMERGENCIA] : ATENCIONES
   const [abierto, setAbierto] = useState(abrirId || null)
   const [sede, setSede] = useState('')
   const [buscar, setBuscar] = useState('')
@@ -75,9 +80,9 @@ export function Expedientes({ abrirId }) {
       && (!contacto || (contacto === 'telefono' ? !!p.telefono : contacto === 'email' ? !!p.email : !p.telefono && !p.email)))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
   // latest matching appointment date of each patient, per type of attention
-  const fechas = Object.fromEntries(ATENCIONES.map(a => [a.value, new Map()]))
+  const fechas = Object.fromEntries(atenciones.map(a => [a.value, new Map()]))
   for (const c of citas) {
-    const a = !SIN_ATENCION.includes(c.estado) && atencionDe(c.tipo)
+    const a = (c.tipo === TIPO_EMERGENCIA || !SIN_ATENCION.includes(c.estado)) && atencionDe(c.tipo, atenciones)
     if (a && !(fechas[a].get(c.paciente_id) >= c.fecha)) fechas[a].set(c.paciente_id, c.fecha)
   }
   const lista = atencion ? sinAtencion.filter(p => fechas[atencion].has(p.id)) : sinAtencion
@@ -101,7 +106,7 @@ export function Expedientes({ abrirId }) {
         <Desplegable ariaLabel="Contacto" value={contacto} onChange={setContacto} options={CONTACTOS} />
       </div>
       <div style={{ marginBottom: 14 }}><FiltroSede valor={sede} onChange={setSede} contar={(id) => pacientes.filter(p => !id || p.sede_id === id).length} /></div>
-      {pacientes.length > 0 && <BotonesAtencion pacientes={sinAtencion} fechas={fechas} valor={atencion} onChange={setAtencion} />}
+      {pacientes.length > 0 && <BotonesAtencion atenciones={atenciones} pacientes={sinAtencion} fechas={fechas} valor={atencion} onChange={setAtencion} />}
       {pacientes.length === 0 ? (
         <Vacio icono="expedientes" titulo="Aún no hay pacientes" texto="Registre su primer paciente para crear su expediente.">
           <Button onClick={() => ir('registrar')} icon="mas">Registrar paciente</Button>
@@ -113,7 +118,7 @@ export function Expedientes({ abrirId }) {
           vacio="Ningún paciente coincide con la búsqueda"
           filas={lista.map(p => { const i = info(p); return { key: p.id, celdas: [
             <span style={{ display: 'block' }}>
-              <span style={{ fontWeight: 500 }}>{p.nombre}</span>
+              <span style={{ fontWeight: 500 }}>{p.nombre}</span>{p.sin_identificar && <> <FaltanDatos paciente={p} style={{ marginLeft: 8 }} /></>}
               {atencion && <span style={{ display: 'block', fontSize: 12, color: C.g500, marginTop: 2 }}>{atencion}: {fmtFechaCorta(fechas[atencion].get(p.id))}</span>}
             </span>, p.telefono || '—', ...(sedes.length ? [nombreSede(sedes, p.sede_id) || <span style={{ color: C.g300 }}>—</span>] : []), p.origen === 'redes' && p.red ? p.red : origenLabel(p.origen), i.consultas,
             i.ultima ? fmtFechaCorta(i.ultima.fecha) : '—', i.proxima ? fmtFechaCorta(i.proxima.fecha) : '—',
@@ -126,7 +131,7 @@ export function Expedientes({ abrirId }) {
 }
 
 // One tap shows only the patients with that type of attention; tapping it again goes back to all
-function BotonesAtencion({ pacientes, fechas, valor, onChange }) {
+function BotonesAtencion({ atenciones, pacientes, fechas, valor, onChange }) {
   const boton = ({ value, color, bg }, label, n, destino) => {
     const activo = valor === value
     return (
@@ -144,7 +149,7 @@ function BotonesAtencion({ pacientes, fechas, valor, onChange }) {
   return (
     <div role="group" aria-label="Tipo de atención" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       {boton({ value: '', color: C.purple, bg: C.purpleMid }, 'Todos', pacientes.length, '')}
-      {ATENCIONES.map(a => boton(a, a.value, pacientes.filter(p => fechas[a.value].has(p.id)).length, valor === a.value ? '' : a.value))}
+      {atenciones.map(a => boton(a, a.value, pacientes.filter(p => fechas[a.value].has(p.id)).length, valor === a.value ? '' : a.value))}
     </div>
   )
 }
@@ -159,7 +164,7 @@ const TABS = [
 ]
 
 function Expediente({ paciente, onVolver }) {
-  const { citas, cobros, clinica, perfil, recargar, acc, sedes, hospital } = useDatos()
+  const { citas, cobros, clinica, perfil, recargar, acc, sedes, emergencias, hospital } = useDatos()
   const clinico = puede(perfil, 'expedientes')
   // hospital: the patient's stays (current + past) and the «Ingresado — Cama X» tag
   const conCamas = esHospital(clinica?.especialidad) && hospital.tablas && clinico
@@ -169,6 +174,7 @@ function Expediente({ paciente, onVolver }) {
   const [portal, setPortal] = useState(false)
   const [citaAbierta, setCitaAbierta] = useState(undefined) // undefined: list, null: new, object: edit
   const [editando, setEditando] = useState(false)
+  const [completar, setCompletar] = useState(null) // emergency item whose patient data is being completed
   const [compartir, setCompartir] = useState(undefined) // undefined: closed, null: whole file, cita: one consultation
   const [archivos, setArchivos] = useState(null)
   const misCitas = citas.filter(c => c.paciente_id === paciente.id).sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')))
@@ -209,7 +215,7 @@ function Expediente({ paciente, onVolver }) {
   return (
     <>
       <button onClick={onVolver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.g500, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 14, fontSize: 13.5, fontFamily: 'inherit' }}><Icon name="atras" size={16} />Expedientes</button>
-      <Encabezado titulo={conCamas && estancias?.some(e => !e.egreso_at) ? <>{paciente.nombre} <span style={{ fontSize: 14, fontFamily: 'inherit', verticalAlign: 'middle', marginLeft: 6 }}><EtiquetaIngreso estancias={estancias} /></span></> : paciente.nombre} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
+      <Encabezado titulo={<>{paciente.nombre}{paciente.sin_identificar && <FaltanDatos paciente={paciente} style={{ marginLeft: 12, fontSize: 13, verticalAlign: 'middle' }} />}{conCamas && estancias?.some(e => !e.egreso_at) && <span style={{ fontSize: 14, fontFamily: 'inherit', verticalAlign: 'middle', marginLeft: 8 }}><EtiquetaIngreso estancias={estancias} /></span>}</>} subtitulo={[anios != null && `${anios} años`, paciente.sexo, paciente.telefono, nombreSede(sedes, paciente.sede_id) && `Sede ${nombreSede(sedes, paciente.sede_id)}`, `paciente desde el ${fmtFecha(paciente.created_at)}`].filter(Boolean).join(' · ')}>
         <EnlacePaciente paciente={paciente} />
         {clinico && <Button size="sm" variant="ghost" icon="ojo" onClick={() => setPortal(true)} disabled={!archivos}>Portal del cliente{paciente.portal_activo ? ' · publicado' : ''}</Button>}
         {clinico && <Button size="sm" variant="ghost" icon="compartir" onClick={() => setCompartir(null)} disabled={!archivos}>Imprimir o compartir</Button>}
@@ -217,6 +223,16 @@ function Expediente({ paciente, onVolver }) {
         {puede(perfil, 'eliminar') && <Button variant="danger" size="sm" onClick={eliminar} icon="eliminar">Eliminar</Button>}
       </Encabezado>
 
+      {paciente.sin_identificar && (
+        <div role="status" style={{ background: C.amberLight, color: C.amber, border: '1px solid #F2CD92', borderRadius: 16, padding: '11px 16px', marginBottom: 16, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FaltanDatos paciente={paciente} />
+          <span style={{ flex: 1, minWidth: 200, fontWeight: 500 }}>Este paciente llegó a emergencias sin poder identificarse. Complete sus datos.</span>
+          {(() => {
+            const em = emergencias?.filas.find(e => citas.some(c => c.id === e.cita_id && c.paciente_id === paciente.id))
+            return em && !esSoporte(perfil) ? <Button size="sm" variant="ghost" icon="editar" onClick={() => setCompletar({ em, cita: citas.find(c => c.id === em.cita_id), paciente })}>Completar datos</Button> : null
+          })()}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 16 }}>
         <Stat label="Consultas" valor={misCitas.length} />
         {finanzas && <Stat label="Total pagado" valor={fmtQ(totalPagado)} color={C.green} />}
@@ -233,6 +249,7 @@ function Expediente({ paciente, onVolver }) {
       {tab === 'hospitalizaciones' && conCamas && <Hospitalizaciones estancias={estancias} />}
       {tab === 'cobros' && finanzas && <Cobros paciente={paciente} cobros={misCobros} clinicaId={perfil.clinica_id} onCambio={recargar} />}
 
+      {completar && <CompletarDatosModal item={completar} onClose={() => setCompletar(null)} />}
       {editando && <PacienteModal paciente={paciente} onClose={() => setEditando(false)} onGuardado={() => { setEditando(false); recargar() }} />}
       {compartir !== undefined && archivos && <CompartirExpediente paciente={paciente} citas={misCitas} cobros={misCobros} archivos={archivos} citaInicial={compartir} onClose={() => setCompartir(undefined)} />}
     </>
@@ -318,6 +335,8 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
       ...Object.fromEntries(campos.map(k => [k, limpio(f[k])])),
       extra: Object.fromEntries(Object.entries(f.extra || {}).filter(([, v]) => v != null && String(v).trim()).map(([k, v]) => [k, String(v).trim()])),
       ...(conSedes ? { sede_id: f.sede_id || null } : {}),
+      // a provisional emergency patient whose name was typed here is identified now
+      ...(paciente.sin_identificar && f.nombre.trim() !== paciente.nombre ? { sin_identificar: false } : {}),
     }).eq('id', paciente.id)
     setBusy(false)
     if (error) { toast.error('No se pudo guardar'); return }
@@ -369,7 +388,19 @@ function PacienteModal({ paciente, onClose, onGuardado }) {
 
 // ─── Consultations: each one readable on its own, with its clinical file sections ───
 function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
-  const { sedes, clinica, hospital } = useDatos()
+  const { sedes, clinica, hospital, emergencias, perfil } = useDatos()
+  // the emergency block (motive, outcome, notes) is clinical data: only for who may see expedientes or emergencias
+  const veEmergencia = puede(perfil, 'expedientes') || puede(perfil, 'emergencias')
+  // the shared state only holds recent emergencies: older ones of this patient are fetched here
+  const faltan = useMemo(() => (veEmergencia && emergencias?.disponible ? citas.filter(c => c.tipo === TIPO_EMERGENCIA && !emergencias.porCita.has(c.id)).map(c => c.id) : []), [citas, emergencias, veEmergencia])
+  const [antiguas, setAntiguas] = useState(() => new Map())
+  const llaveFaltan = faltan.join(',')
+  useEffect(() => {
+    if (!faltan.length) return
+    let vigente = true
+    supabase.from('emergencias').select('*').in('cita_id', faltan).then(({ data }) => { if (vigente && data) setAntiguas(new Map(data.map(e => [e.cita_id, e]))) })
+    return () => { vigente = false }
+  }, [llaveFaltan]) // eslint-disable-line react-hooks/exhaustive-deps
   const [abiertas, setAbiertas] = useState(() => new Set(citas.slice(0, 1).map(c => c.id)))
   const alternar = (id) => setAbiertas(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   return (
@@ -383,7 +414,8 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
             const depC = hospital.disponible ? hospital.departamento(c.departamento_id) : null // hospital: specialty and doctor of each consultation
             const medC = hospital.disponible ? hospital.profesional(c.profesional_id) : null
             const abierta = abiertas.has(c.id)
-            const contenido = secciones.length || dc || c.procedimiento || (clinico && c.notas)
+            const em = veEmergencia ? (emergencias?.porCita?.get(c.id) || antiguas.get(c.id)) : null // emergency record of this consultation (hospital accounts)
+            const contenido = secciones.length || dc || c.procedimiento || (clinico && c.notas) || em
             return (
               <div key={c.id} style={{ border: `1px solid ${C.line}`, borderRadius: 18, overflow: 'hidden' }}>
                 <div onClick={() => contenido ? alternar(c.id) : onAbrir(c)} className="fila" style={{ display: 'flex', gap: 14, padding: '14px 16px', alignItems: 'center', flexWrap: 'wrap', cursor: 'pointer' }}>
@@ -394,6 +426,7 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
                   <div style={{ flex: 1, minWidth: 180, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 500, fontSize: 15 }}>{c.tipo || 'Consulta'}{c.servicio ? ` · ${c.servicio}` : ''}</span>
                     <Badge color={e.color} bg={e.bg}>{c.estado}</Badge>
+                    {em && <EtiquetaTriage triage={em.triage} />}
                     {depC && <span style={{ fontSize: 12.5, color: C.g600 }}>{depC.nombre}</span>}
                     {medC && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g600 }}><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 9, background: colorProfesional(medC, hospital.profesionales.indexOf(medC)) }} />{medC.nombre}</span>}
                     {secciones.length > 0 && <span style={{ fontSize: 12, color: C.g400 }}>{secciones.map(s => s.titulo).slice(0, 3).join(' · ')}{secciones.length > 3 ? '…' : ''}</span>}
@@ -407,6 +440,7 @@ function Consultas({ citas, clinico, onAbrir, onCompartir, onCambio }) {
                 </div>
                 {abierta && contenido && (
                   <div style={{ padding: '4px 18px 18px', borderTop: `1px solid ${C.g100}`, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {em && <BloqueEmergencia em={em} medico={medC?.nombre} />}
                     {(dc || c.peso || c.talla) && <div style={{ fontSize: 13.5, color: C.g600, marginTop: 10 }}>{[c.peso && `Peso ${c.peso} kg`, c.talla && `Talla ${c.talla} cm`, dc].filter(Boolean).join(' · ')}</div>}
                     {secciones.map(s => (
                       <div key={s.id}>

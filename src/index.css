@@ -363,3 +363,7 @@ input.tono::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; ba
 
 /* Camera window (CamaraFoto): preview and still share the same box */
 .cam-video { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: 16px; background: #0F1624; }
+
+/* Emergencias: board of three sections (En espera / En atención / En observación); they stack on narrow screens */
+.em-tablero { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 860px) { .em-tablero { grid-template-columns: minmax(0, 1fr); } }

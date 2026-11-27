@@ -408,7 +408,8 @@ async function sincronizar(req: Request, p: Perfil) {
     const ctx = await conectarCtx(p.clinica_id, cita ? [cita] : [])
     if (!ctx) return json(req, { sincronizado: false })
     if (ctx === SIN_CONFIRMAR) return json(req, { sincronizado: false, confirmar: true })
-    if (!cita || cita.estado === 'Cancelada') await quitarEvento(ctx, citaId)
+    // emergencies carry the patient's name in the title: never mirrored, and removed if an event somehow exists
+    if (!cita || cita.estado === 'Cancelada' || cita.tipo === 'Emergencia') await quitarEvento(ctx, citaId)
     else await reflejarEvento(ctx, cita)
     await marcarBien(p.clinica_id)
     return json(req, { sincronizado: true })
@@ -534,7 +535,7 @@ async function meetCita(req: Request, p: Perfil) {
     const ctx = await conectarCtx(p.clinica_id, cita && crear ? [cita] : [])
     if (!ctx) return json(req, { meet_url: null, sincronizado: false })
     if (ctx === SIN_CONFIRMAR) return json(req, { meet_url: null, sincronizado: false, confirmar: true })
-    if (!cita || cita.estado === 'Cancelada') return json(req, { meet_url: null, sincronizado: true })
+    if (!cita || cita.estado === 'Cancelada' || cita.tipo === 'Emergencia') return json(req, { meet_url: null, sincronizado: true })
     const det = idEvento(citaId)
     let data: any
     if (!crear) {
@@ -591,7 +592,7 @@ async function sincronizarTodas(req: Request, p: Perfil) {
   if (!inicio || !Number.isFinite(ini) || ini > t0 + 60e3 || t0 - ini > 2 * 3600e3) inicio = new Date(t0).toISOString()
   const hoy = hoyGT(), cid = p.clinica_id
   // M4: a failed read must never look like "no citas" (which would trigger deletions below)
-  const lista = await leerTodo((d, h) => db.from('citas').select(COLS_CITA).eq('clinica_id', cid).gte('fecha', hoy).neq('estado', 'Cancelada')
+  const lista = await leerTodo((d, h) => db.from('citas').select(COLS_CITA).eq('clinica_id', cid).gte('fecha', hoy).neq('estado', 'Cancelada').or('tipo.is.null,tipo.neq.Emergencia') // emergencies are never mirrored
     .order('fecha').order('hora').order('id').range(d, h), TECHO_CITAS)
   if (!lista) return json(req, SELECT_ERR, 502)
   const filas = await leerTodo((d, h) => db.from('google_eventos').select('cita_id, event_id, actualizado_at').eq('clinica_id', cid).order('cita_id').range(d, h), 100000)
@@ -623,9 +624,9 @@ async function sincronizarTodas(req: Request, p: Perfil) {
       const dudosas = [...eventos.keys()].filter(id => !enLista.has(id))
       let leidas: Map<string, string> | null = new Map()
       for (let k = 0; k < dudosas.length && leidas; k += 100) {
-        const { data, error } = await db.from('citas').select('id, estado').eq('clinica_id', cid).in('id', dudosas.slice(k, k + 100))
+        const { data, error } = await db.from('citas').select('id, estado, tipo').eq('clinica_id', cid).in('id', dudosas.slice(k, k + 100))
         if (error) leidas = null
-        else for (const c of data || []) leidas.set(c.id, c.estado)
+        else for (const c of data || []) leidas.set(c.id, c.tipo === 'Emergencia' ? 'Cancelada' : c.estado)
       }
       if (leidas) {
         const sobran = dudosas.filter(id => !leidas!.has(id) || leidas!.get(id) === 'Cancelada') // past citas still existing are kept

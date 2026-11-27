@@ -13,16 +13,20 @@
 --           al_crear_usuario          → (el de siempre) solo cuando app_metadata.alta NO es 'hospital'  (la función viva NO se toca)
 --           al_crear_usuario_hospital → hospital_crear_perfil_usuario(), solo cuando app_metadata.alta = 'hospital'
 --        Así el cuerpo vivo de crear_clinica_para_usuario() queda byte por byte igual (cero riesgo de reconstruirlo mal desde una descripción).
+--     5b. perfiles.email deja de ser NOT NULL (en vivo lo es: el alta del personal sin correo fallaría).
+--     5c. RPC perfil_admin_actualizar(): único camino para «Editar permisos» (personal Y asistentes con correo, también en clínicas normales: hoy el
+--         UPDATE directo lo rechazan los privilegios por columna de authenticated, solo perfiles(nombre, password_creada)).
+--     5d. Trigger hospital_auth_fijo sobre auth.users: el correo / teléfono de un usuario del hospital no se puede cambiar (ni por la API de GoTrue).
 --     6. Funciones de apoyo SOLO para service role: hospital_cupos_de(), hospital_cerrar_sesiones(); y para el administrador: hospital_usuarios_cupos().
 --   Las llaves de permisos nuevas (registrar, ver_todos_pacientes, profesional_id) viven en perfiles.permisos (jsonb): no necesitan cambio de esquema.
 --
 -- Objetos nuevos / modificados
 --   Columnas: clinicas.codigo_acceso; perfiles.usuario, puesto, activo (not null default true), clave_temporal_at.
 --   Tabla: acceso_intentos (RLS activo, sin políticas).
---   Funciones nuevas: hospital_codigo_acceso(text), hospital_usuarios_cupos(), hospital_cupos_de(uuid), hospital_cerrar_sesiones(uuid),
+--   Funciones nuevas: perfil_admin_actualizar(uuid,text,text,jsonb), hospital_auth_fijo() [trigger], hospital_codigo_acceso(text), hospital_usuarios_cupos(), hospital_cupos_de(uuid), hospital_cerrar_sesiones(uuid),
 --     hospital_crear_perfil_usuario() [trigger], hospital_perfil_campos() [trigger], hospital_clinica_codigo() [trigger].
---   Triggers nuevos: perfil_campos_hospital (perfiles), clinicas_codigo_acceso_proteger (clinicas), al_crear_usuario_hospital (auth.users).
---   MODIFICADO (reemplazo): mi_clinica()  y  el trigger al_crear_usuario (se vuelve a crear idéntico + cláusula WHEN).
+--   Triggers nuevos: hospital_auth_fijo (auth.users), perfil_campos_hospital (perfiles), clinicas_codigo_acceso_proteger (clinicas), al_crear_usuario_hospital (auth.users).
+--   MODIFICADO (reemplazo): perfiles.email (drop not null), mi_clinica()  y  el trigger al_crear_usuario (se vuelve a crear idéntico + cláusula WHEN).
 --
 -- RIESGOS (revisar ANTES de aplicar)
 --   * mi_clinica() es la base de TODO el RLS. El reemplazo solo agrega «and p.activo» al cuerpo vivo que se pegó en el pedido. Comparar con
@@ -40,7 +44,12 @@
 --   * Cupo de usuarios: la rama del hospital toma pg_advisory_xact_lock por clínica y revisa usuarios_ocupados < usuarios_permitidos DENTRO de la misma
 --     transacción de la alta (dos altas simultáneas en el límite: la segunda espera y falla con LIMITE_USUARIOS). Asume que usuarios_ocupados(uuid)
 --     y usuarios_permitidos(uuid) existen con UN argumento uuid (pre-check D).
---   * perfiles.email debe aceptar NULL (los usuarios sin correo lo dejan vacío). Pre-check C.
+--   * perfiles.email: el pre-check C en vivo mostró NOT NULL → la sección 2 ejecuta `alter column email drop not null` (solo metadatos, sin reescribir la tabla).
+--     No se puede volver a poner NOT NULL mientras existan usuarios del personal (email null): ver ROLLBACK.
+--   * perfil_proteger (en vivo, leído solo-lectura) hace: (1) un perfil rol 'soporte' es inmutable; (2) `if not es_admin() and (rol|permisos|clinica_id cambian)` → SIN_PERMISO;
+--     (3) nadie cambia su propio rol. NO se modifica. perfil_admin_actualizar() corre como el dueño (auth.uid() = dueño, es_admin() = true) y solo cambia nombre,
+--     puesto y permisos de un perfil que no es el suyo, así que perfil_proteger lo deja pasar. Con service role auth.uid() es null y es_admin() falsa: por eso la
+--     función de borde NO actualiza permisos (se quitó la acción `actualizar`).
 --   * «Cliente» en los triggers = current_user en ('authenticated','anon') (PostgREST cambia a ese rol). La service role (funciones de borde) y el
 --     SQL editor quedan fuera. Las RPC SECURITY DEFINER corren como su dueño, por eso también quedan fuera (hospital_codigo_acceso puede escribir
 --     el código aunque un cliente directo no pueda).
@@ -49,6 +58,23 @@
 --     corta con mi_clinica() = NULL.
 --   * Nada para anon: ningún privilegio a anon ni a public en funciones nuevas.
 --   * Orden de despliegue: SQL primero; luego las tres funciones de borde (usuarios-hospital JWT sí, cambiar-clave JWT sí, entrar-usuario JWT NO); luego el front.
+--
+-- VERIFICADO EN VIVO POR LA REVISIÓN (solo lectura): A) mi_clinica() coincide con el cuerpo de la sección 3; B) el trigger vivo es exactamente
+--   AFTER INSERT ... FOR EACH ROW EXECUTE FUNCTION crear_clinica_para_usuario(); C) perfiles.email es NOT NULL (corregido con el drop not null de arriba);
+--   G) limite_publico acepta accion = 'entrar'.
+--
+-- PRUEBAS EN SECO D1–D11 (todas dentro de una transacción con rollback; ver la receta de abajo)
+--   D1  aplicar este archivo completo sin errores.
+--   D2  insert en auth.users (id y email únicos) con app_metadata alta=hospital → exactamente UN perfil asistente, email null, clave_temporal_at no nulo, y NINGUNA clínica nueva.
+--   D3  insert en auth.users con raw_app_meta_data '{}' → crea clínica + perfil dueno como antes.
+--   D4  clínica inexistente / usuario 'AB' / permisos '[]' / clínica que no es hospital → excepción ALTA_HOSPITAL_INVALIDA (y no queda el usuario de auth).
+--   D5  cupo lleno (usuarios_ocupados = usuarios_permitidos) → LIMITE_USUARIOS.
+--   D6  mi_clinica() del usuario del personal = su clínica; tras update perfiles set activo = false → NULL.
+--   D7  como ese usuario: update password_creada → CAMPO_PROTEGIDO; update usuario / activo → CAMPO_PROTEGIDO.
+--   D8  perfil_admin_actualizar como dueño → ok (void); como asistente o como dueño de OTRA clínica → SIN_PERMISO.
+--   D9  hospital_codigo_acceso como dueño (genera/cambia/valida), como asistente (SIN_PERMISO) y como anon (permission denied).
+--   D10 hospital_cerrar_sesiones(uuid) corre (service role) y no falla aunque el usuario no tenga sesiones.
+--   D11 update auth.users set email = ... de un usuario hospital → CAMPO_PROTEGIDO; update ... set last_sign_in_at = now() → pasa.
 --
 -- PRE-CHECKS (solo lectura, correr ANTES; guardar la salida)
 --   A) select pg_get_functiondef('public.mi_clinica'::regproc);       -- comparar con el cuerpo de la sección 3
@@ -168,6 +194,8 @@ alter table public.perfiles add constraint perfiles_usuario_formato check (usuar
 alter table public.perfiles drop constraint if exists perfiles_puesto_largo;
 alter table public.perfiles add constraint perfiles_puesto_largo check (puesto is null or char_length(puesto) <= 40);
 create unique index if not exists perfiles_usuario_uq on public.perfiles (clinica_id, lower(usuario)) where usuario is not null;
+-- staff users have no e-mail (live column is NOT NULL)
+alter table public.perfiles alter column email drop not null;
 -- harmless when SELECT is table-wide; needed when it was granted per column (pre-check F)
 grant select (usuario, puesto, activo, clave_temporal_at) on public.perfiles to authenticated;
 
@@ -246,8 +274,8 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('hospital_cupo:' || cid::text, 0));
   if public.usuarios_ocupados(cid) >= public.usuarios_permitidos(cid) then raise exception 'LIMITE_USUARIOS'; end if;
 
-  insert into public.perfiles (user_id, clinica_id, nombre, email, rol, permisos, password_creada, usuario, puesto, activo)
-  values (new.id, cid, nom, null, 'asistente', perm, false, usr, pst, true);
+  insert into public.perfiles (user_id, clinica_id, nombre, email, rol, permisos, password_creada, usuario, puesto, activo, clave_temporal_at)
+  values (new.id, cid, nom, null, 'asistente', perm, false, usr, pst, true, now());   -- the temporary password's 72 h clock starts here
   return new;
 end $$;
 revoke all on function public.hospital_crear_perfil_usuario() from public, anon, authenticated;
@@ -262,6 +290,71 @@ drop trigger if exists al_crear_usuario_hospital on auth.users;
 create trigger al_crear_usuario_hospital after insert on auth.users
   for each row when (new.raw_app_meta_data ->> 'alta' = 'hospital')
   execute function public.hospital_crear_perfil_usuario();
+
+-- ───────────────────────── 5b. Editar permisos / nombre / puesto (administrador) ─────────────────────────
+-- Only path for «Editar permisos» of staff users AND e-mail assistants. Runs as the owner (SECURITY DEFINER keeps auth.uid()), so the live
+-- perfil_proteger sees es_admin() = true and lets it through. Unknown permission keys are dropped; wrong value types are rejected.
+create or replace function public.perfil_admin_actualizar(p_user uuid, p_nombre text default null, p_puesto text default null, p_permisos jsonb default null)
+returns void language plpgsql security definer set search_path to 'public' as $$
+declare
+  cid uuid := public.mi_clinica();
+  objetivo record; nom text; pst text; limpio jsonb := '{}'::jsonb; r record; prof text;
+  permitidas constant text[] := array['expedientes','finanzas','inventario','costos','compras','emergencias','exportar','eliminar_citas','eliminar_inventario','eliminar',
+                                      'configuracion','quirofano','camas','registrar','ver_todos_pacientes'];
+begin
+  if auth.uid() is null or cid is null or not public.es_admin() or public.es_soporte() or public.clinica_vencida_de(cid) is true then raise exception 'SIN_PERMISO'; end if;
+  select user_id, clinica_id, rol into objetivo from public.perfiles where user_id = p_user;
+  if not found or objetivo.clinica_id <> cid or objetivo.user_id = auth.uid() or objetivo.rol in ('dueno', 'soporte') then raise exception 'SIN_PERMISO'; end if;
+
+  if p_nombre is not null then
+    nom := btrim(p_nombre);
+    if char_length(nom) < 2 or char_length(nom) > 80 then raise exception 'DATOS_INVALIDOS'; end if;
+  end if;
+  if p_puesto is not null then
+    pst := nullif(btrim(p_puesto), '');
+    if pst is not null and char_length(pst) > 40 then raise exception 'DATOS_INVALIDOS'; end if;
+  end if;
+  if p_permisos is not null then
+    if jsonb_typeof(p_permisos) <> 'object' then raise exception 'DATOS_INVALIDOS'; end if;
+    for r in select key, value from jsonb_each(p_permisos) loop
+      if r.key = 'profesional_id' then
+        if jsonb_typeof(r.value) <> 'string' then raise exception 'DATOS_INVALIDOS'; end if;
+        prof := r.value #>> '{}';
+        if prof <> '' then
+          begin
+            perform 1 from public.profesionales where id = prof::uuid and clinica_id = cid;
+          exception when others then raise exception 'DATOS_INVALIDOS';
+          end;
+          if not found then raise exception 'REFERENCIA_AJENA'; end if;
+          limpio := limpio || jsonb_build_object('profesional_id', prof);
+        end if;
+      elsif r.key = any (permitidas) then
+        if jsonb_typeof(r.value) <> 'boolean' then raise exception 'DATOS_INVALIDOS'; end if;
+        limpio := limpio || jsonb_build_object(r.key, r.value);
+      end if; -- unknown keys are dropped
+    end loop;
+  end if;
+
+  update public.perfiles set
+    nombre = coalesce(nom, nombre),
+    puesto = case when p_puesto is null then puesto else pst end,
+    permisos = case when p_permisos is null then permisos else limpio end
+  where user_id = p_user and clinica_id = cid;
+end $$;
+revoke all on function public.perfil_admin_actualizar(uuid, text, text, jsonb) from public, anon;
+grant execute on function public.perfil_admin_actualizar(uuid, text, text, jsonb) to authenticated;
+
+-- ───────────────────────── 5d. El correo / teléfono de un usuario del hospital no cambia ─────────────────────────
+create or replace function public.hospital_auth_fijo() returns trigger
+language plpgsql set search_path to 'public' as $$
+begin
+  raise exception 'CAMPO_PROTEGIDO';
+end $$;
+revoke all on function public.hospital_auth_fijo() from public, anon, authenticated;
+drop trigger if exists hospital_auth_fijo on auth.users;
+create trigger hospital_auth_fijo before update on auth.users for each row
+  when (old.raw_app_meta_data ->> 'alta' = 'hospital' and (new.email is distinct from old.email or coalesce(new.email_change, '') <> '' or new.phone is distinct from old.phone))
+  execute function public.hospital_auth_fijo();
 
 -- ───────────────────────── 6. Funciones de apoyo ─────────────────────────
 -- Seats of a clinic (service role: used by the usuarios-hospital edge function; positional call to the live helpers, so no argument names are assumed)
@@ -298,6 +391,9 @@ grant execute on function public.hospital_cerrar_sesiones(uuid) to service_role;
 --   drop trigger if exists al_crear_usuario on auth.users;
 --   create trigger al_crear_usuario after insert on auth.users for each row execute function public.crear_clinica_para_usuario();   -- como estaba (pre-check B)
 --   -- mi_clinica(): volver al cuerpo vivo guardado del pre-check A (el mismo sin «and p.activo»)
+--   drop trigger if exists hospital_auth_fijo on auth.users;  drop function if exists public.hospital_auth_fijo();
+--   drop function if exists public.perfil_admin_actualizar(uuid, text, text, jsonb);
+--   -- perfiles.email: `alter table public.perfiles alter column email set not null;` SOLO es posible cuando ya no existan usuarios del personal (email null); borrarlos antes.
 --   drop function if exists public.hospital_crear_perfil_usuario();
 --   drop function if exists public.hospital_cerrar_sesiones(uuid);
 --   drop function if exists public.hospital_cupos_de(uuid);

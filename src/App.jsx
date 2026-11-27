@@ -89,7 +89,6 @@ function AppPrivada() {
   if (s.cargando) contenido = <PantallaCarga />
   else if (!s.session) contenido = <Acceso />
   else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} session={s.session} />
-  else if (s.perfil.activo === false) contenido = <Desactivado />
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
@@ -104,7 +103,7 @@ function Aplicacion({ sesion }) {
   const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
   // staff users (no e-mail) are signed out after 15 minutes without input; a 60 s warning comes first. «Cambiar de usuario» returns to the staff login.
   const personal = esPersonal(perfil)
-  const salirPersonal = () => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut() }
+  const salirPersonal = () => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut({ scope: 'local' }) } // this device only: other devices keep their own session
   const inactividad = useInactividad(personal, salirPersonal)
   const acc = accesos(clinica, planActivo)
   // Emergencias go right after Inicio, for hospital accounts only
@@ -393,7 +392,7 @@ function Desactivado() {
         <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
         <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario fue desactivado</div>
         <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Su usuario fue desactivado. Consulte al administrador.</div>
-        <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut() }}>Cerrar sesión</Button>
+        <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut({ scope: 'local' }) }}>Cerrar sesión</Button>
       </div>
     </div>
   )

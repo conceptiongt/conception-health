@@ -306,7 +306,7 @@ export function CrearPassword({ perfil, onListo }) {
         <Campo label="Nueva contraseña" ayuda={personal ? REGLA_CLAVE : 'Mínimo 8 caracteres'}><Input type="password" value={p1} onChange={setP1} required maxLength={72} autoComplete="new-password" /></Campo>
         <Campo label="Repita la contraseña"><Input type="password" value={p2} onChange={setP2} required maxLength={72} autoComplete="new-password" /></Campo>
         <Button type="submit" size="lg" disabled={busy}>{busy ? 'Guardando…' : 'Guardar y entrar'}</Button>
-        {personal && <div><button type="button" onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 600, cursor: 'pointer', fontSize: 13.5, padding: 0 }}>Cambiar de usuario</button></div>}
+        {personal && <div><button type="button" onClick={() => supabase.auth.signOut({ scope: 'local' })} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 600, cursor: 'pointer', fontSize: 13.5, padding: 0 }}>Cambiar de usuario</button></div>}
       </form>
     </Marco>
   )

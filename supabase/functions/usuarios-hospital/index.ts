@@ -1,6 +1,6 @@
 // Staff accounts WITHOUT e-mail for hospital clinics (Configuración → Usuarios → «Crear usuario»).
 // Only the administrator (rol 'dueno') of a clinic whose especialidad is 'hospital', never an expired account and never a support session.
-// Actions in the JSON body: crear, restablecer, actualizar, desactivar, activar, eliminar. Targets are ALWAYS staff users (perfiles.usuario not null)
+// Actions in the JSON body: crear, restablecer, desactivar, activar, eliminar. (Editing name, position and permissions is NOT here: it goes through the perfil_admin_actualizar RPC, which runs as the owner.) Targets are ALWAYS staff users (perfiles.usuario not null)
 // of the caller's own clinic: never the owner, never support, never another clinic. The clinic id comes from the caller's profile, never from the body.
 // Auth: the staff user is created with a RANDOM synthetic e-mail (never returned, never derived from the username), so nobody can sign in through GoTrue
 // directly with a guessable address and skip the lockout of entrar-usuario. The al_crear_usuario_hospital trigger creates the perfil from app_metadata
@@ -44,8 +44,10 @@ async function permisosLimpios(p: unknown, clinicaId: string) {
       const { data } = await db.from('profesionales').select('id').eq('id', v).eq('clinica_id', clinicaId).maybeSingle()
       if (!data) return null
       salida[k] = v
-    } else if (PERMISOS_BOOL.includes(k) && typeof v === 'boolean') salida[k] = v
-    else return null
+    } else if (PERMISOS_BOOL.includes(k)) {
+      if (typeof v !== 'boolean') return null
+      salida[k] = v
+    } // unknown keys are dropped
   }
   return salida
 }
@@ -111,12 +113,7 @@ Deno.serve(async (req) => {
       if (r2) return json({ error: 'USUARIO_OCUPADO' }, 409)
       return json({ error: 'NO_SE_PUDO' }, 500)
     }
-    // the temporary password expires in 72 h: if this stamp cannot be written the user is removed rather than left with a password that never expires
-    const { error: e2 } = await db.from('perfiles').update({ clave_temporal_at: new Date().toISOString() }).eq('user_id', data.user.id)
-    if (e2) {
-      await db.auth.admin.deleteUser(data.user.id)
-      return json({ error: 'NO_SE_PUDO' }, 500)
-    }
+    // (clave_temporal_at, the 72 h clock of the temporary password, is stamped by the database trigger in the same insert)
     // keep only alta + clinica_id in app_metadata (it travels inside the JWT); null removes a key
     await db.auth.admin.updateUserById(data.user.id, { app_metadata: { usuario: null, nombre: null, puesto: null, permisos: null } })
     const { data: perfil } = await db.from('perfiles').select(COLUMNAS).eq('user_id', data.user.id).maybeSingle()
@@ -137,21 +134,6 @@ Deno.serve(async (req) => {
     if (e2) { console.error('restablecer: updateUserById falló', e2.status, e2.code); return json({ error: 'NO_SE_PUDO' }, 500) }
     const sesiones = await cerrarSesiones(id)
     return json({ ok: true, sesiones })
-  }
-
-  if (accion === 'actualizar') {
-    const cambios: Record<string, unknown> = {}
-    if ('nombre' in b) { const n = textoLimpio(b.nombre, 2, 80); if (!n) return json({ error: 'DATOS_INVALIDOS' }, 400); cambios.nombre = n }
-    if ('puesto' in b) {
-      const crudo = String(b.puesto ?? '').trim(); const p = crudo ? textoLimpio(crudo, 1, 40) : ''
-      if (p === null) return json({ error: 'DATOS_INVALIDOS' }, 400)
-      cambios.puesto = p || null
-    }
-    if ('permisos' in b) { const p = await permisosLimpios(b.permisos, clinicaId); if (!p) return json({ error: 'DATOS_INVALIDOS' }, 400); cambios.permisos = p }
-    if (!Object.keys(cambios).length) return json({ error: 'DATOS_INVALIDOS' }, 400)
-    const { data, error } = await db.from('perfiles').update(cambios).eq('user_id', id).eq('clinica_id', clinicaId).select(COLUMNAS).maybeSingle()
-    if (error) return json({ error: 'NO_SE_PUDO' }, 500)
-    return json({ ok: true, perfil: data })
   }
 
   if (accion === 'desactivar') {

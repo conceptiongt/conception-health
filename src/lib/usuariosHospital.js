@@ -93,6 +93,21 @@ async function invocar(nombre, body) {
   if (!codigo && error) codigo = error.name === 'FunctionsFetchError' ? 'RED' : 'NO_SE_PUDO'
   return { error: codigo || 'NO_SE_PUDO' }
 }
+// Edit name / position / permissions of a user of the clinic (staff or e-mail assistant) through the perfil_admin_actualizar RPC (runs as the owner).
+// Until that function exists in the database it falls back to the old direct update (which only changes what the column grants allow).
+// Pass only what changes: nombre / puesto / permisos (null or undefined = leave as is). Returns { ok: true } or { error: 'CODIGO' }.
+const rpcFaltante = (e) => !!e && (e.code === 'PGRST202' || e.code === '42883' || /could not find the function|does not exist/i.test(e.message || ''))
+export async function actualizarPerfil(userId, { nombre = null, puesto = null, permisos = null } = {}) {
+  const { error } = await supabase.rpc('perfil_admin_actualizar', { p_user: userId, p_nombre: nombre, p_puesto: puesto, p_permisos: permisos })
+  if (!error) return { ok: true }
+  if (!rpcFaltante(error)) return { error: /SIN_PERMISO/.test(error.message) ? 'SOLO_ADMIN' : /DATOS_INVALIDOS|REFERENCIA_AJENA/.test(error.message) ? 'DATOS_INVALIDOS' : 'NO_SE_PUDO' }
+  const cambios = {}
+  if (nombre != null) cambios.nombre = nombre
+  if (permisos != null) cambios.permisos = permisos
+  if (!Object.keys(cambios).length) return { ok: true }
+  const r = await supabase.from('perfiles').update(cambios).eq('user_id', userId)
+  return r.error ? { error: 'NO_SE_PUDO' } : { ok: true }
+}
 export const llamarUsuarios = (accion, datos = {}) => invocar('usuarios-hospital', { accion, ...datos })
 export const cambiarClave = (password) => invocar('cambiar-clave', { password })
 

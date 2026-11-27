@@ -6,7 +6,7 @@ import { fmtFecha } from '../lib/formato'
 import { usuariosIncluidosUI, precioUsuarioExtraUI } from '../lib/constantes'
 import {
   PUESTOS, CLAVE_TEMPORAL_HORAS, REGLA_CLAVE, claveValida, generarClave, sugerirUsuario, limpiarUsuario, errorUsuario, plantillaPermisos, clavesVisibles,
-  gruposVisibles, llamarUsuarios, mensajeUsuarios, textoAcceso, limpiarCodigoHospital,
+  gruposVisibles, llamarUsuarios, actualizarPerfil, mensajeUsuarios, textoAcceso, limpiarCodigoHospital,
 } from '../lib/usuariosHospital'
 import { atiendeCitas } from '../hooks/useHospital'
 import { useDatos } from '../hooks/useDatos'
@@ -101,7 +101,7 @@ export function UsuariosHospital() {
         Usted es el administrador: ve todo y siempre tiene el control. Cada persona de su hospital entra con un usuario y una contraseña que usted le da (sin correo personal) y solo ve lo que usted le permita.
       </div>
 
-      {faltante && <div style={{ background: C.amberLight, color: C.amber, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 13.5 }}>Crear usuarios con contraseña estará disponible pronto.</div>}
+      {faltante && <div style={{ background: C.purpleMid, color: C.purpleDark, borderRadius: 14, padding: '12px 16px', marginBottom: 12, fontSize: 13.5, lineHeight: 1.5 }}><strong>Disponible pronto.</strong> Crear usuarios con usuario y contraseña, y dar a su personal un código de acceso, estará listo muy pronto.</div>}
 
       {codigo && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: C.purpleMid, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 13.5 }}>
@@ -115,7 +115,7 @@ export function UsuariosHospital() {
         </div>
       )}
 
-      {usuarios !== null && (
+      {usuarios !== null && !faltante && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: lleno ? C.amberLight : C.purpleMid, borderRadius: 14, padding: '10px 14px', marginBottom: 12, fontSize: 13.5 }}>
           <Icon name="usuarios" size={18} style={{ color: lleno ? C.amber : C.purple }} />
           <div style={{ flex: 1, minWidth: 220, color: C.g700 }}>
@@ -169,7 +169,7 @@ export function UsuariosHospital() {
         </div>
       ))}
 
-      {usuarios && personal.length === 0 && conCorreo.length === 0 && invitaciones.length === 0 && <div style={{ fontSize: 13.5, color: C.g400, padding: '12px 0' }}>Aún no ha creado usuarios. Use «Crear usuario» para dar acceso a su personal.</div>}
+      {usuarios && !faltante && personal.length === 0 && conCorreo.length === 0 && invitaciones.length === 0 && <div style={{ fontSize: 13.5, color: C.g400, padding: '12px 0' }}>Aún no ha creado usuarios. Use «Crear usuario» para dar acceso a su personal.</div>}
       {invitaciones.map(i => (
         <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.g100}`, flexWrap: 'wrap' }}>
           <Icon name="reloj" size={18} style={{ color: C.amber }} /><div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 500 }}>{i.nombre || i.email}</div><div style={{ fontSize: 12.5, color: C.g500, overflowWrap: 'anywhere' }}>{i.email} · invitado el {fmtFecha(i.created_at)} · aún no entra</div></div>
@@ -239,14 +239,14 @@ function UsuarioModal({ modo, u, existentes, medicos, onClose, onListo }) {
     const permisosFinal = { ...permisos, ...(profesionalId ? { profesional_id: profesionalId } : {}) }
     setBusy(true)
     if (!personal) { // e-mail assistant: keep its other keys, change only what this window shows
-      const { error } = await supabase.from('perfiles').update({ permisos: { ...(u.permisos || {}), ...permisosFinal } }).eq('user_id', u.user_id)
+      const r = await actualizarPerfil(u.user_id, { permisos: { ...(u.permisos || {}), ...permisosFinal } })
       setBusy(false)
-      if (error) toast.error('No se pudo guardar'); else { toast.success('Permisos guardados'); onListo() }
+      if (r.error) toast.error(mensajeUsuarios(r.error, 'No se pudo guardar')); else { toast.success('Permisos guardados'); onListo() }
       return
     }
     const r = crear
       ? await llamarUsuarios('crear', { usuario, nombre: nombre.trim(), puesto: puestoFinal, permisos: permisosFinal, password })
-      : await llamarUsuarios('actualizar', { user_id: u.user_id, nombre: nombre.trim(), puesto: puestoFinal, permisos: permisosFinal })
+      : await actualizarPerfil(u.user_id, { nombre: nombre.trim(), puesto: puestoFinal, permisos: permisosFinal })
     setBusy(false)
     if (r.error) { toast.error(mensajeUsuarios(r.error)); return }
     if (crear) onListo({ usuario, password })

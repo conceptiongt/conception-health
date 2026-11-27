@@ -23,9 +23,10 @@ const LIMITE_IP = 30 // attempts per IP every hour (accion 'entrar' in limite_pu
 const FALLOS = 5 // failed attempts that lock a hospital+usuario…
 const VENTANA_MS = 15 * 60 * 1000 // …for the next 15 minutes
 const CLAVE_TEMPORAL_MS = 72 * 3600 * 1000
-const PISO_MS = 500 // every failure takes at least this long (+ jitter)
+const PISO_MS = 1200 // every failure takes at least this long (+ jitter): hides every difference between the failure paths
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms))
-const nuevoCliente = () => createClient(URL_, ANON, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
+// `sb-forwarded-for` lets GoTrue see the real client IP for its own rate limits (harmless if IP forwarding is off)
+const nuevoCliente = (ip: string) => createClient(URL_, ANON, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { headers: { 'sb-forwarded-for': ip } } })
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -59,9 +60,7 @@ Deno.serve(async (req) => {
     ? await db.from('perfiles').select('user_id, rol, usuario, activo, password_creada, clave_temporal_at').eq('clinica_id', clinica.id).eq('usuario', usuario).maybeSingle()
     : { data: null }
   if (!clinica || !perfil || perfil.rol !== 'asistente') {
-    // unknown hospital or user: spend a comparable amount of time against a random non-existent address, then the same answer
-    await nuevoCliente().auth.signInWithPassword({ email: `no-existe-${crypto.randomUUID()}@usuarios.conception-gt.com`, password }).catch(() => {})
-    return fallar()
+    return fallar() // unknown hospital or user: same answer after the same time floor
   }
   if (perfil.activo === false) return fallar()
   if (!perfil.password_creada && perfil.clave_temporal_at && Date.now() - new Date(perfil.clave_temporal_at).getTime() > CLAVE_TEMPORAL_MS) return fallar() // temporary password expired
@@ -79,7 +78,7 @@ Deno.serve(async (req) => {
   if (!correo) return fallar()
 
   // a FRESH anonymous client (never the service client): the session that comes back belongs to the user
-  const { data: sesion, error } = await nuevoCliente().auth.signInWithPassword({ email: correo, password })
+  const { data: sesion, error } = await nuevoCliente(ip).auth.signInWithPassword({ email: correo, password })
   const ok = !error && !!sesion?.session
   await db.from('acceso_intentos').insert({ clinica_id: clinica.id, usuario, ip, ok })
   if (!ok) return fallar()

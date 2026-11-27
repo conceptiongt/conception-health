@@ -36,12 +36,15 @@ import { esAdmin, esSoporte, puede } from './lib/permisos'
 import { fmtFechaLocal, diasRestantes } from './lib/formato'
 import { MODO_DEMO } from './lib/config'
 import { limpiarGoogle } from './lib/google'
+import { esPersonal, filtrarPorMedico, marcarPersonal } from './lib/usuariosHospital'
+import { useInactividad } from './hooks/useInactividad'
+import { Modal } from './components/ui/Modal'
 import { PaginaPublica, rutaPublica } from './pages/Publico'
 import { SoporteEntrada, BannerSoporte, useEsAgente } from './components/SoporteSesion'
 
 const NAV = [
   { id: 'inicio', label: 'Inicio', icono: 'inicio' },
-  { id: 'registrar', label: 'Registrar paciente', icono: 'registrar' },
+  { id: 'registrar', label: 'Registrar paciente', icono: 'registrar', permiso: 'registrar' },
   { id: 'citas', label: 'Citas', icono: 'citas' },
   { id: 'calendario', label: 'Calendario', icono: 'calendario' },
   { id: 'expedientes', label: 'Expedientes', icono: 'expedientes' },
@@ -85,7 +88,8 @@ function AppPrivada() {
   let contenido
   if (s.cargando) contenido = <PantallaCarga />
   else if (!s.session) contenido = <Acceso />
-  else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} />
+  else if (!s.perfil) contenido = <SinAcceso recargar={s.recargar} session={s.session} />
+  else if (s.perfil.activo === false) contenido = <Desactivado />
   else if (s.recuperando || !s.perfil?.password_creada) {
     contenido = <CrearPassword perfil={s.perfil} onListo={() => { s.setRecuperando(false); s.recargar() }} />
   } else contenido = <Aplicacion sesion={s} />
@@ -98,6 +102,10 @@ function Aplicacion({ sesion }) {
   const hospital = useCargarHospital(clinica)
   const emergencias = useCargarEmergencias(clinica, recargarSilencioso, datos?.citas)
   const esHosp = esHospital(clinica?.especialidad) // hospitals have no virtual receptionist (Lía)
+  // staff users (no e-mail) are signed out after 15 minutes without input; a 60 s warning comes first. «Cambiar de usuario» returns to the staff login.
+  const personal = esPersonal(perfil)
+  const salirPersonal = () => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut() }
+  const inactividad = useInactividad(personal, salirPersonal)
   const acc = accesos(clinica, planActivo)
   // Emergencias go right after Inicio, for hospital accounts only
   const navegacion = esHosp ? [NAV[0], NAV_EMERGENCIAS, ...NAV.slice(1)] : NAV
@@ -166,7 +174,9 @@ function Aplicacion({ sesion }) {
     window.scrollTo(0, 0)
   }
 
-  const ctx = { ...(datos || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital, emergencias }
+  // hospital staff without «ver todos los pacientes»: the lists show only their linked doctor's patients and citas (on-screen limit, not a database rule)
+  const datosVisibles = filtrarPorMedico(datos, perfil)
+  const ctx = { ...(datosVisibles || { pacientes: [], citas: [], cobros: [], servicios: [], sedes: [] }), recargar, perfil, clinica, planActivo, acc, ir, recargarSesion, hospital, emergencias }
   const enPrueba = !planActivo
   // free period from an invitation code: active plan with promo_hasta in the future and no Recurrente subscription behind it
   const promoActiva = planActivo && !!clinica?.promo_hasta && new Date(clinica.promo_hasta) > new Date() && !clinica.recurrente_suscripcion_id
@@ -179,7 +189,7 @@ function Aplicacion({ sesion }) {
   const sinConfirmar = esAdmin(perfil) && planActivo && !promoActiva && !clinica?.cancelada_at && !!clinica?.plan_hasta && diasRestantes(clinica.plan_hasta) <= 3
   const usados = datos?.pacientes.length ?? 0
 
-  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · asistente · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan, clinica) || 'activo'}` : 'Versión de prueba')
+  const plan = (esAdmin(perfil) ? '' : esSoporte(perfil) ? 'Soporte · ' : `${perfil.nombre} · ${esPersonal(perfil) ? perfil.puesto || 'personal' : 'asistente'} · `) + (planActivo ? `Plan ${nombrePlan(clinica?.plan, clinica) || 'activo'}` : 'Versión de prueba')
 
   const logo = urlLogo(clinica)
   const nombreClinica = clinica?.nombre || perfil.nombre
@@ -260,9 +270,10 @@ function Aplicacion({ sesion }) {
           <div style={{ margin: 16, padding: '12px 14px', borderRadius: 18, border: '1px solid var(--menu-linea)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: 'var(--menu-titulo)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em' }}>SESIÓN</div>
-              <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email}</div>
+              <div style={{ color: 'var(--menu-suave)', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{perfil.email || perfil.usuario}</div>
+              {personal && <button type="button" onClick={salirPersonal} style={{ background: 'none', border: 'none', padding: 0, marginTop: 3, color: 'var(--acento-fuerte)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>Cambiar de usuario</button>}
             </div>
-            <button onClick={() => { limpiarGoogle(); supabase.auth.signOut() }} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={() => personal ? salirPersonal() : (limpiarGoogle(), supabase.auth.signOut())} title="Cerrar sesión" aria-label="Cerrar sesión" style={{ width: 34, height: 34, borderRadius: 17, border: `1px solid ${C.g200}`, background: 'rgba(255,255,255,0.9)', color: C.g500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="salir" size={16} />
             </button>
           </div>
@@ -330,6 +341,15 @@ function Aplicacion({ sesion }) {
           </div>
         </main>
       </div>
+      {personal && inactividad.restante !== null && (
+        <Modal title="Su sesión se cerrará por inactividad" subtitle={`Se cerrará en ${inactividad.restante} ${inactividad.restante === 1 ? 'segundo' : 'segundos'}`} onClose={inactividad.seguir} maxWidth={440}>
+          <div style={{ fontSize: 14.5, color: C.g600, lineHeight: 1.6 }}>Por la seguridad de los pacientes, la sesión se cierra cuando no se usa durante unos minutos. Si sigue trabajando, toque el botón.</div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={salirPersonal}>Cambiar de usuario</Button>
+            <Button onClick={inactividad.seguir}>Seguir conectado</Button>
+          </div>
+        </Modal>
+      )}
     </DatosContext.Provider>
   )
 }
@@ -348,16 +368,32 @@ function SinPermiso() {
 
 // The account exists but is not linked to a clinic (e.g. the administrator removed the user).
 // Conception's support agents land here too: they get the code screen instead.
-function SinAcceso({ recargar }) {
+function SinAcceso({ recargar, session }) {
   const agente = useEsAgente()
   if (agente === null) return <PantallaCarga />
   if (agente) return <SoporteEntrada onListo={recargar} />
+  // a hospital staff user who is still signed in after being deactivated (the database already closed their data): app_metadata.alta travels in the token
+  if (session?.user?.app_metadata?.alta === 'hospital') return <Desactivado />
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
         <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario no tiene acceso</div>
         <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Este correo no está vinculado a ninguna clínica. Si trabaja en un consultorio, pida al administrador que le invite de nuevo.</div>
         <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); supabase.auth.signOut() }}>Cerrar sesión</Button>
+      </div>
+    </div>
+  )
+}
+
+// A hospital staff user the administrator deactivated: mi_clinica() is already NULL for them, this is the clear screen instead of an error
+function Desactivado() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ ...GLASS, borderRadius: 24, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: SHADOW }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: C.purpleMid, color: C.purple, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><Icon name="candado" size={26} /></div>
+        <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Su usuario fue desactivado</div>
+        <div style={{ fontSize: 14, color: C.g500, lineHeight: 1.6, marginBottom: 18 }}>Su usuario fue desactivado. Consulte al administrador.</div>
+        <Button variant="ghost" icon="salir" onClick={() => { limpiarGoogle(); marcarPersonal(); supabase.auth.signOut() }}>Cerrar sesión</Button>
       </div>
     </div>
   )

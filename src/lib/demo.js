@@ -100,7 +100,9 @@ const DB = {
   // Emergencias (hospital): one row per emergency cita, written only through the emergencia_* functions below
   emergencias: [],
   perfiles: [
-    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01' },
+    { user_id: uid, clinica_id: cid, nombre: 'Dra. Andrea Molina', email: 'demo@conception-gt.com', rol: q.get('personal') === '1' || q.get('rol') === 'asistente' ? 'asistente' : q.get('rol') === 'soporte' ? 'soporte' : 'dueno', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-01-01',
+      // ?personal=1 previews a hospital staff user (no e-mail): inactivity logout, «Cambiar de usuario», list limited to the linked doctor
+      ...(q.get('personal') === '1' ? { email: null, usuario: 'ana.lopez', puesto: 'Médico', activo: q.get('desactivado') !== '1', password_creada: q.get('clave') !== '1', permisos: { expedientes: true, registrar: true, ver_todos_pacientes: q.get('todos') !== '0', profesional_id: q.get('medico') || undefined } } : {}) },
     { user_id: 'demo-u2', clinica_id: cid, nombre: 'Karla Pérez', email: 'asistente@clinicademo.com', rol: 'asistente', permisos: { expedientes: true, inventario: true }, password_creada: true, created_at: '2026-02-01' },
   ],
   clinicas: [{ id: cid, nombre: 'Clínica Demo de Venas', plan: 'ultra', plan_activo: true, plan_hasta: null, promo_hasta: null, promo_codigo_id: null, recurrente_suscripcion_id: null, anios: [], color: '#2091DC', especialidad: q.get('hospital') === '1' ? 'hospital' : 'flebologia', sugeridos_cargados: true, logo_path: null, registro_token: id(), registro_codigo: 'registro-clinica-demo', anticipo_pct: 50, campos_paciente: [], created_at: '2026-01-01' }],
@@ -314,7 +316,57 @@ function emergenciaRpc(fn, a) {
   return { data: null, error: null }
 }
 
+// ── Hospital staff users without e-mail (edge functions usuarios-hospital / cambiar-clave and two RPCs), in memory ──
+let codigoDemo = 'DEMO-4821'
+const cuposDemo = () => ({ ocupados: DB.perfiles.filter(p => p.rol !== 'soporte').length + DB.invitaciones.filter(i => !i.aceptada_at).length, permitidos: Number(q.get('cupos')) || 8 })
+const responde = (error, data = {}) => ({ data: error ? { error } : { ok: true, ...data }, error: null })
+function funcionDemo(nombre, b) {
+  if (nombre === 'cambiar-clave') {
+    const claveOk = typeof b.password === 'string' && b.password.length >= 10 && /[A-Za-z]/.test(b.password) && /\d/.test(b.password)
+    if (!claveOk) return responde('CLAVE_DEBIL')
+    Object.assign(DB.perfiles[0], { password_creada: true, clave_temporal_at: null })
+    return responde(null)
+  }
+  if (nombre !== 'usuarios-hospital') return { data: null, error: null }
+  if (DB.clinicas[0].especialidad !== 'hospital') return responde('NO_HOSPITAL')
+  const claveOk = typeof b.password === 'string' && b.password.length >= 10 && /[A-Za-z]/.test(b.password) && /\d/.test(b.password)
+  const col = ['expedientes', 'finanzas', 'inventario', 'costos', 'compras', 'emergencias', 'exportar', 'eliminar_citas', 'eliminar_inventario', 'eliminar', 'configuracion', 'registrar', 'ver_todos_pacientes', 'quirofano', 'camas']
+  const permisosOk = (p) => p && typeof p === 'object' && Object.entries(p).every(([k, v]) => (k === 'profesional_id' ? typeof v === 'string' : col.includes(k) && typeof v === 'boolean'))
+  if (b.accion === 'crear') {
+    const usuario = String(b.usuario || '').trim().toLowerCase()
+    if (!/^[a-z0-9._-]{3,30}$/.test(usuario) || String(b.nombre || '').trim().length < 2 || !permisosOk(b.permisos)) return responde('DATOS_INVALIDOS')
+    if (!claveOk) return responde('CLAVE_DEBIL')
+    const c = cuposDemo()
+    if (c.ocupados >= c.permitidos) return responde('LIMITE_USUARIOS')
+    if (DB.perfiles.some(p => p.usuario === usuario)) return responde('USUARIO_OCUPADO')
+    const perfil = { user_id: id(), clinica_id: cid, nombre: String(b.nombre).trim(), email: null, rol: 'asistente', permisos: b.permisos, password_creada: false, usuario, puesto: b.puesto || null, activo: true, clave_temporal_at: new Date().toISOString(), created_at: new Date().toISOString() }
+    DB.perfiles.push(perfil)
+    return responde(null, { perfil: { ...perfil } })
+  }
+  const u = DB.perfiles.find(p => p.user_id === b.user_id && p.rol === 'asistente' && p.usuario)
+  if (!u) return responde('NO_ENCONTRADO')
+  if (b.accion === 'restablecer') { if (!claveOk) return responde('CLAVE_DEBIL'); Object.assign(u, { password_creada: false, clave_temporal_at: new Date().toISOString() }); return responde(null, { sesiones: true }) }
+  if (b.accion === 'actualizar') {
+    if ('permisos' in b && !permisosOk(b.permisos)) return responde('DATOS_INVALIDOS')
+    for (const k of ['nombre', 'puesto', 'permisos']) if (k in b) u[k] = b[k]
+    return responde(null, { perfil: { ...u } })
+  }
+  if (b.accion === 'desactivar') { u.activo = false; return responde(null, { sesiones: true, bloqueado: true }) }
+  if (b.accion === 'activar') { u.activo = true; return responde(null) }
+  if (b.accion === 'eliminar') { DB.perfiles = DB.perfiles.filter(p => p !== u); return responde(null) }
+  return responde('ACCION')
+}
+
 async function rpc(fn, a) {
+  if (fn === 'hospital_usuarios_cupos') return { data: cuposDemo(), error: null }
+  if (fn === 'hospital_codigo_acceso') {
+    if (DB.clinicas[0].especialidad !== 'hospital') return falla('NO_HOSPITAL')
+    if (a?.p_codigo == null) return { data: codigoDemo, error: null }
+    const v = String(a.p_codigo).trim().toUpperCase()
+    if (!/^[A-Z0-9][A-Z0-9-]{2,18}[A-Z0-9]$/.test(v)) return falla('CODIGO_INVALIDO')
+    if (v === 'OCUP-0001') return falla('CODIGO_OCUPADO') // demo of a code another hospital already uses
+    codigoDemo = v; return { data: v, error: null }
+  }
   if (fn === 'google_estado') return { data: null, error: null } // Google Calendar is not available in the demo (card shows «Disponible pronto»)
   if (fn === 'cita_eliminar') {
     const c = DB.citas.find(x => x.id === a.p_cita)
@@ -381,7 +433,7 @@ const session = { user: { id: uid, email: 'demo@conception-gt.com' } }
 export const supabaseDemo = {
   from, rpc,
   storage: { from: almacen },
-  functions: { invoke: async () => ({ data: null, error: null }) },
+  functions: { invoke: async (nombre, o) => funcionDemo(nombre, o?.body || {}) },
   channel: () => ({ on() { return this }, subscribe() { return this }, unsubscribe() {} }),
   removeChannel: () => {},
   auth: {

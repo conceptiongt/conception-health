@@ -9,6 +9,7 @@ import { Logo } from '../components/ui/Varios'
 import { Icon } from '../components/ui/Icon'
 import { toast } from '../components/ui/Toast'
 import { fmtFechaLocal } from '../lib/formato'
+import { cambiarClave, claveValida, REGLA_CLAVE, esPersonal, codigoGuardado, marcarPersonal, modoGuardado, olvidarModo, limpiarCodigoHospital } from '../lib/usuariosHospital'
 
 const redirect = () => window.location.origin
 const CORREO_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -76,7 +77,9 @@ const ERRORES_CREAR = {
 }
 
 export function Acceso() {
-  const [modo, setModo] = useState(params.get('crear') ? 'crear' : 'enlace') // enlace (sin contraseña) | entrar | crear | olvido
+  // enlace (sin contraseña) | entrar | crear | olvido | personal (hospital staff: code + user + password, no e-mail).
+  // ?hospital=CODE opens the staff login with the code filled in; a device that last entered as staff opens it too.
+  const [modo, setModo] = useState(params.get('crear') ? 'crear' : params.get('hospital') || modoGuardado() === 'personal' ? 'personal' : 'enlace')
   const asistente = params.get('asistente') === '1'
   const [nombre, setNombre] = useState('')
   const [esp, setEsp] = useState('')
@@ -90,8 +93,33 @@ export function Acceso() {
   const [abierto] = useState(() => Date.now())
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
+  // hospital staff login: only the hospital code is remembered on the device (never the user or the password)
+  const [hospital, setHospital] = useState(() => limpiarCodigoHospital(params.get('hospital')) || codigoGuardado())
+  const [usuarioP, setUsuarioP] = useState('')
+  const [passwordP, setPasswordP] = useState('')
 
   const cambiar = (m) => { setModo(m); setMsg(null) }
+
+  const entrarPersonal = async (e) => {
+    e.preventDefault()
+    const codigoH = limpiarCodigoHospital(hospital), usr = usuarioP.trim().toLowerCase()
+    if (!codigoH) { falta('Escriba el código del hospital.'); return }
+    if (!usr) { falta('Escriba su usuario.'); return }
+    if (!passwordP) { falta('Escriba su contraseña.'); return }
+    setBusy(true); setMsg(null)
+    const { data, error } = await supabase.functions.invoke('entrar-usuario', { body: { hospital: codigoH, usuario: usr, password: passwordP } })
+    let estado = error?.context?.status
+    if (!error && data?.access_token && data?.refresh_token) {
+      const { error: e2 } = await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token })
+      if (!e2) { marcarPersonal(codigoH); setBusy(false); return }
+      estado = 401
+    }
+    setBusy(false)
+    setPasswordP('')
+    if (estado === 429) setMsg({ tipo: 'error', t: 'Demasiados intentos. Espere unos minutos.' })
+    else if (error && error.name === 'FunctionsFetchError') setMsg({ tipo: 'error', t: 'No se pudo conectar. Revise su internet e intente de nuevo.' })
+    else setMsg({ tipo: 'error', t: 'Código, usuario o contraseña incorrectos.' })
+  }
 
   const entrar = async (e) => {
     e.preventDefault()
@@ -100,6 +128,7 @@ export function Acceso() {
     setBusy(true); setMsg(null)
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     setBusy(false)
+    if (!error) olvidarModo()
     if (error) setMsg({ tipo: 'error', t: 'Correo o contraseña incorrectos. Si es su primera vez, use "Crear cuenta"; si no recuerda su contraseña, use "¿Olvidó su contraseña?".' })
   }
 
@@ -173,6 +202,7 @@ export function Acceso() {
             {link('Entrar con contraseña', 'entrar')}
             {link('Crear cuenta', 'crear')}
           </div>
+          <div style={{ borderTop: `1px solid ${C.g100}`, paddingTop: 12 }}>{link('Soy personal de un hospital', 'personal')}</div>
         </form>
       )}
 
@@ -185,6 +215,19 @@ export function Acceso() {
             {link('Entrar sin contraseña', 'enlace')}
             {link('¿Olvidó su contraseña?', 'olvido')}
           </div>
+          <div style={{ borderTop: `1px solid ${C.g100}`, paddingTop: 12 }}>{link('Soy personal de un hospital', 'personal')}</div>
+        </form>
+      )}
+
+      {modo === 'personal' && (
+        <form noValidate onSubmit={entrarPersonal} style={campos}>
+          <div style={{ fontSize: 13.5, color: C.g600, lineHeight: 1.5 }}>Personal del hospital: entre con el código de su hospital, su usuario y su contraseña. No necesita correo.</div>
+          <Campo label="Código del hospital"><Input value={hospital} onChange={v => setHospital(limpiarCodigoHospital(v))} maxLength={20} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Ej. POLI-4821" /></Campo>
+          <Campo label="Usuario"><Input value={usuarioP} onChange={setUsuarioP} maxLength={30} autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="nombre.apellido" /></Campo>
+          <Campo label="Contraseña"><Input type="password" value={passwordP} onChange={setPasswordP} maxLength={200} autoComplete="current-password" /></Campo>
+          <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</Button>
+          <div style={{ fontSize: 12.5, color: C.g500, lineHeight: 1.5 }}>¿Olvidó su contraseña? Pida al administrador de su hospital que la restablezca.</div>
+          <div style={{ borderTop: `1px solid ${C.g100}`, paddingTop: 12 }}>{link('Entrar con correo electrónico', 'enlace')}</div>
         </form>
       )}
 
@@ -231,12 +274,20 @@ export function CrearPassword({ perfil, onListo }) {
   const [p2, setP2] = useState('')
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
+  const personal = esPersonal(perfil) // hospital staff: the temporary password is replaced through the cambiar-clave function
 
   const guardar = async (e) => {
     e.preventDefault()
-    if (p1.length < 8) { setMsg('La contraseña debe tener al menos 8 caracteres.'); return }
+    if (personal ? !claveValida(p1) : p1.length < 8) { setMsg(personal ? `La contraseña no es válida. ${REGLA_CLAVE}` : 'La contraseña debe tener al menos 8 caracteres.'); return }
     if (p1 !== p2) { setMsg('Las contraseñas no coinciden.'); return }
     setBusy(true); setMsg(null)
+    if (personal) {
+      const r = await cambiarClave(p1)
+      setBusy(false)
+      if (r.error) setMsg(r.error === 'CLAVE_IGUAL' ? 'La contraseña nueva debe ser distinta de la temporal.' : r.error === 'CLAVE_DEBIL' ? `La contraseña no es válida. ${REGLA_CLAVE}` : r.error === 'RED' ? 'No se pudo conectar. Intente de nuevo.' : 'No se pudo guardar la contraseña. Intente de nuevo.')
+      else onListo()
+      return
+    }
     const { error } = await supabase.auth.updateUser({ password: p1 })
     if (!error && perfil) await supabase.from('perfiles').update({ password_creada: true }).eq('user_id', perfil.user_id)
     setBusy(false)
@@ -248,13 +299,14 @@ export function CrearPassword({ perfil, onListo }) {
     <Marco>
       <div style={{ fontSize: 18, fontWeight: 600, color: C.black, marginBottom: 6 }}>Cree su contraseña</div>
       <div style={{ fontSize: 13.5, color: C.g600, marginBottom: 16 }}>
-        {perfil ? <>Hola, <strong>{perfil.nombre}</strong>. </> : null}La usará junto con su correo para entrar desde cualquier computadora o teléfono.
+        {perfil ? <>Hola, <strong>{perfil.nombre}</strong>. </> : null}{personal ? 'La contraseña que le dieron es temporal: elija una propia para seguir. La usará con su usuario para entrar.' : 'La usará junto con su correo para entrar desde cualquier computadora o teléfono.'}
       </div>
       {msg && <Aviso tipo="error">{msg}</Aviso>}
       <form noValidate onSubmit={guardar} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Campo label="Nueva contraseña" ayuda="Mínimo 8 caracteres"><Input type="password" value={p1} onChange={setP1} required autoComplete="new-password" /></Campo>
-        <Campo label="Repita la contraseña"><Input type="password" value={p2} onChange={setP2} required autoComplete="new-password" /></Campo>
+        <Campo label="Nueva contraseña" ayuda={personal ? REGLA_CLAVE : 'Mínimo 8 caracteres'}><Input type="password" value={p1} onChange={setP1} required maxLength={72} autoComplete="new-password" /></Campo>
+        <Campo label="Repita la contraseña"><Input type="password" value={p2} onChange={setP2} required maxLength={72} autoComplete="new-password" /></Campo>
         <Button type="submit" size="lg" disabled={busy}>{busy ? 'Guardando…' : 'Guardar y entrar'}</Button>
+        {personal && <div><button type="button" onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: 'none', color: C.purple, fontWeight: 600, cursor: 'pointer', fontSize: 13.5, padding: 0 }}>Cambiar de usuario</button></div>}
       </form>
     </Marco>
   )

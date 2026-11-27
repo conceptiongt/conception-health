@@ -15,6 +15,7 @@ import { Modal } from './ui/Modal'
 import { toast } from './ui/Toast'
 import { Interruptor } from './MensajePaciente'
 import { confirmar } from './ui/Confirmar'
+import { UsuariosHospital } from './UsuariosHospital'
 
 // Invitation email (edge function invitar-asistente). Returns null when sent, or the reason it was not
 export async function enviarCorreoInvitacion(email) {
@@ -145,7 +146,13 @@ export function PagosYRegistro() {
 }
 
 // ─── Users: the administrator invites assistants and chooses what they can see ───
+// Hospital accounts create their staff with a user name and password (no e-mail): see UsuariosHospital
 export function Usuarios() {
+  const { clinica } = useDatos()
+  return esHospital(clinica?.especialidad) ? <UsuariosHospital /> : <UsuariosClinica />
+}
+
+function UsuariosClinica() {
   const { clinica, perfil } = useDatos()
   const [usuarios, setUsuarios] = useState(null)
   const [invitaciones, setInvitaciones] = useState([])

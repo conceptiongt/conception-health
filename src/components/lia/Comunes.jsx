@@ -29,6 +29,13 @@ export function Burbuja({ m, mio, fondo, etiqueta, leido }) {
       {m.foto && (String(m.foto).startsWith('data:')
         ? <img src={m.foto} alt="Foto que mandó el paciente" style={{ display: 'block', maxWidth: 220, width: '100%', borderRadius: 8, marginBottom: 5 }} />
         : <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, marginBottom: 4 }}><Icon name="camara" size={15} />Foto</div>)}
+      {m.audio && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.g500, marginBottom: m.audio === 'ok' && m.texto ? 4 : 0 }}>
+          <Icon name="microfono" size={15} />
+          {m.audio === 'ok' ? `Nota de voz${m.audio_seg != null ? ` · ${Math.floor(m.audio_seg / 60)}:${String(m.audio_seg % 60).padStart(2, '0')}` : ''}`
+            : m.audio === 'pendiente' ? 'Escuchando la nota de voz…' : 'Nota de voz (no se pudo transcribir)'}
+        </div>
+      )}
       {m.texto && <TextoWA texto={m.texto} />}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 3, fontSize: 10.5, color: C.g400, marginTop: 2 }}>
         {m.created_at ? ampm(new Date(m.created_at)) : ''}{leido && <Icon name="check" size={12} stroke={2.4} style={{ color: '#3E97C9' }} />}

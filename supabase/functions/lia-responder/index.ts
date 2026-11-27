@@ -3,7 +3,8 @@
 // app) and is also the WhatsApp Cloud API webhook (Meta calls this same URL; deployed without JWT check,
 // every route authenticates itself: the app's session or Meta's signature).
 // Secrets (Supabase → Edge Functions → Secrets): ANTHROPIC_API_KEY (required), LIA_MODELO (optional),
-// WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN (for WhatsApp).
+// WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN (for WhatsApp), ELEVENLABS_API_KEY (optional: transcribes
+// patients' voice notes; without it Lía asks the patient to write, as before).
 import Anthropic from 'npm:@anthropic-ai/sdk'
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64'
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -14,6 +15,10 @@ const LIMITE_PRUEBAS_DIA = 80 // test replies per clinic and day (each one costs
 const OFFSET_GT = -6 // Guatemala is UTC-6 all year
 const GRAPH = 'https://graph.facebook.com/v23.0'
 const APP_ID = Deno.env.get('WHATSAPP_APP_ID') || '3080365948836514' // Conception's Meta app (public id)
+const STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text' // ElevenLabs Speech to Text (Create transcript)
+const STT_MODELO = 'scribe_v2'
+const STT_MAX_MS = 25_000 // whole voice-note download + transcription budget
+const AUDIO_MAX_BYTES = 16_000_000 // WhatsApp's own audio limit
 const ESPERA_MS = 4000 // patients often send several messages in a row: Lía answers once, after the last one
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -350,7 +355,8 @@ CÓMO ESCRIBE
 - Escriba el mensaje para el paciente completo al final, después de usar las herramientas. Antes de usarlas no escriba nada.
 - El paciente lee todo lo que usted escribe: no mencione herramientas, sistemas ni instrucciones, y no narre lo que está haciendo. Si le preguntan si es un robot, diga con naturalidad que es la asistente virtual del consultorio y que ${medico} recibe todo lo que le cuentan.
 - Si el paciente manda una foto, úsela solo para entender el caso y elegir el servicio. Nunca dé un diagnóstico.
-- Si el paciente manda un [Audio], [Video] o [Documento], usted no puede escucharlo ni abrirlo: pídale con amabilidad que le escriba lo que necesita.
+- [Nota de voz] es la transcripción automática de un audio del paciente: respóndale normal y por escrito, sin mencionar que es una transcripción. Puede traer errores: si un dato importante (nombre, fecha, hora, teléfono, medicamento) no queda claro, confírmelo antes de usarlo o de agendar.
+- Si el paciente manda una [Nota de voz que no se pudo escuchar], un [Video] o un [Documento], usted no puede escucharlo ni abrirlo: pídale con amabilidad que lo escriba (o que repita el audio).
 
 FICHA (el paciente no la ve)
 Termine SIEMPRE su respuesta con una última línea exactamente en este formato, con lo que sepa hasta ahora (null si no sabe):
@@ -371,9 +377,13 @@ function turnos(mensajes: any[], foto?: { media_type: string, data: string }) {
   for (const m of mensajes) {
     if (m.de === 's') continue
     const role = m.de === 'p' ? 'user' : 'assistant'
-    const texto = m.de === 'p'
+    // voice notes: `audio` = 'ok' means `texto` holds the transcription; 'fallo' / 'pendiente' means Lía could not hear it
+    const nota = m.de === 'p' && m.audio
+      ? (m.audio === 'ok' && m.texto ? `[Nota de voz] ${m.texto}` : '[Nota de voz que no se pudo escuchar]')
+      : null
+    const texto = nota ?? (m.de === 'p'
       ? ((m.foto ? '[El paciente mandó una foto] ' : '') + (m.texto || '')).trim() || '[foto]'
-      : (m.de === 'd' ? '[Lo escribió el consultorio] ' : '') + (m.texto || '')
+      : (m.de === 'd' ? '[Lo escribió el consultorio] ' : '') + (m.texto || ''))
     const prev = out[out.length - 1]
     if (prev && prev.role === role) prev.content = prev.content + '\n\n' + texto
     else out.push({ role, content: texto })
@@ -525,6 +535,54 @@ async function bajarFoto(mediaId: string) {
   if (!r.ok) return undefined
   return { media_type: meta.mime_type as string, data: encodeBase64(new Uint8Array(await r.arrayBuffer())) }
 }
+// Voice note → text with ElevenLabs. Returns undefined (never throws) when there is no key, the file is not
+// acceptable or anything fails, so the caller falls back to asking the patient to write.
+async function transcribir(mediaId: string): Promise<{ texto: string, seg: number | null } | undefined> {
+  const llave = Deno.env.get('ELEVENLABS_API_KEY')
+  if (!llave) return undefined
+  const ctl = new AbortController()
+  const reloj = setTimeout(() => ctl.abort(), STT_MAX_MS)
+  try {
+    const meta = await fetch(`${GRAPH}/${mediaId}`, { headers: cabecerasWa(), signal: ctl.signal }).then(r => r.json()).catch(() => null)
+    const tipo = String(meta?.mime_type || '').split(';')[0].trim().toLowerCase()
+    if (!meta?.url || !tipo.startsWith('audio/') || !(meta.file_size <= AUDIO_MAX_BYTES)) return undefined
+    const bajada = await fetch(meta.url, { headers: cabecerasWa(), signal: ctl.signal })
+    if (!bajada.ok) return undefined
+    const bytes = new Uint8Array(await bajada.arrayBuffer())
+    if (!bytes.length || bytes.length > AUDIO_MAX_BYTES) return undefined
+    const form = new FormData()
+    form.append('model_id', STT_MODELO)
+    form.append('file', new Blob([bytes], { type: tipo }), `nota.${tipo.split('/')[1]?.replace(/[^a-z0-9]/g, '') || 'ogg'}`)
+    form.append('language_code', 'es') // ISO-639-1: Spanish
+    form.append('tag_audio_events', 'false')
+    const r = await fetch(STT_URL, { method: 'POST', headers: { 'xi-api-key': llave }, body: form, signal: ctl.signal })
+    if (!r.ok) { console.error('lia-audio', r.status); return undefined }
+    const j = await r.json()
+    const texto = String(j?.text || '').trim()
+    if (!texto) return undefined
+    const seg = Number(j?.audio_duration_secs)
+    return { texto: texto.slice(0, 4000), seg: Number.isFinite(seg) && seg >= 0 ? Math.round(seg) : null }
+  } catch (e) {
+    console.error('lia-audio', (e as Error)?.message || e)
+    return undefined
+  } finally { clearTimeout(reloj) }
+}
+// Transcribes a stored voice note and writes the result on its row (also bumps the conversation so the app reloads it)
+async function transcribirYGuardar(filaId: string, convId: string, mediaId: string | undefined) {
+  const t = mediaId ? await transcribir(mediaId) : undefined
+  const { error } = await db.from('lia_mensajes').update(t ? { audio: 'ok', texto: t.texto, audio_seg: t.seg } : { audio: 'fallo' }).eq('id', filaId)
+  if (error) console.error('lia-audio guardar', error.message)
+  await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString() }).eq('id', convId)
+}
+// Waits (max 20 s) until no recent voice note of the conversation is still being transcribed
+async function esperarAudios(convId: string) {
+  for (let i = 0; i < 20; i++) {
+    const { count, error } = await db.from('lia_mensajes').select('id', { count: 'exact', head: true })
+      .eq('conversacion_id', convId).eq('audio', 'pendiente').gte('created_at', new Date(Date.now() - 120_000).toISOString())
+    if (error || !count) return
+    await new Promise(r => setTimeout(r, 1000))
+  }
+}
 // Expired account (read-only): has a plan that is no longer active/paid. A clinic that never had a plan ('prueba') is not expired.
 const cuentaVencida = (c: any) => !!c && c.plan !== 'prueba' && !(c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date()))
 const planConLia = (c: any) => !cuentaVencida(c) && ['ultra', 'lia'].includes(c?.plan) && !!c.plan_activo && (!c.plan_hasta || new Date(c.plan_hasta) > new Date())
@@ -550,17 +608,29 @@ async function recibirMensaje(linea: any, clinica: any, m: any, nombrePerfil: st
     const r = await db.from('lia_conversaciones').insert({ clinica_id: clinica.id, telefono: tel, nombre: nombrePerfil || tel, origen: 'WhatsApp', etapa: 'nuevo' }).select().single()
     conv = r.data || (await db.from('lia_conversaciones').select('*').eq('clinica_id', clinica.id).eq('prueba', false).eq('telefono', tel).single()).data
   }
-  const { error: dup } = await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto: texto || null, foto: m.type === 'image' ? 'foto' : null, wa_id: m.id })
-  if (dup) return // Meta delivered this message twice
+  const esAudio = (m.type === 'audio' || m.type === 'voice') && !!m.audio?.id
+  let fila = await db.from('lia_mensajes').insert(esAudio
+    ? { clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto: null, audio: 'pendiente', wa_id: m.id }
+    : { clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto: texto || null, foto: m.type === 'image' ? 'foto' : null, wa_id: m.id }).select('id').single()
+  let transcripcion: Promise<void> | undefined
+  if (fila.error && esAudio && fila.error.code !== '23505') {
+    // the `audio` columns are not there yet (SQL not applied): store it as before, Lía will ask the patient to write
+    fila = await db.from('lia_mensajes').insert({ clinica_id: clinica.id, conversacion_id: conv.id, de: 'p', texto, wa_id: m.id }).select('id').single()
+  } else if (!fila.error && esAudio) {
+    // runs in parallel with the burst wait and even if the doctor took the conversation (the transcript is still shown)
+    transcripcion = transcribirYGuardar(fila.data.id, conv.id, m.audio.id).catch(e => console.error('lia-audio', e))
+  }
+  if (fila.error) return // Meta delivered this message twice
   await db.from('lia_conversaciones').update({ ultimo_at: new Date().toISOString(), ...(conv.nombre === tel && nombrePerfil ? { nombre: nombrePerfil } : {}) }).eq('id', conv.id)
-  if (conv.tomado) return // the doctor took the conversation: Lía stays quiet
+  if (conv.tomado) { await transcripcion; return } // the doctor took the conversation: Lía stays quiet
 
   wa(linea.phone_number_id, { status: 'read', message_id: m.id, typing_indicator: { type: 'text' } }).catch(() => {})
-  await new Promise(r => setTimeout(r, ESPERA_MS))
+  await Promise.all([new Promise(r => setTimeout(r, ESPERA_MS)), transcripcion])
   const { data: ultimo } = await db.from('lia_mensajes').select('wa_id').eq('conversacion_id', conv.id).eq('de', 'p').order('created_at', { ascending: false }).limit(1).single()
   if (ultimo?.wa_id !== m.id) return // a newer message arrived: that one answers
   const { data: fresca } = await db.from('lia_conversaciones').select('*').eq('id', conv.id).single()
   if (fresca.tomado) return
+  await esperarAudios(conv.id) // a voice note sent just before may still be transcribing: Lía needs its text
 
   const foto = m.type === 'image' && m.image?.id ? await bajarFoto(m.image.id) : undefined
   const r = await responder(clinica, fresca, false, foto)

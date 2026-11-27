@@ -107,6 +107,18 @@ const DB = {
   categorias_inventario: ['Medicamentos', 'Insumos', 'Equipo'].map(nombre => ({ id: id(), clinica_id: cid, nombre })),
   proveedores: [{ id: 'demo-pv1', clinica_id: cid, nombre: 'Distribuidora Médica Ejemplo', contacto: 'Luis', telefono: '55550000', activo: true }],
   ordenes_compra: [], ordenes_compra_lineas: [], paquetes: [], paquete_items: [],
+  // sample receptionist chats, including voice notes (transcribed, still transcribing and failed)
+  lia_conversaciones: [
+    { id: 'demo-lc1', clinica_id: cid, nombre: 'Lucía Hernández', telefono: '+50255501371', origen: 'WhatsApp', etapa: 'calificando', motivo: 'Dolor en las piernas', tipo: 'otro', tomado: false, prueba: false, alerta: null, ultimo_at: new Date(Date.now() - 3 * 60e3).toISOString(), created_at: new Date(Date.now() - 60 * 60e3).toISOString() },
+    { id: 'demo-lc2', clinica_id: cid, nombre: 'Carlos Méndez', telefono: '+50255502742', origen: 'WhatsApp', etapa: 'nuevo', motivo: null, tipo: null, tomado: false, prueba: false, alerta: null, ultimo_at: new Date(Date.now() - 50 * 60e3).toISOString(), created_at: new Date(Date.now() - 55 * 60e3).toISOString() },
+  ],
+  lia_mensajes: [
+    { id: 'demo-lm1', clinica_id: cid, conversacion_id: 'demo-lc1', de: 'p', texto: 'Buenas tardes, me duelen mucho las piernas al final del día y quisiera una cita para la próxima semana, de preferencia en la mañana.', audio: 'ok', audio_seg: 23, created_at: new Date(Date.now() - 10 * 60e3).toISOString() },
+    { id: 'demo-lm2', clinica_id: cid, conversacion_id: 'demo-lc1', de: 'l', texto: 'Hola Lucía, con gusto le ayudo. Soy Lía, la asistente virtual del consultorio.\n\n¿Me puede compartir su nombre completo para buscarle horario?', created_at: new Date(Date.now() - 9 * 60e3).toISOString() },
+    { id: 'demo-lm3', clinica_id: cid, conversacion_id: 'demo-lc1', de: 'p', texto: null, audio: 'pendiente', created_at: new Date(Date.now() - 3 * 60e3).toISOString() },
+    { id: 'demo-lm4', clinica_id: cid, conversacion_id: 'demo-lc2', de: 'p', texto: null, audio: 'fallo', created_at: new Date(Date.now() - 55 * 60e3).toISOString() },
+    { id: 'demo-lm5', clinica_id: cid, conversacion_id: 'demo-lc2', de: 'l', texto: 'Hola Carlos, no pude escuchar su audio. ¿Me lo puede escribir o repetir, por favor?', created_at: new Date(Date.now() - 54 * 60e3).toISOString() },
+  ],
 }
 const recalcular = () => DB.cobros.forEach(c => { c.pagado = DB.abonos.filter(a => a.cobro_id === c.id).reduce((n, a) => n + Number(a.monto), 0) })
 recalcular()

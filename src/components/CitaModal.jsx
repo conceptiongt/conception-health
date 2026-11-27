@@ -219,6 +219,9 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
 
       <div className="cita-pagina">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+          {/* hospital: confirm the attendance and its supplies (renders nothing for clinics, before the migration, or while the cita is new) */}
+          {cita && hosp && <PanelAtencion cita={cita} paciente={paciente} onCambio={(c) => c?.estado && set('estado')(c.estado)} />}
+
           <section className="bloque">
             <h3>Datos de la cita</h3>
             <Grid min={190}>
@@ -235,9 +238,6 @@ export function CitaModal({ cita, paciente, clinicaId, onClose, onGuardado, solo
               <ServicioCampos tipo={f.tipo} servicios={servicios} valor={serv} onChange={setServ} conPrecio={!cita && finanzas} conPrecios={finanzas} departamentoId={depId} />
             </Grid>
           </section>
-
-          {/* hospital: confirm the attendance and its supplies (renders nothing for clinics, before the migration, or while the cita is new) */}
-          {cita && hosp && <PanelAtencion cita={cita} paciente={paciente} onCambio={(c) => c?.estado && set('estado')(c.estado)} />}
 
           {!ficha && <div className="cita-dos">{medidasPaciente}</div>}
           {ficha && <>

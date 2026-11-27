@@ -109,7 +109,7 @@ function PaqueteModal({ inv, paquete, onClose, onGuardado }) {
     <Modal title={paquete ? 'Editar paquete' : 'Nuevo paquete'} subtitle="Insumos que se usan juntos en un procedimiento" onClose={onClose} maxWidth={680}>
       <Grid min={220}>
         <Campo label="Nombre *"><Input value={nombre} onChange={setNombre} placeholder="Ej. Aplicación de toxina" /></Campo>
-        <Campo label="Tarifa vinculada (opcional)" ayuda="Para crear el cobro al usarlo">
+        <Campo label="Tarifa vinculada (opcional)" ayuda="Hospital: es el kit por defecto de ese servicio al confirmar una atención. También crea el cobro al usarlo">
           <Select value={servicio} onChange={setServicio}><option value="">—</option>{opciones.map(s => <option key={s.id} value={s.id}>{s.categoria} · {s.nombre}{verPrecio(perfil, s) ? ` — ${fmtQ(s.precio)}` : ''}</option>)}</Select>
         </Campo>
       </Grid>

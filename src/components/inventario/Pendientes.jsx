@@ -59,19 +59,17 @@ export function PendientesBodega({ inv, onCambio }) {
         {hospital?.departamentos?.length > 0 && <Desplegable ariaLabel="Especialidad" value={esp} onChange={setEsp} options={[{ value: '', label: 'Toda especialidad' }, { value: '__general', label: 'Sin especialidad' }, ...hospital.departamentos.map(d => ({ value: d.id, label: d.nombre }))]} />}
       </div>
       <Tabla
-          columnas={['Insumo', 'Falta', 'Paciente y cita', 'Especialidad', 'Pidió', ver === 'pendiente' ? 'Fecha' : 'Resuelto', '']}
+          columnas={['Insumo', 'Falta', 'Paciente y cita', ver === 'pendiente' ? 'Pidió' : 'Resuelto', '']}
           vacio={ver === 'pendiente' ? 'No hay insumos pendientes de bodega' : 'Aún no hay pendientes resueltos'}
           filas={lista.map(p => {
             const pr = producto(p.producto_id), pac = pacientes.find(x => x.id === p.paciente_id), c = citas.find(x => x.id === p.cita_id)
             const hay = existencia(inv, p.sede_id, p.producto_id)
             return { key: p.id, celdas: [
-              <div><strong style={{ fontWeight: 600 }}>{pr?.nombre || 'Insumo'}</strong><div style={{ fontSize: 12, color: C.g400 }}>{sede(p.sede_id)?.nombre}</div></div>,
+              <div><strong style={{ fontWeight: 600 }}>{pr?.nombre || 'Insumo'}</strong><div style={{ fontSize: 12, color: C.g400 }}>{[sede(p.sede_id)?.nombre, hospital?.departamento(p.departamento_id)?.nombre].filter(Boolean).join(' · ')}</div></div>,
               <strong style={{ color: p.estado === 'pendiente' ? C.amber : C.g600 }}>{fmtCant(p.estado === 'pendiente' ? p.cantidad : p.cantidad_original)} {pr?.unidad}</strong>,
               <div style={{ whiteSpace: 'normal', minWidth: 150 }}>{pac?.nombre || '—'}<div style={{ fontSize: 12, color: C.g400 }}>{c ? `${fmtFechaCorta(c.fecha)} · ${c.servicio || c.tipo || 'Consulta'}` : '—'}</div></div>,
-              hospital?.departamento(p.departamento_id)?.nombre || <span style={{ color: C.g300 }}>—</span>,
-              <div>{p.creado_nombre || '—'}</div>,
               p.estado === 'pendiente'
-                ? fmtFechaCorta(p.created_at)
+                ? <div style={{ whiteSpace: 'normal' }}>{p.creado_nombre || '—'}<div style={{ fontSize: 12, color: C.g400 }}>{fmtFechaCorta(p.created_at)}</div></div>
                 : <div style={{ whiteSpace: 'normal' }}>{fmtFechaCorta(p.resuelto_at)}<div style={{ fontSize: 12, color: C.g400 }}>{p.resuelto_nombre || ''}{Number(p.descontado) > 0 ? ` · descontó ${fmtCant(p.descontado)}` : ''}</div></div>,
               p.estado === 'pendiente' && !lectura ? (
                 <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>

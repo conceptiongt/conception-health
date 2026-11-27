@@ -120,7 +120,11 @@ async function quien(req: Request): Promise<Perfil | null> {
   const usuario = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } })
   const { data: { user } } = await usuario.auth.getUser()
   if (!user) return null
-  const { data: perfil } = await db.from('perfiles').select('user_id, clinica_id, rol').eq('user_id', user.id).maybeSingle()
+  // a deactivated hospital staff user has no session (the column may not exist yet: then retry without it)
+  let r = await db.from('perfiles').select('user_id, clinica_id, rol, activo').eq('user_id', user.id).maybeSingle()
+  if (r.error) r = await db.from('perfiles').select('user_id, clinica_id, rol').eq('user_id', user.id).maybeSingle()
+  const perfil = r.data as (Perfil & { activo?: boolean }) | null
+  if (perfil?.activo === false) return null
   return perfil ? perfil as Perfil : null
 }
 

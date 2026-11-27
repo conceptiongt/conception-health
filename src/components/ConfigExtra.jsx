@@ -19,6 +19,8 @@ import { Interruptor } from './MensajePaciente'
 // permissions that only make sense for some accounts: Quirófanos (surgery calendar) and Camas (hospitals)
 const permisosDe = (clinica) => PERMISOS.filter(p => (!p.cirugias || usaCirugias(clinica)) && (!p.hospital || esHospital(clinica?.especialidad)))
 import { confirmar } from './ui/Confirmar'
+import { UsuariosHospital } from './UsuariosHospital'
+import { actualizarPerfil } from '../lib/usuariosHospital'
 
 // Invitation email (edge function invitar-asistente). Returns null when sent, or the reason it was not
 export async function enviarCorreoInvitacion(email) {
@@ -149,7 +151,13 @@ export function PagosYRegistro() {
 }
 
 // ─── Users: the administrator invites assistants and chooses what they can see ───
+// Hospital accounts create their staff with a user name and password (no e-mail): see UsuariosHospital
 export function Usuarios() {
+  const { clinica } = useDatos()
+  return esHospital(clinica?.especialidad) ? <UsuariosHospital /> : <UsuariosClinica />
+}
+
+function UsuariosClinica() {
   const { clinica, perfil } = useDatos()
   const [usuarios, setUsuarios] = useState(null)
   const [invitaciones, setInvitaciones] = useState([])
@@ -168,8 +176,8 @@ export function Usuarios() {
   const cambiarPermiso = async (u, k, v) => {
     const permisos = { ...u.permisos, [k]: v }
     setUsuarios(us => us.map(x => x.user_id === u.user_id ? { ...x, permisos } : x))
-    const { error } = await supabase.from('perfiles').update({ permisos }).eq('user_id', u.user_id)
-    if (error) { toast.error('No se pudo guardar'); cargar() }
+    const r = await actualizarPerfil(u.user_id, { permisos }) // perfil_admin_actualizar RPC (falls back to the direct update until it exists)
+    if (r.error) { toast.error('No se pudo guardar'); cargar() }
   }
   const quitar = async (u) => {
     if (!await confirmar(`¿Quitar el acceso de ${u.nombre || u.email}? Ya no podrá entrar a la clínica. Lo que registró se conserva.`)) return

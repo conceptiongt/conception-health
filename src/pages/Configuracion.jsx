@@ -60,6 +60,7 @@ function Marca() {
   const elegirColor = (c) => { setColor(c); aplicarMarca(c) } // live preview
   const guardar = async () => {
     if (!nombre.trim()) { toast.error('Escriba el nombre'); return }
+    if (!esp) { toast.error('Elija su especialidad'); return } // never save an empty specialty (Clínica chosen without picking one)
     setBusy(true)
     const cambioEsp = esp && esp !== clinica?.especialidad
     const { error } = await supabase.from('clinicas').update({ nombre: nombre.trim(), color: color.toUpperCase(), especialidad: esp || null }).eq('id', clinica.id)
@@ -107,7 +108,7 @@ function Marca() {
       <div style={{ fontSize: 13.5, color: C.g500, marginBottom: 18 }}>Su nombre, especialidad, logo y color aparecen en el menú, en los botones y en todos los documentos PDF que imprima.</div>
       <div className="config-marca">
         <div>
-          <Campo label="Nombre del consultorio o doctor"><Input value={nombre} onChange={setNombre} /></Campo>
+          <Campo label="Nombre del doctor, clínica u hospital"><Input value={nombre} onChange={setNombre} /></Campo>
           <div style={{ marginTop: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <TipoCuenta value={esp} onChange={setEsp} ayuda="Adapta los tipos de consulta, los datos clínicos de cada cita y sus tarifas sugeridas" />
